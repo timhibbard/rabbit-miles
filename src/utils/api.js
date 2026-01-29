@@ -11,6 +11,8 @@ const api = axios.create({
 });
 
 // Add request interceptor to include auth token if available
+// Note: The authToken should be set by the backend OAuth callback handler
+// which will store it in localStorage after successful Strava authentication
 api.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('authToken');
@@ -32,7 +34,8 @@ api.interceptors.response.use(
       // Handle unauthorized access
       localStorage.removeItem('authToken');
       localStorage.removeItem('stravaConnected');
-      window.location.href = '/connect';
+      // Redirect to connect page with proper base path
+      window.location.href = '/rabbit-miles/connect';
     }
     return Promise.reject(error);
   }
