@@ -3,6 +3,8 @@ import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
 import ConnectStrava from './pages/ConnectStrava';
 import Settings from './pages/Settings';
+import Privacy from './pages/Privacy';
+import Terms from './pages/Terms';
 
 function App() {
   return (
@@ -12,6 +14,8 @@ function App() {
           <Route index element={<Dashboard />} />
           <Route path="connect" element={<ConnectStrava />} />
           <Route path="settings" element={<Settings />} />
+          <Route path="privacy" element={<Privacy />} />
+          <Route path="terms" element={<Terms />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>
