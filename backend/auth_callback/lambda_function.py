@@ -165,7 +165,8 @@ def handler(event, context):
         display_name = (display_name + " " + str(athlete.get("lastname")).strip()).strip()
     
     # Get profile picture URL (Strava provides 'profile' or 'profile_medium')
-    profile_picture = athlete.get("profile_medium") or athlete.get("profile") or ""
+    # Use None instead of empty string for better database handling
+    profile_picture = athlete.get("profile_medium") or athlete.get("profile") or None
 
     # Upsert user row (Data API)
     sql = """
@@ -182,11 +183,19 @@ def handler(event, context):
     params = [
         {"name": "aid", "value": {"longValue": athlete_id}},
         {"name": "dname", "value": {"stringValue": display_name}},
-        {"name": "pic", "value": {"stringValue": profile_picture}},
+    ]
+    
+    # Only add profile_picture parameter if it's not None
+    if profile_picture:
+        params.append({"name": "pic", "value": {"stringValue": profile_picture}})
+    else:
+        params.append({"name": "pic", "value": {"isNull": True}})
+    
+    params.extend([
         {"name": "at", "value": {"stringValue": access_token}},
         {"name": "rt", "value": {"stringValue": refresh_token}},
         {"name": "exp", "value": {"longValue": expires_at}},
-    ]
+    ])
     _exec_sql(sql, params)
 
     # Create session cookie

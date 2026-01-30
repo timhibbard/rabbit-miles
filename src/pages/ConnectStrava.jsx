@@ -143,7 +143,9 @@ function ConnectStrava() {
               {authState.user && authState.user.profile_picture && (
                 <img 
                   src={authState.user.profile_picture} 
-                  alt={authState.user.display_name}
+                  alt={authState.user.display_name || "User profile picture"}
+                  referrerPolicy="no-referrer"
+                  onError={(e) => { e.target.style.display = 'none'; }}
                   className="w-24 h-24 rounded-full border-4 border-orange-500 mx-auto mb-4"
                 />
               )}
@@ -177,7 +179,7 @@ function ConnectStrava() {
                 What happens when you disconnect?
               </h3>
               <p className="text-gray-600 text-sm">
-                Disconnecting will remove your Strava access tokens from our system. Your activity data will be deleted within 30 days. You can reconnect at any time.
+                Disconnecting will remove your Strava access tokens from our system. You can reconnect at any time.
               </p>
             </div>
           </div>

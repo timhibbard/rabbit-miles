@@ -100,7 +100,9 @@ function Dashboard() {
             {authState.user && authState.user.profile_picture && (
               <img 
                 src={authState.user.profile_picture} 
-                alt={authState.user.display_name}
+                alt={authState.user.display_name || "User profile picture"}
+                referrerPolicy="no-referrer"
+                onError={(e) => { e.target.style.display = 'none'; }}
                 className="w-16 h-16 rounded-full border-2 border-orange-500"
               />
             )}
