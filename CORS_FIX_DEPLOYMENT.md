@@ -49,18 +49,19 @@ aws lambda get-function-configuration \
   --query 'Environment.Variables.FRONTEND_URL'
 
 # If it doesn't exist or is incorrect, update it
+# Replace YOUR_ME_FUNCTION_NAME and other values with your actual values
 aws lambda update-function-configuration \
   --function-name YOUR_ME_FUNCTION_NAME \
-  --environment "Variables={
-    DB_CLUSTER_ARN=<existing-value>,
-    DB_SECRET_ARN=<existing-value>,
-    DB_NAME=<existing-value>,
-    APP_SECRET=<existing-value>,
-    FRONTEND_URL=https://timhibbard.github.io/rabbit-miles
-  }"
+  --environment Variables={DB_CLUSTER_ARN=<existing-value>,DB_SECRET_ARN=<existing-value>,DB_NAME=<existing-value>,APP_SECRET=<existing-value>,FRONTEND_URL=https://timhibbard.github.io/rabbit-miles}
 ```
 
-**Important**: Make sure to include all existing environment variables when updating, as the update command replaces all variables.
+**Important**: Make sure to include all existing environment variables when updating, as the update command replaces all variables. Get the existing values first with:
+
+```bash
+aws lambda get-function-configuration \
+  --function-name YOUR_ME_FUNCTION_NAME \
+  --query 'Environment.Variables'
+```
 
 ### 2. Deploy the Updated Lambda Function
 

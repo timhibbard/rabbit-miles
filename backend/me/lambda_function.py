@@ -41,49 +41,71 @@ def exec_sql(sql, parameters=None):
 def handler(event, context):
     cors_headers = get_cors_headers()
     
-    cookie_header = (event.get("headers") or {}).get("cookie") or (event.get("headers") or {}).get("Cookie")
-    if not cookie_header or "rm_session=" not in cookie_header:
-        return {
-            "statusCode": 401,
-            "headers": cors_headers,
-            "body": json.dumps({"error": "not authenticated"})
-        }
-    tok = None
-    for part in cookie_header.split(";"):
-        k,v = part.strip().split("=",1)
-        if k=="rm_session":
-            tok=v
-    aid = verify_session_token(tok)
-    if not aid:
-        return {
-            "statusCode": 401,
-            "headers": cors_headers,
-            "body": json.dumps({"error": "invalid session"})
-        }
+    try:
+        cookie_header = (event.get("headers") or {}).get("cookie") or (event.get("headers") or {}).get("Cookie")
+        if not cookie_header or "rm_session=" not in cookie_header:
+            return {
+                "statusCode": 401,
+                "headers": cors_headers,
+                "body": json.dumps({"error": "not authenticated"})
+            }
+        
+        # Parse cookies safely
+        tok = None
+        for part in cookie_header.split(";"):
+            part = part.strip()
+            if not part or "=" not in part:
+                continue
+            k, v = part.split("=", 1)
+            if k == "rm_session":
+                tok = v
+                break
+        
+        if not tok:
+            return {
+                "statusCode": 401,
+                "headers": cors_headers,
+                "body": json.dumps({"error": "not authenticated"})
+            }
+        
+        aid = verify_session_token(tok)
+        if not aid:
+            return {
+                "statusCode": 401,
+                "headers": cors_headers,
+                "body": json.dumps({"error": "invalid session"})
+            }
 
-    sql = "SELECT athlete_id, display_name, profile_picture FROM users WHERE athlete_id = :aid LIMIT 1"
-    res = exec_sql(sql, parameters=[{"name":"aid","value":{"longValue":aid}}])
-    records = res.get("records") or []
-    if not records:
+        sql = "SELECT athlete_id, display_name, profile_picture FROM users WHERE athlete_id = :aid LIMIT 1"
+        res = exec_sql(sql, parameters=[{"name":"aid","value":{"longValue":aid}}])
+        records = res.get("records") or []
+        if not records:
+            return {
+                "statusCode": 404,
+                "headers": cors_headers,
+                "body": json.dumps({"error": "user not found"})
+            }
+        rec = records[0]
+        # records format: list of field lists, where each field has stringValue/longValue etc
+        athlete_id = int(rec[0].get("longValue") or rec[0].get("stringValue"))
+        display_name = rec[1].get("stringValue") if rec[1].get("stringValue") else ""
+        # Handle profile_picture which may be NULL in database
+        profile_picture = ""
+        if len(rec) > 2 and rec[2]:
+            profile_picture = rec[2].get("stringValue", "")
         return {
-            "statusCode": 404,
+            "statusCode": 200,
             "headers": cors_headers,
-            "body": json.dumps({"error": "user not found"})
+            "body": json.dumps({
+                "athlete_id": athlete_id,
+                "display_name": display_name,
+                "profile_picture": profile_picture
+            })
         }
-    rec = records[0]
-    # records format: list of field lists, where each field has stringValue/longValue etc
-    athlete_id = int(rec[0].get("longValue") or rec[0].get("stringValue"))
-    display_name = rec[1].get("stringValue") if rec[1].get("stringValue") else ""
-    # Handle profile_picture which may be NULL in database
-    profile_picture = ""
-    if len(rec) > 2 and rec[2]:
-        profile_picture = rec[2].get("stringValue", "")
-    return {
-        "statusCode": 200,
-        "headers": cors_headers,
-        "body": json.dumps({
-            "athlete_id": athlete_id,
-            "display_name": display_name,
-            "profile_picture": profile_picture
-        })
-    }
+    except Exception as e:
+        # Catch any unexpected errors and return proper error with CORS headers
+        return {
+            "statusCode": 500,
+            "headers": cors_headers,
+            "body": json.dumps({"error": "internal server error"})
+        }
