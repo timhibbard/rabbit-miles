@@ -95,8 +95,36 @@ def handler(event, context):
     if not code or not state:
         return {"statusCode": 400, "body": "missing code/state"}
 
-    cookies = _parse_cookies(event.get("headers") or {})
-    if cookies.get("rm_state") != state:
+    # Validate state from database (fallback to cookie for backwards compatibility)
+    state_valid = False
+    
+    # First try database validation
+    try:
+        sql = "SELECT expires_at FROM oauth_states WHERE state = :state"
+        params = [{"name": "state", "value": {"stringValue": state}}]
+        result = _exec_sql(sql, params)
+        
+        if result.get("records"):
+            expires_at = result["records"][0][0].get("longValue")
+            current_time = int(time.time())
+            
+            if expires_at and expires_at > current_time:
+                state_valid = True
+                # Clean up used state
+                delete_sql = "DELETE FROM oauth_states WHERE state = :state"
+                _exec_sql(delete_sql, params)
+            else:
+                # State expired
+                delete_sql = "DELETE FROM oauth_states WHERE state = :state"
+                _exec_sql(delete_sql, params)
+    except Exception as e:
+        # If database validation fails, fall back to cookie validation
+        print(f"Database state validation failed, falling back to cookie: {e}")
+        cookies = _parse_cookies(event.get("headers") or {})
+        if cookies.get("rm_state") == state:
+            state_valid = True
+    
+    if not state_valid:
         return {"statusCode": 400, "body": "invalid state"}
 
     # Exchange code for tokens
