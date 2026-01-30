@@ -35,10 +35,7 @@ def handler(event, context):
     expires_at = int(time.time()) + 600
     sql = """
     INSERT INTO oauth_states (state, expires_at, created_at)
-    VALUES (:state, :expires_at, now())
-    ON CONFLICT (state) DO UPDATE
-      SET expires_at = EXCLUDED.expires_at,
-          created_at = now();
+    VALUES (:state, :expires_at, now());
     """
     params = [
         {"name": "state", "value": {"stringValue": state}},
@@ -47,8 +44,13 @@ def handler(event, context):
     try:
         _exec_sql(sql, params)
     except Exception as e:
-        # If table doesn't exist yet, log but continue (migration will be handled separately)
-        print(f"Warning: Failed to store state in database: {e}")
+        # If table doesn't exist yet, return error (migration must be run first)
+        print(f"ERROR: Failed to store state in database: {e}")
+        return {
+            "statusCode": 500,
+            "headers": {"Content-Type": "application/json"},
+            "body": '{"error": "Database configuration error. Please contact support."}'
+        }
     
     redirect_uri = f"{API_BASE}/auth/callback"
     params = {

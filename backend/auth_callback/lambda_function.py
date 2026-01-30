@@ -110,13 +110,14 @@ def handler(event, context):
             
             if expires_at and expires_at > current_time:
                 state_valid = True
-                # Clean up used state
-                delete_sql = "DELETE FROM oauth_states WHERE state = :state"
-                _exec_sql(delete_sql, params)
-            else:
-                # State expired
-                delete_sql = "DELETE FROM oauth_states WHERE state = :state"
-                _exec_sql(delete_sql, params)
+        
+        # Clean up state (used or expired) after validation check
+        try:
+            delete_sql = "DELETE FROM oauth_states WHERE state = :state"
+            _exec_sql(delete_sql, params)
+        except Exception as cleanup_error:
+            # Log cleanup failure but don't fail the request
+            print(f"Warning: Failed to cleanup OAuth state: {cleanup_error}")
     except Exception as e:
         # If database validation fails, fall back to cookie validation
         print(f"Database state validation failed, falling back to cookie: {e}")
