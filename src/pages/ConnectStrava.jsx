@@ -257,6 +257,7 @@ function ConnectStrava() {
               </svg>
             </div>
           </div>
+        </div>
         )}
       </div>
 
