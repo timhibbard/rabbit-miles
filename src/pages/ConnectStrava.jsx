@@ -1,11 +1,38 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import { fetchMe } from '../utils/api';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
 function ConnectStrava() {
   const [isConnecting, setIsConnecting] = useState(false);
   const [openFaqIndex, setOpenFaqIndex] = useState(null);
+  const [authState, setAuthState] = useState({
+    loading: true,
+    connected: false,
+    user: null,
+  });
+
+  useEffect(() => {
+    // Check if user is already connected
+    const checkAuth = async () => {
+      const result = await fetchMe();
+      if (result.success) {
+        setAuthState({
+          loading: false,
+          connected: true,
+          user: result.user,
+        });
+      } else {
+        setAuthState({
+          loading: false,
+          connected: false,
+          user: null,
+        });
+      }
+    };
+    checkAuth();
+  }, []);
 
   const handleConnectStrava = () => {
     setIsConnecting(true);
@@ -14,6 +41,12 @@ function ConnectStrava() {
     // The backend will handle the OAuth flow and redirect to Strava
     const oauthUrl = `${API_BASE_URL}/auth/start`;
     window.location.href = oauthUrl;
+  };
+
+  const handleDisconnect = () => {
+    // Redirect to backend disconnect endpoint
+    const disconnectUrl = `${API_BASE_URL}/auth/disconnect`;
+    window.location.href = disconnectUrl;
   };
 
   const handleLearnMore = () => {
@@ -97,7 +130,62 @@ function ConnectStrava() {
     <div className="min-h-screen bg-gradient-to-b from-white to-gray-50">
       {/* Hero Section - Above the Fold */}
       <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 pt-12 pb-16">
-        <div className="text-center">
+        {authState.loading ? (
+          <div className="text-center py-16">
+            <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-orange-600 mb-4"></div>
+            <p className="text-gray-600">Loading...</p>
+          </div>
+        ) : authState.connected ? (
+          /* Disconnect / Manage Connection View */
+          <div className="text-center">
+            {/* Connected User Info */}
+            <div className="mb-8">
+              {authState.user && authState.user.profile_picture && (
+                <img 
+                  src={authState.user.profile_picture} 
+                  alt={authState.user.display_name || "User profile picture"}
+                  referrerPolicy="no-referrer"
+                  onError={(e) => { e.target.style.display = 'none'; }}
+                  className="w-24 h-24 rounded-full border-4 border-orange-500 mx-auto mb-4"
+                />
+              )}
+              <h1 className="text-4xl sm:text-5xl font-bold text-gray-900 mb-4">
+                You're Connected!
+              </h1>
+              <p className="text-xl text-gray-600 mb-6">
+                {authState.user ? `Welcome, ${authState.user.display_name}` : 'Your Strava account is connected'}
+              </p>
+            </div>
+
+            {/* Action Buttons */}
+            <div className="flex flex-col sm:flex-row gap-4 justify-center mb-8">
+              <Link
+                to="/"
+                className="inline-flex items-center justify-center px-8 py-4 border border-transparent text-lg font-semibold rounded-lg text-white bg-orange-600 hover:bg-orange-700 focus:outline-none focus:ring-4 focus:ring-orange-500 focus:ring-offset-2 transition-colors shadow-lg hover:shadow-xl"
+              >
+                Go to Dashboard
+              </Link>
+              <button
+                onClick={handleDisconnect}
+                className="inline-flex items-center justify-center px-8 py-4 border-2 border-red-300 text-lg font-semibold rounded-lg text-red-700 bg-white hover:bg-red-50 focus:outline-none focus:ring-4 focus:ring-red-300 focus:ring-offset-2 transition-colors"
+              >
+                Disconnect Strava
+              </button>
+            </div>
+
+            {/* Info */}
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 max-w-2xl mx-auto">
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                What happens when you disconnect?
+              </h3>
+              <p className="text-gray-600 text-sm">
+                Disconnecting will remove your Strava access tokens from our system. You can reconnect at any time.
+              </p>
+            </div>
+          </div>
+        ) : (
+          /* Connect View */
+          <div className="text-center">
           {/* Headline */}
           <h1 className="text-4xl sm:text-5xl md:text-6xl font-bold text-gray-900 mb-6">
             Track your Swamp Rabbit Trail miles
@@ -172,8 +260,12 @@ function ConnectStrava() {
             </div>
           </div>
         </div>
+        )}
       </div>
 
+      {/* Show additional sections only when not connected */}
+      {!authState.loading && !authState.connected && (
+        <>
       {/* How it Works Section */}
       <div id="how-it-works" className="bg-white py-16">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -322,6 +414,8 @@ function ConnectStrava() {
           </div>
         </div>
       </div>
+        </>
+      )}
 
       {/* Footer */}
       <footer className="bg-gray-900 text-gray-300 py-12">
