@@ -45,7 +45,7 @@ cp .env.example .env
 
 4. Update the `.env` file with your backend API URL:
 ```env
-VITE_BACKEND_BASE_URL=https://your-api-endpoint.amazonaws.com
+VITE_API_BASE_URL=https://9zke9jame0.execute-api.us-east-1.amazonaws.com/prod
 ```
 
 ### Development
@@ -79,14 +79,14 @@ The app automatically deploys to GitHub Pages when changes are pushed to the `ma
 2. Set Source to "GitHub Actions"
 3. Add your backend URL as a repository secret:
    - Go to Settings → Secrets and variables → Actions
-   - Add a new secret named `VITE_BACKEND_BASE_URL`
+   - Add a new secret named `VITE_API_BASE_URL`
    - Set the value to your AWS backend endpoint
 
 ## Environment Variables
 
-- `VITE_BACKEND_BASE_URL` - Base URL for the backend API (required)
+- `VITE_API_BASE_URL` - Base URL for the backend API (required)
 
-**Important:** No secrets or API keys should be stored in the frontend. All authentication is handled by the backend.
+**Important:** No secrets or API keys should be stored in the frontend. All authentication is handled by the backend using secure httpOnly cookies.
 
 ## Project Structure
 
@@ -107,9 +107,10 @@ src/
 ## OAuth Flow
 
 1. User clicks "Connect with Strava" button
-2. User is redirected to backend OAuth endpoint: `{BACKEND_BASE_URL}/auth/strava`
-3. Backend handles OAuth with Strava and redirects back to the app
-4. App stores connection status in localStorage
+2. User is redirected to backend OAuth endpoint: `{API_BASE_URL}/auth/start`
+3. Backend handles OAuth with Strava and sets httpOnly cookies
+4. App calls `/me` endpoint to check authentication status
+5. Dashboard displays user information from `/me` response
 
 ## License
 

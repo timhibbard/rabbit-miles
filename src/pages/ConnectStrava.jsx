@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 
-const BACKEND_BASE_URL = import.meta.env.VITE_BACKEND_BASE_URL;
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
 function ConnectStrava() {
   const [isConnecting, setIsConnecting] = useState(false);
@@ -12,7 +12,7 @@ function ConnectStrava() {
     
     // Redirect to backend OAuth endpoint
     // The backend will handle the OAuth flow and redirect to Strava
-    const oauthUrl = `${BACKEND_BASE_URL}/auth/strava`;
+    const oauthUrl = `${API_BASE_URL}/auth/start`;
     window.location.href = oauthUrl;
   };
 
