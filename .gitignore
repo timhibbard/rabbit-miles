@@ -13,7 +13,10 @@ dist-ssr
 *.local
 
 # Environment variables
-.env
+.env*
+
+# Zip files
+*.zip
 
 # Editor directories and files
 .vscode/*
