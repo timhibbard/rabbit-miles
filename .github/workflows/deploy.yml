@@ -34,7 +34,7 @@ jobs:
       - name: Build
         run: npm run build
         env:
-          VITE_BACKEND_BASE_URL: ${{ secrets.VITE_BACKEND_BASE_URL || 'https://your-api-endpoint.amazonaws.com' }}
+          VITE_API_BASE_URL: ${{ secrets.VITE_API_BASE_URL || 'https://9zke9jame0.execute-api.us-east-1.amazonaws.com/prod' }}
         
       - name: Setup Pages
         uses: actions/configure-pages@v4

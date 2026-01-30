@@ -1,16 +1,43 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { fetchMe } from '../utils/api';
 
 function Settings() {
-  const [isConnected, setIsConnected] = useState(
-    localStorage.getItem('stravaConnected') === 'true'
-  );
+  const [authState, setAuthState] = useState({
+    loading: true,
+    isConnected: false,
+  });
+
+  useEffect(() => {
+    // Check if user is connected via /me endpoint
+    const checkConnection = async () => {
+      const result = await fetchMe();
+      setAuthState({
+        loading: false,
+        isConnected: result.success,
+      });
+    };
+    
+    checkConnection();
+  }, []);
 
   const handleDisconnect = () => {
     if (window.confirm('Are you sure you want to disconnect your Strava account?')) {
-      localStorage.removeItem('stravaConnected');
-      setIsConnected(false);
+      // TODO: Call disconnect API endpoint when it becomes available
+      // For now, just show a message
+      alert('Disconnect functionality will be available soon. Please contact support to disconnect your account.');
     }
   };
+
+  if (authState.loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-orange-600 mb-4"></div>
+          <p className="text-gray-600">Loading...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -26,7 +53,7 @@ function Settings() {
               Strava Connection
             </h2>
             
-            {isConnected ? (
+            {authState.isConnected ? (
               <div className="flex items-center justify-between">
                 <div className="flex items-center">
                   <div className="w-12 h-12 bg-orange-500 rounded-full flex items-center justify-center mr-4">
