@@ -163,13 +163,17 @@ def handler(event, context):
     display_name = (athlete.get("firstname") or "").strip()
     if athlete.get("lastname"):
         display_name = (display_name + " " + str(athlete.get("lastname")).strip()).strip()
+    
+    # Get profile picture URL (Strava provides 'profile' or 'profile_medium')
+    profile_picture = athlete.get("profile_medium") or athlete.get("profile") or ""
 
     # Upsert user row (Data API)
     sql = """
-    INSERT INTO users (athlete_id, display_name, access_token, refresh_token, expires_at, updated_at)
-    VALUES (:aid, :dname, :at, :rt, :exp, now())
+    INSERT INTO users (athlete_id, display_name, profile_picture, access_token, refresh_token, expires_at, updated_at)
+    VALUES (:aid, :dname, :pic, :at, :rt, :exp, now())
     ON CONFLICT (athlete_id) DO UPDATE
       SET display_name = EXCLUDED.display_name,
+          profile_picture = EXCLUDED.profile_picture,
           access_token = EXCLUDED.access_token,
           refresh_token = EXCLUDED.refresh_token,
           expires_at = EXCLUDED.expires_at,
@@ -178,6 +182,7 @@ def handler(event, context):
     params = [
         {"name": "aid", "value": {"longValue": athlete_id}},
         {"name": "dname", "value": {"stringValue": display_name}},
+        {"name": "pic", "value": {"stringValue": profile_picture}},
         {"name": "at", "value": {"stringValue": access_token}},
         {"name": "rt", "value": {"stringValue": refresh_token}},
         {"name": "exp", "value": {"longValue": expires_at}},

@@ -96,14 +96,25 @@ function Dashboard() {
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">
-            Dashboard
-          </h1>
-          {authState.user && (
-            <p className="text-gray-600 mt-2">
-              Welcome back, {authState.user.display_name}!
-            </p>
-          )}
+          <div className="flex items-center gap-4">
+            {authState.user && authState.user.profile_picture && (
+              <img 
+                src={authState.user.profile_picture} 
+                alt={authState.user.display_name}
+                className="w-16 h-16 rounded-full border-2 border-orange-500"
+              />
+            )}
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900">
+                Dashboard
+              </h1>
+              {authState.user && (
+                <p className="text-gray-600 mt-2">
+                  Welcome back, {authState.user.display_name}!
+                </p>
+              )}
+            </div>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">

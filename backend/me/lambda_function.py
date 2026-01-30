@@ -40,7 +40,7 @@ def handler(event, context):
     if not aid:
         return {"statusCode":401, "body": "invalid session"}
 
-    sql = "SELECT athlete_id, display_name FROM users WHERE athlete_id = :aid LIMIT 1"
+    sql = "SELECT athlete_id, display_name, profile_picture FROM users WHERE athlete_id = :aid LIMIT 1"
     res = exec_sql(sql, parameters=[{"name":"aid","value":{"longValue":aid}}])
     records = res.get("records") or []
     if not records:
@@ -49,4 +49,5 @@ def handler(event, context):
     # records format: list of field lists, where each field has stringValue/longValue etc
     athlete_id = int(rec[0].get("longValue") or rec[0].get("stringValue"))
     display_name = rec[1].get("stringValue") if rec[1].get("stringValue") else ""
-    return {"statusCode":200, "body": json.dumps({"athlete_id": athlete_id, "display_name": display_name}), "headers":{"Content-Type":"application/json"}}
+    profile_picture = rec[2].get("stringValue") if len(rec) > 2 and rec[2].get("stringValue") else ""
+    return {"statusCode":200, "body": json.dumps({"athlete_id": athlete_id, "display_name": display_name, "profile_picture": profile_picture}), "headers":{"Content-Type":"application/json"}}
