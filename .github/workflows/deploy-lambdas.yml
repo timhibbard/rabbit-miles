@@ -1,0 +1,98 @@
+name: Deploy Lambda Functions
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'backend/**'
+  workflow_dispatch:
+
+jobs:
+  deploy-auth-start:
+    name: Deploy auth_start Lambda
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Deploy auth_start Lambda
+        uses: aws-actions/aws-lambda-deploy-action@v1
+        with:
+          function-name: ${{ secrets.LAMBDA_AUTH_START_NAME }}
+          handler: lambda_function.handler
+          runtime: python3.12
+          source-path: backend/auth_start
+
+  deploy-auth-callback:
+    name: Deploy auth_callback Lambda
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Deploy auth_callback Lambda
+        uses: aws-actions/aws-lambda-deploy-action@v1
+        with:
+          function-name: ${{ secrets.LAMBDA_AUTH_CALLBACK_NAME }}
+          handler: lambda_function.handler
+          runtime: python3.12
+          source-path: backend/auth_callback
+
+  deploy-auth-disconnect:
+    name: Deploy auth_disconnect Lambda
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Deploy auth_disconnect Lambda
+        uses: aws-actions/aws-lambda-deploy-action@v1
+        with:
+          function-name: ${{ secrets.LAMBDA_AUTH_DISCONNECT_NAME }}
+          handler: lambda_function.handler
+          runtime: python3.12
+          source-path: backend/auth_disconnect
+
+  deploy-me:
+    name: Deploy me Lambda
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Deploy me Lambda
+        uses: aws-actions/aws-lambda-deploy-action@v1
+        with:
+          function-name: ${{ secrets.LAMBDA_ME_NAME }}
+          handler: lambda_function.handler
+          runtime: python3.12
+          source-path: backend/me
