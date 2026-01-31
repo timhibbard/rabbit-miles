@@ -3,6 +3,7 @@
 #
 # Env vars required:
 # DB_CLUSTER_ARN, DB_SECRET_ARN, DB_NAME=postgres
+# API_BASE_URL (e.g. https://9zke9jame0.execute-api.us-east-1.amazonaws.com/prod)
 # FRONTEND_URL (e.g. https://<you>.github.io/rabbitmiles)
 # APP_SECRET (same secret used by auth callback / me)
 
@@ -11,6 +12,7 @@ import json
 import base64
 import hmac
 import hashlib
+from urllib.parse import urlparse
 import boto3
 
 rds = boto3.client("rds-data")
@@ -18,8 +20,15 @@ rds = boto3.client("rds-data")
 DB_CLUSTER_ARN = os.environ["DB_CLUSTER_ARN"]
 DB_SECRET_ARN = os.environ["DB_SECRET_ARN"]
 DB_NAME = os.environ.get("DB_NAME", "postgres")
+API_BASE = os.environ["API_BASE_URL"].rstrip("/")
 FRONTEND = os.environ["FRONTEND_URL"].rstrip("/")
 APP_SECRET = os.environ["APP_SECRET"].encode()
+
+# Extract path from API_BASE_URL for cookie Path attribute
+# API_BASE_URL format: https://domain.com/stage or https://domain.com
+# We need the path portion (e.g., /stage) for cookies to work with API Gateway
+_parsed_api_base = urlparse(API_BASE)
+COOKIE_PATH = _parsed_api_base.path if _parsed_api_base.path else "/"
 
 
 def _parse_cookies(headers: dict) -> dict:
@@ -68,7 +77,7 @@ def handler(event, context):
     session = cookies.get("rm_session")
     if not session:
         # still clear cookie and redirect
-        clear = "rm_session=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0"
+        clear = f"rm_session=; HttpOnly; Secure; SameSite=Lax; Path={COOKIE_PATH}; Max-Age=0"
         return {
             "statusCode": 302,
             "headers": {"Location": f"{FRONTEND}/?connected=0"},
@@ -79,7 +88,7 @@ def handler(event, context):
     aid = _verify_session_token(session)
     if not aid:
         # invalid session: clear cookie
-        clear = "rm_session=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0"
+        clear = f"rm_session=; HttpOnly; Secure; SameSite=Lax; Path={COOKIE_PATH}; Max-Age=0"
         return {
             "statusCode": 302,
             "headers": {"Location": f"{FRONTEND}/?connected=0"},
@@ -101,7 +110,7 @@ def handler(event, context):
         _exec_sql(sql, params)
     except Exception as e:
         # best-effort: clear cookie and redirect even on DB failures, but surface minimal error
-        clear = "rm_session=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0"
+        clear = f"rm_session=; HttpOnly; Secure; SameSite=Lax; Path={COOKIE_PATH}; Max-Age=0"
         return {
             "statusCode": 302,
             "headers": {"Location": f"{FRONTEND}/?connected=0&error=disconnect_failed"},
@@ -110,9 +119,9 @@ def handler(event, context):
         }
 
     # Clear session cookie and redirect to frontend
-    clear_session = "rm_session=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0"
+    clear_session = f"rm_session=; HttpOnly; Secure; SameSite=Lax; Path={COOKIE_PATH}; Max-Age=0"
     # also clear any leftover rm_state just in case
-    clear_state = "rm_state=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0"
+    clear_state = f"rm_state=; HttpOnly; Secure; SameSite=Lax; Path={COOKIE_PATH}; Max-Age=0"
 
     return {
         "statusCode": 302,

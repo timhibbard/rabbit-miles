@@ -33,6 +33,13 @@ APP_SECRET = os.environ["APP_SECRET"].encode()
 
 STRAVA_TOKEN_URL = "https://www.strava.com/oauth/token"
 
+# Extract path from API_BASE_URL for cookie Path attribute
+# API_BASE_URL format: https://domain.com/stage or https://domain.com
+# We need the path portion (e.g., /stage) for cookies to work with API Gateway
+from urllib.parse import urlparse
+_parsed_api_base = urlparse(API_BASE)
+COOKIE_PATH = _parsed_api_base.path if _parsed_api_base.path else "/"
+
 
 def _parse_cookies(headers: dict) -> dict:
     cookie_header = (headers or {}).get("cookie") or (headers or {}).get("Cookie") or ""
@@ -204,8 +211,8 @@ def handler(event, context):
     max_age = 30 * 24 * 3600
     print(f"Created session token for athlete_id: {athlete_id}")
 
-    set_cookie = f"rm_session={session_token}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age={max_age}"
-    clear_state = "rm_state=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0"
+    set_cookie = f"rm_session={session_token}; HttpOnly; Secure; SameSite=Lax; Path={COOKIE_PATH}; Max-Age={max_age}"
+    clear_state = f"rm_state=; HttpOnly; Secure; SameSite=Lax; Path={COOKIE_PATH}; Max-Age=0"
 
     # Redirect back to SPA - use /connect page to show success message
     redirect_to = f"{FRONTEND}/connect?connected=1"
