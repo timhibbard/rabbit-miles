@@ -9,9 +9,20 @@ on:
   workflow_dispatch:
 
 jobs:
-  deploy-auth-start:
-    name: Deploy auth_start Lambda
+  deploy:
+    name: Deploy ${{ matrix.lambda.name }} Lambda
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        lambda:
+          - name: auth_start
+            secret: LAMBDA_AUTH_START_NAME
+          - name: auth_callback
+            secret: LAMBDA_AUTH_CALLBACK_NAME
+          - name: auth_disconnect
+            secret: LAMBDA_AUTH_DISCONNECT_NAME
+          - name: me
+            secret: LAMBDA_ME_NAME
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -23,88 +34,13 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Package auth_start Lambda
+      - name: Package ${{ matrix.lambda.name }} Lambda
         run: |
-          cd backend/auth_start
+          cd backend/${{ matrix.lambda.name }}
           zip -r function.zip lambda_function.py
 
-      - name: Deploy auth_start Lambda
+      - name: Deploy ${{ matrix.lambda.name }} Lambda
         run: |
           aws lambda update-function-code \
-            --function-name ${{ secrets.LAMBDA_AUTH_START_NAME }} \
-            --zip-file fileb://backend/auth_start/function.zip
-
-  deploy-auth-callback:
-    name: Deploy auth_callback Lambda
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
-
-      - name: Package auth_callback Lambda
-        run: |
-          cd backend/auth_callback
-          zip -r function.zip lambda_function.py
-
-      - name: Deploy auth_callback Lambda
-        run: |
-          aws lambda update-function-code \
-            --function-name ${{ secrets.LAMBDA_AUTH_CALLBACK_NAME }} \
-            --zip-file fileb://backend/auth_callback/function.zip
-
-  deploy-auth-disconnect:
-    name: Deploy auth_disconnect Lambda
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
-
-      - name: Package auth_disconnect Lambda
-        run: |
-          cd backend/auth_disconnect
-          zip -r function.zip lambda_function.py
-
-      - name: Deploy auth_disconnect Lambda
-        run: |
-          aws lambda update-function-code \
-            --function-name ${{ secrets.LAMBDA_AUTH_DISCONNECT_NAME }} \
-            --zip-file fileb://backend/auth_disconnect/function.zip
-
-  deploy-me:
-    name: Deploy me Lambda
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
-
-      - name: Package me Lambda
-        run: |
-          cd backend/me
-          zip -r function.zip lambda_function.py
-
-      - name: Deploy me Lambda
-        run: |
-          aws lambda update-function-code \
-            --function-name ${{ secrets.LAMBDA_ME_NAME }} \
-            --zip-file fileb://backend/me/function.zip
+            --function-name ${{ secrets[matrix.lambda.secret] }} \
+            --zip-file fileb://backend/${{ matrix.lambda.name }}/function.zip
