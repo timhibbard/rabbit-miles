@@ -21,7 +21,7 @@ DB_NAME = os.environ.get("DB_NAME", "postgres")
 # API_BASE_URL format: https://domain.com/stage or https://domain.com
 # We need the path portion (e.g., /stage) for cookies to work with API Gateway
 _parsed_api_base = urlparse(API_BASE)
-COOKIE_PATH = _parsed_api_base.path if _parsed_api_base.path else "/"
+COOKIE_PATH = _parsed_api_base.path or "/"
 
 def _exec_sql(sql: str, parameters: list | None = None):
     kwargs = {
