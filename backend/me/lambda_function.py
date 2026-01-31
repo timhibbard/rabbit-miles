@@ -16,6 +16,9 @@ def get_cors_origin():
         return None
     parsed = urlparse(FRONTEND_URL)
     # Origin only includes scheme + netloc (no path)
+    # Validate that both scheme and netloc are present
+    if not parsed.scheme or not parsed.netloc:
+        return None
     return f"{parsed.scheme}://{parsed.netloc}"
 
 def get_cors_headers():
