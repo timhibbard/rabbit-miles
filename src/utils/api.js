@@ -14,12 +14,17 @@ const api = axios.create({
 // Fetch current user from /me endpoint
 export const fetchMe = async () => {
   try {
+    console.log('Calling /me endpoint...');
     const response = await api.get('/me');
+    console.log('/me response:', response.data);
     return { success: true, user: response.data };
   } catch (error) {
+    console.error('/me endpoint error:', error);
     if (error.response?.status === 401) {
+      console.log('User not authenticated (401)');
       return { success: false, notConnected: true };
     }
+    console.error('Error calling /me:', error.message, error.response?.data);
     return { success: false, error: error.message };
   }
 };

@@ -18,10 +18,13 @@ function Dashboard() {
   useEffect(() => {
     // Check authentication status via /me endpoint
     const checkAuth = async () => {
+      console.log('Dashboard: Checking authentication...');
       const result = await fetchMe();
+      console.log('Dashboard: fetchMe result:', result);
       
       if (result.success) {
         // User is authenticated
+        console.log('Dashboard: User authenticated:', result.user);
         setAuthState({
           loading: false,
           user: result.user,
@@ -29,9 +32,11 @@ function Dashboard() {
         });
       } else if (result.notConnected) {
         // User is not connected (401 response)
+        console.log('Dashboard: User not connected, redirecting to /connect');
         navigate('/connect');
       } else {
         // API error or unreachable
+        console.error('Dashboard: API error:', result.error);
         setAuthState({
           loading: false,
           user: null,

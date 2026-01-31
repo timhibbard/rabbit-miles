@@ -17,11 +17,15 @@ function ConnectStrava() {
     // Check if we just returned from OAuth callback
     const urlParams = new URLSearchParams(window.location.search);
     const justConnected = urlParams.get('connected') === '1';
+    console.log('ConnectStrava: Just connected?', justConnected);
     
     // Check if user is already connected
     const checkAuth = async () => {
+      console.log('ConnectStrava: Checking authentication...');
       const result = await fetchMe();
+      console.log('ConnectStrava: fetchMe result:', result);
       if (result.success) {
+        console.log('ConnectStrava: User is connected:', result.user);
         setAuthState({
           loading: false,
           connected: true,
@@ -33,6 +37,7 @@ function ConnectStrava() {
           window.history.replaceState({}, '', window.location.pathname);
         }
       } else {
+        console.log('ConnectStrava: User not connected');
         setAuthState({
           loading: false,
           connected: false,

@@ -197,16 +197,18 @@ def handler(event, context):
         {"name": "exp", "value": {"longValue": expires_at}},
     ])
     _exec_sql(sql, params)
+    print(f"Successfully upserted user {athlete_id} ({display_name}) to database")
 
     # Create session cookie
     session_token = _make_session_token(athlete_id)
     max_age = 30 * 24 * 3600
+    print(f"Created session token for athlete_id: {athlete_id}")
 
     set_cookie = f"rm_session={session_token}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age={max_age}"
     clear_state = "rm_state=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0"
 
-    # Redirect back to SPA
-    redirect_to = f"{FRONTEND}/?connected=1"
+    # Redirect back to SPA - use /connect page to show success message
+    redirect_to = f"{FRONTEND}/connect?connected=1"
 
     return {
         "statusCode": 302,
