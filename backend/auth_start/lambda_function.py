@@ -7,7 +7,7 @@
 # STRAVA_CLIENT_ID
 
 import os, secrets, time
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 import boto3
 
 API_BASE = os.environ["API_BASE_URL"].rstrip("/")
@@ -16,6 +16,12 @@ rds = boto3.client("rds-data")
 DB_CLUSTER_ARN = os.environ["DB_CLUSTER_ARN"]
 DB_SECRET_ARN = os.environ["DB_SECRET_ARN"]
 DB_NAME = os.environ.get("DB_NAME", "postgres")
+
+# Extract path from API_BASE_URL for cookie Path attribute
+# API_BASE_URL format: https://domain.com/stage or https://domain.com
+# We need the path portion (e.g., /stage) for cookies to work with API Gateway
+_parsed_api_base = urlparse(API_BASE)
+COOKIE_PATH = _parsed_api_base.path or "/"
 
 def _exec_sql(sql: str, parameters: list | None = None):
     kwargs = {
@@ -63,7 +69,7 @@ def handler(event, context):
     }
     url = "https://www.strava.com/oauth/authorize?" + urlencode(params)
 
-    cookie_val = f"rm_state={state}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=600"
+    cookie_val = f"rm_state={state}; HttpOnly; Secure; SameSite=None; Path={COOKIE_PATH}; Max-Age=600"
 
     return {
         "statusCode": 302,
