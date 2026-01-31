@@ -79,6 +79,8 @@ def handler(event, context):
         print(f"Cookie header: {cookie_header}")
         
         # Parse cookies from both sources
+        # Note: Cookie parsing logic is intentionally inlined here for performance and clarity
+        # in this security-critical authentication path, rather than using a helper function
         tok = None
         
         # First, try the cookies array (API Gateway HTTP API v2 format)

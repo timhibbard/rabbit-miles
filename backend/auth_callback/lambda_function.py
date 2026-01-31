@@ -66,7 +66,8 @@ def _parse_cookies(event: dict) -> dict:
             if not part or "=" not in part:
                 continue
             k, v = part.split("=", 1)
-            if k not in out:  # Don't override cookies from cookies array
+            # Prefer cookies from event['cookies'] array (v2 format) over headers (v1 format)
+            if k not in out:
                 out[k] = v
     
     return out
