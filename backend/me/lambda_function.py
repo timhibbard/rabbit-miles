@@ -69,7 +69,9 @@ def handler(event, context):
     
     try:
         cookie_header = (event.get("headers") or {}).get("cookie") or (event.get("headers") or {}).get("Cookie")
+        print(f"Cookie header received: {cookie_header is not None}")
         if not cookie_header or "rm_session=" not in cookie_header:
+            print(f"No rm_session cookie found. Cookie header: {cookie_header[:100] if cookie_header else 'None'}")
             return {
                 "statusCode": 401,
                 "headers": cors_headers,
@@ -96,21 +98,25 @@ def handler(event, context):
         
         aid = verify_session_token(tok)
         if not aid:
+            print(f"Session token verification failed for token: {tok[:20]}...")
             return {
                 "statusCode": 401,
                 "headers": cors_headers,
                 "body": json.dumps({"error": "invalid session"})
             }
+        print(f"Verified session for athlete_id: {aid}")
 
         sql = "SELECT athlete_id, display_name, profile_picture FROM users WHERE athlete_id = :aid LIMIT 1"
         res = exec_sql(sql, parameters=[{"name":"aid","value":{"longValue":aid}}])
         records = res.get("records") or []
         if not records:
+            print(f"User not found in database for athlete_id: {aid}")
             return {
                 "statusCode": 404,
                 "headers": cors_headers,
                 "body": json.dumps({"error": "user not found"})
             }
+        print(f"Successfully retrieved user from database")
         rec = records[0]
         # records format: list of field lists, where each field has stringValue/longValue etc
         athlete_id = int(rec[0].get("longValue") or rec[0].get("stringValue"))
@@ -130,8 +136,11 @@ def handler(event, context):
         }
     except Exception as e:
         # Catch any unexpected errors and return proper error with CORS headers
+        print(f"Unexpected error in /me handler: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return {
             "statusCode": 500,
             "headers": cors_headers,
-            "body": json.dumps({"error": "internal server error"})
+            "body": json.dumps({"error": "internal server error", "message": str(e)})
         }
