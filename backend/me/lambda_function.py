@@ -1,5 +1,6 @@
 # lambda_me.py
 import os, json, base64, hmac, hashlib
+from urllib.parse import urlparse
 import boto3
 
 rds = boto3.client("rds-data")
@@ -9,13 +10,25 @@ DB_NAME = os.environ.get("DB_NAME", "postgres")
 APP_SECRET = os.environ["APP_SECRET"].encode()
 FRONTEND_URL = os.environ.get("FRONTEND_URL", "").rstrip("/")
 
+def get_cors_origin():
+    """Extract origin (scheme + host) from FRONTEND_URL for CORS headers"""
+    if not FRONTEND_URL:
+        return None
+    parsed = urlparse(FRONTEND_URL)
+    # Origin only includes scheme + netloc (no path)
+    # Validate that both scheme and netloc are present
+    if not parsed.scheme or not parsed.netloc:
+        return None
+    return f"{parsed.scheme}://{parsed.netloc}"
+
 def get_cors_headers():
     """Return CORS headers for cross-origin requests"""
     headers = {
         "Content-Type": "application/json",
     }
-    if FRONTEND_URL:
-        headers["Access-Control-Allow-Origin"] = FRONTEND_URL
+    origin = get_cors_origin()
+    if origin:
+        headers["Access-Control-Allow-Origin"] = origin
         headers["Access-Control-Allow-Credentials"] = "true"
     return headers
 
@@ -40,6 +53,19 @@ def exec_sql(sql, parameters=None):
 
 def handler(event, context):
     cors_headers = get_cors_headers()
+    
+    # Handle OPTIONS preflight requests
+    if event.get("requestContext", {}).get("http", {}).get("method") == "OPTIONS":
+        return {
+            "statusCode": 200,
+            "headers": {
+                **cors_headers,
+                "Access-Control-Allow-Methods": "GET, OPTIONS",
+                "Access-Control-Allow-Headers": "Content-Type, Cookie",
+                "Access-Control-Max-Age": "86400"
+            },
+            "body": ""
+        }
     
     try:
         cookie_header = (event.get("headers") or {}).get("cookie") or (event.get("headers") or {}).get("Cookie")
