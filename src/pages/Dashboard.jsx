@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { fetchMe } from '../utils/api';
+import { fetchMe, fetchActivities } from '../utils/api';
 
 function Dashboard() {
   const [stats] = useState({
@@ -11,6 +11,11 @@ function Dashboard() {
   const [authState, setAuthState] = useState({
     loading: true,
     user: null,
+    error: null,
+  });
+  const [activitiesState, setActivitiesState] = useState({
+    loading: false,
+    activities: [],
     error: null,
   });
   const navigate = useNavigate();
@@ -30,6 +35,8 @@ function Dashboard() {
           user: result.user,
           error: null,
         });
+        // Fetch activities after successful authentication
+        loadActivities();
       } else if (result.notConnected) {
         // User is not connected (401 response)
         console.log('Dashboard: User not connected, redirecting to /connect');
@@ -47,6 +54,27 @@ function Dashboard() {
 
     checkAuth();
   }, [navigate]);
+
+  // Load activities for the authenticated user
+  const loadActivities = async () => {
+    setActivitiesState({ loading: true, activities: [], error: null });
+    
+    const result = await fetchActivities(10, 0);
+    
+    if (result.success) {
+      setActivitiesState({
+        loading: false,
+        activities: result.data.activities || [],
+        error: null,
+      });
+    } else {
+      setActivitiesState({
+        loading: false,
+        activities: [],
+        error: result.error || 'Failed to load activities',
+      });
+    }
+  };
 
   // Loading state
   if (authState.loading) {
@@ -157,9 +185,86 @@ function Dashboard() {
           <h2 className="text-xl font-semibold text-gray-900 mb-4">
             Recent Activities
           </h2>
-          <p className="text-gray-500">
-            No activities yet. Connect your Strava account to see your running data.
-          </p>
+          
+          {activitiesState.loading && (
+            <div className="text-center py-8">
+              <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-orange-600 mb-2"></div>
+              <p className="text-gray-500">Loading activities...</p>
+            </div>
+          )}
+          
+          {activitiesState.error && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+              <p className="text-red-600">{activitiesState.error}</p>
+            </div>
+          )}
+          
+          {!activitiesState.loading && !activitiesState.error && activitiesState.activities.length === 0 && (
+            <p className="text-gray-500">
+              No activities yet. Your Strava activities will appear here once they are synced.
+            </p>
+          )}
+          
+          {!activitiesState.loading && !activitiesState.error && activitiesState.activities.length > 0 && (
+            <div className="space-y-4">
+              {activitiesState.activities.map((activity) => {
+                const distanceMiles = (activity.distance / 1609.34).toFixed(2);
+                const durationMinutes = Math.floor(activity.moving_time / 60);
+                const durationSeconds = activity.moving_time % 60;
+                const pace = activity.distance > 0 
+                  ? (activity.moving_time / 60) / (activity.distance / 1609.34)
+                  : 0;
+                const paceMin = Math.floor(pace);
+                const paceSec = Math.floor((pace - paceMin) * 60);
+                
+                // Format date
+                const activityDate = activity.start_date_local 
+                  ? new Date(activity.start_date_local).toLocaleDateString('en-US', {
+                      weekday: 'short',
+                      year: 'numeric',
+                      month: 'short',
+                      day: 'numeric',
+                    })
+                  : '';
+                
+                return (
+                  <div 
+                    key={activity.id}
+                    className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 transition-colors"
+                  >
+                    <div className="flex justify-between items-start mb-2">
+                      <div>
+                        <h3 className="font-semibold text-gray-900">{activity.name}</h3>
+                        <p className="text-sm text-gray-500">{activityDate}</p>
+                      </div>
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
+                        {activity.type}
+                      </span>
+                    </div>
+                    
+                    <div className="grid grid-cols-3 gap-4 text-sm">
+                      <div>
+                        <p className="text-gray-500">Distance</p>
+                        <p className="font-semibold text-gray-900">{distanceMiles} mi</p>
+                      </div>
+                      <div>
+                        <p className="text-gray-500">Duration</p>
+                        <p className="font-semibold text-gray-900">
+                          {durationMinutes}:{durationSeconds.toString().padStart(2, '0')}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-gray-500">Pace</p>
+                        <p className="font-semibold text-gray-900">
+                          {paceMin}:{paceSec.toString().padStart(2, '0')}/mi
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       </div>
     </div>
