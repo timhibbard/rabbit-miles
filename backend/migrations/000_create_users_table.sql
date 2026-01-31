@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS users (
     profile_picture TEXT,
     access_token TEXT NOT NULL,
     refresh_token TEXT NOT NULL,
-    expires_at BIGINT NOT NULL,
+    expires_at BIGINT NOT NULL CHECK (expires_at > 0),  -- Unix timestamp in seconds (not milliseconds)
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
@@ -23,6 +23,6 @@ COMMENT ON COLUMN users.display_name IS 'User display name from Strava (firstnam
 COMMENT ON COLUMN users.profile_picture IS 'URL to the athlete profile picture from Strava';
 COMMENT ON COLUMN users.access_token IS 'Strava OAuth access token';
 COMMENT ON COLUMN users.refresh_token IS 'Strava OAuth refresh token';
-COMMENT ON COLUMN users.expires_at IS 'Unix timestamp when the access token expires';
+COMMENT ON COLUMN users.expires_at IS 'Unix timestamp in seconds (not milliseconds) when the access token expires';
 COMMENT ON COLUMN users.created_at IS 'Timestamp when the user first connected';
 COMMENT ON COLUMN users.updated_at IS 'Timestamp when the user last updated their connection';

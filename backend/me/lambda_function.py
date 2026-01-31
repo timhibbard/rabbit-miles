@@ -139,8 +139,9 @@ def handler(event, context):
         print(f"Unexpected error in /me handler: {str(e)}")
         import traceback
         traceback.print_exc()
+        # Return generic error to client, full details are in CloudWatch logs
         return {
             "statusCode": 500,
             "headers": cors_headers,
-            "body": json.dumps({"error": "internal server error", "message": str(e)})
+            "body": json.dumps({"error": "internal server error"})
         }
