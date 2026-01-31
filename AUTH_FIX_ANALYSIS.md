@@ -4,38 +4,9 @@
 
 After a user connects with Strava, the authenticated user information is not showing in the SPA.
 
-## Root Cause Analysis
+## Analysis and Solutions
 
-### Issue 1: Missing Database Schema (CRITICAL)
-
-**Problem:** The `users` table does not exist in the database.
-
-**Evidence:**
-- No `CREATE TABLE users` migration file found
-- Only `002_add_profile_picture.sql` which tries to ALTER TABLE users
-- If the table doesn't exist, the auth_callback Lambda will fail when trying to INSERT/UPSERT user data
-
-**Impact:**
-- OAuth flow completes on Strava side
-- auth_callback receives the code and exchanges it for tokens
-- Database INSERT fails silently (caught by try/catch)
-- User record is never created
-- Session cookie is never set
-- /me endpoint returns 401 because no valid session exists
-
-**Fix:**
-- Created `backend/migrations/000_create_users_table.sql`
-- Defines complete schema with all required columns:
-  - athlete_id (BIGINT PRIMARY KEY)
-  - display_name (VARCHAR(255))
-  - profile_picture (TEXT, nullable)
-  - access_token (TEXT)
-  - refresh_token (TEXT)
-  - expires_at (BIGINT)
-  - created_at (TIMESTAMP)
-  - updated_at (TIMESTAMP)
-
-### Issue 2: Suboptimal OAuth Redirect Flow
+### Issue 1: Suboptimal OAuth Redirect Flow
 
 **Problem:** After OAuth success, user is redirected to `/?connected=1` (Dashboard page)
 
@@ -57,7 +28,7 @@ After a user connects with Strava, the authenticated user information is not sho
 **Fix:**
 - Changed auth_callback redirect from `{FRONTEND}/?connected=1` to `{FRONTEND}/connect?connected=1`
 
-### Issue 3: Insufficient Logging and Error Messages
+### Issue 2: Insufficient Logging and Error Messages
 
 **Problem:** When issues occur, it's difficult to diagnose them.
 
@@ -104,28 +75,7 @@ Added comprehensive logging:
 
 ## Deployment Requirements
 
-### 1. Database Migration (CRITICAL)
-
-Must run before OAuth will work:
-
-```bash
-aws rds-data execute-statement \
-  --resource-arn "$DB_CLUSTER_ARN" \
-  --secret-arn "$DB_SECRET_ARN" \
-  --database "postgres" \
-  --sql "$(cat backend/migrations/000_create_users_table.sql)"
-```
-
-Verify:
-```bash
-aws rds-data execute-statement \
-  --resource-arn "$DB_CLUSTER_ARN" \
-  --secret-arn "$DB_SECRET_ARN" \
-  --database "postgres" \
-  --sql "SELECT table_name FROM information_schema.tables WHERE table_name = 'users'"
-```
-
-### 2. Lambda Deployment
+### 1. Lambda Deployment
 
 Deploy updated Lambda functions:
 
@@ -153,7 +103,7 @@ aws lambda update-function-code \
   --zip-file fileb://function.zip
 ```
 
-### 3. Frontend Deployment
+### 2. Frontend Deployment
 
 Frontend changes are automatically deployed via GitHub Actions when merged to main.
 

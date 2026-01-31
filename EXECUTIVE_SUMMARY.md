@@ -3,37 +3,9 @@
 ## Problem
 After connecting with Strava, authenticated user information was not showing in the RabbitMiles SPA.
 
-## Root Causes Identified
-
-### 1. Missing Database Table (CRITICAL) ⚠️
-- The `users` table does not exist in the database
-- Without this table, OAuth cannot store user data
-- This is a **blocking issue** that prevents authentication from working
-
-### 2. Suboptimal User Experience
-- After OAuth, users were redirected directly to Dashboard
-- If authentication failed for any reason, users saw confusing error states
-- No clear indication of connection success
-
-### 3. Insufficient Debugging Capabilities
-- Limited logging made it difficult to diagnose issues
-- Generic error messages provided no context
-- No visibility into authentication flow steps
-
 ## Solutions Implemented
 
-### 1. Database Schema ✅
-**File:** `backend/migrations/000_create_users_table.sql`
-
-Created comprehensive users table migration with:
-- All required columns for Strava OAuth
-- Proper data types and constraints
-- Indexes for performance
-- Documentation comments
-
-**Status:** Ready for deployment (must be deployed first)
-
-### 2. Improved User Flow ✅
+### 1. Improved User Flow ✅
 **Changed:** OAuth redirect destination
 
 Before: `/?connected=1` (Dashboard)
@@ -44,7 +16,7 @@ Benefits:
 - Smooth transition to Dashboard via button
 - Better error handling if connection fails
 
-### 3. Enhanced Debugging ✅
+### 2. Enhanced Debugging ✅
 **Added:** Comprehensive logging and error handling
 
 Backend (Lambda):
@@ -74,23 +46,18 @@ Created three comprehensive guides:
 
 ## Deployment Requirements
 
-### Critical: Run in This Order
+### Run in This Order
 
-1. **Database Migration** (5 minutes)
-   - Create users table
-   - Must be done first
-   - See: DEPLOYMENT_CHECKLIST.md Step 2
-
-2. **Lambda Deployment** (10 minutes)
-   - Deploy auth_callback Lambda
-   - Deploy me Lambda
+1. **Lambda Deployment** (10 minutes)
+   - Deploy auth_callback Lambda (improved redirect)
+   - Deploy me Lambda (enhanced logging)
    - See: DEPLOYMENT_CHECKLIST.md Steps 3-4
 
-3. **Frontend Deployment** (Automatic)
+2. **Frontend Deployment** (Automatic)
    - Auto-deploys when PR merged to main
    - Via GitHub Actions
 
-### Estimated Total Time: 15-20 minutes
+### Estimated Total Time: 10-15 minutes
 
 ## Testing Requirements
 
@@ -112,7 +79,6 @@ See: DEPLOYMENT_CHECKLIST.md "Post-Deployment Testing" section
 - Rollback procedures documented
 
 ### Dependencies
-- Database migration must complete successfully
 - Lambda deployments must succeed
 - Environment variables must be configured
 
@@ -130,8 +96,7 @@ After deployment, users should be able to:
 If issues occur:
 1. Check TROUBLESHOOTING_AUTH.md for common issues
 2. Review CloudWatch logs for detailed error context
-3. Verify database migration completed
-4. Verify Lambda environment variables
+3. Verify Lambda environment variables
 
 ## Next Steps After Deployment
 
@@ -147,10 +112,8 @@ If issues occur:
 ## Files Changed
 
 ### Backend
-- `backend/migrations/000_create_users_table.sql` (new)
 - `backend/me/lambda_function.py` (modified)
 - `backend/auth_callback/lambda_function.py` (modified)
-- `backend/migrations/README.md` (modified)
 
 ### Frontend
 - `src/utils/api.js` (modified)
@@ -164,9 +127,8 @@ If issues occur:
 
 ## Summary
 
-This PR provides a complete solution to the authentication issue:
-- ✅ Identifies and fixes the root cause (missing database table)
-- ✅ Improves user experience with better OAuth flow
+This PR improves the authentication debugging and user experience:
+- ✅ Improves user experience with better OAuth redirect flow
 - ✅ Adds comprehensive logging for debugging
 - ✅ Provides detailed deployment and troubleshooting guides
 - ✅ Maintains security best practices

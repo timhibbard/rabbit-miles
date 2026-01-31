@@ -26,8 +26,4 @@ psql -h DATABASE_HOST -U USERNAME -d postgres -f backend/migrations/001_create_o
 
 ## Migration List
 
-Run migrations in numerical order:
-
-- `000_create_users_table.sql` - Creates the `users` table for storing user information and Strava OAuth tokens
 - `001_create_oauth_states.sql` - Creates the `oauth_states` table for storing temporary OAuth state tokens during the authorization flow
-- `002_add_profile_picture.sql` - Adds profile_picture column to users table (can be skipped if running 000 first)

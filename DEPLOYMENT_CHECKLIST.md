@@ -5,7 +5,6 @@ Use this checklist to deploy the authentication fix step by step.
 ## Pre-Deployment Verification
 
 - [ ] You have AWS CLI configured with appropriate credentials
-- [ ] You have access to the RDS cluster and can run Data API commands
 - [ ] You have access to Lambda functions for deployment
 - [ ] You have environment variables documented (see below)
 
@@ -39,45 +38,7 @@ aws lambda get-function --function-name YOUR_AUTH_CALLBACK_FUNCTION > auth_callb
 aws lambda get-function --function-name YOUR_ME_FUNCTION > me_backup.json
 ```
 
-### Step 2: Deploy Database Migration (CRITICAL - Do This First)
-
-```bash
-# Set environment variables for your RDS cluster
-export DB_CLUSTER_ARN="arn:aws:rds:us-east-1:ACCOUNT_ID:cluster:YOUR_CLUSTER"
-export DB_SECRET_ARN="arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:YOUR_SECRET"
-export DB_NAME="postgres"
-
-# Run the migration
-aws rds-data execute-statement \
-  --resource-arn "$DB_CLUSTER_ARN" \
-  --secret-arn "$DB_SECRET_ARN" \
-  --database "$DB_NAME" \
-  --sql "$(cat backend/migrations/000_create_users_table.sql)"
-```
-
-**Expected Output:**
-```json
-{
-    "numberOfRecordsUpdated": 0
-}
-```
-
-**Verify Table Creation:**
-```bash
-aws rds-data execute-statement \
-  --resource-arn "$DB_CLUSTER_ARN" \
-  --secret-arn "$DB_SECRET_ARN" \
-  --database "$DB_NAME" \
-  --sql "SELECT table_name FROM information_schema.tables WHERE table_name = 'users'"
-```
-
-**Expected Output:**
-```json
-{
-    "records": [
-        [
-            {
-                "stringValue": "users"
+### Step 2: Deploy auth_callback Lambda
             }
         ]
     ]
@@ -110,9 +71,9 @@ aws lambda get-function-configuration \
   --query 'LastModified'
 ```
 
-✅ **Step 3 Complete** - auth_callback Lambda deployed
+✅ **Step 2 Complete** - auth_callback Lambda deployed
 
-### Step 4: Deploy me Lambda
+### Step 3: Deploy me Lambda
 
 ```bash
 # Navigate to me directory
@@ -136,9 +97,9 @@ aws lambda get-function-configuration \
   --query 'LastModified'
 ```
 
-✅ **Step 4 Complete** - me Lambda deployed
+✅ **Step 3 Complete** - me Lambda deployed
 
-### Step 5: Deploy Frontend (Automatic via GitHub Actions)
+### Step 4: Deploy Frontend (Automatic via GitHub Actions)
 
 The frontend changes will be automatically deployed when this PR is merged to main.
 
@@ -151,7 +112,7 @@ npm run build
 # Or manually deploy dist/ to GitHub Pages
 ```
 
-✅ **Step 5 Complete** - Frontend will auto-deploy
+✅ **Step 4 Complete** - Frontend will auto-deploy
 
 ## Post-Deployment Testing
 

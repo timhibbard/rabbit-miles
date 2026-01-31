@@ -14,21 +14,12 @@ This guide helps debug issues with the Strava OAuth authentication flow and user
 
 **Root Causes and Solutions:**
 
-#### A. Database Missing Users Table
+#### A. Database Table Issues
 
-**Check:** Look at CloudWatch logs for auth_callback Lambda. If you see database errors mentioning "relation 'users' does not exist", the users table hasn't been created.
+**Check:** Look at CloudWatch logs for auth_callback Lambda. If you see database errors mentioning "relation 'users' does not exist" or similar, there may be a database schema issue.
 
 **Solution:**
-```bash
-# Run the migration to create the users table
-aws rds-data execute-statement \
-  --resource-arn "arn:aws:rds:us-east-1:ACCOUNT_ID:cluster:YOUR_CLUSTER" \
-  --secret-arn "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:YOUR_SECRET" \
-  --database "postgres" \
-  --sql "$(cat backend/migrations/000_create_users_table.sql)"
-```
-
-**Verification:**
+Check if the users table exists and has the correct schema:
 ```bash
 # Verify table exists
 aws rds-data execute-statement \
