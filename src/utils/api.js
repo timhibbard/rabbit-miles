@@ -11,18 +11,6 @@ const api = axios.create({
   withCredentials: true, // Include cookies in all requests
 });
 
-// Add response interceptor for error handling
-api.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    if (error.response?.status === 401) {
-      // Handle unauthorized access - redirect to connect page
-      window.location.href = '/rabbit-miles/connect';
-    }
-    return Promise.reject(error);
-  }
-);
-
 // Fetch current user from /me endpoint
 export const fetchMe = async () => {
   try {
