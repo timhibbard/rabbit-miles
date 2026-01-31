@@ -214,9 +214,10 @@ def fetch_activities_for_athlete(athlete_id, access_token, refresh_token, expire
     """Fetch and store activities for a single athlete"""
     current_time = int(time.time())
     
-    # Check if token needs refresh
-    if expires_at < current_time:
-        print(f"Access token expired for athlete {athlete_id}, refreshing...")
+    # Check if token needs refresh (with 5-minute buffer to prevent expiration during API call)
+    TOKEN_REFRESH_BUFFER = 300  # 5 minutes
+    if expires_at < current_time + TOKEN_REFRESH_BUFFER:
+        print(f"Access token expired or expiring soon for athlete {athlete_id}, refreshing...")
         access_token = refresh_access_token(athlete_id, refresh_token)
     
     # Fetch activities from Strava (first page, 30 activities)

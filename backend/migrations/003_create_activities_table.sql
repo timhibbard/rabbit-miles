@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS activities (
 
 -- Create indexes for efficient queries
 CREATE INDEX IF NOT EXISTS idx_activities_athlete_id ON activities(athlete_id);
-CREATE INDEX IF NOT EXISTS idx_activities_start_date ON activities(start_date DESC);
+CREATE INDEX IF NOT EXISTS idx_activities_start_date ON activities(start_date);
 CREATE INDEX IF NOT EXISTS idx_activities_strava_activity_id ON activities(strava_activity_id);
 
 -- Add comment for documentation

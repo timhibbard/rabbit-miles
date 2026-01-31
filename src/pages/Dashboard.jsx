@@ -2,6 +2,9 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { fetchMe, fetchActivities } from '../utils/api';
 
+// Constants
+const METERS_TO_MILES = 1609.34;
+
 function Dashboard() {
   const [stats] = useState({
     totalMiles: 0,
@@ -208,14 +211,18 @@ function Dashboard() {
           {!activitiesState.loading && !activitiesState.error && activitiesState.activities.length > 0 && (
             <div className="space-y-4">
               {activitiesState.activities.map((activity) => {
-                const distanceMiles = (activity.distance / 1609.34).toFixed(2);
+                const distanceMiles = (activity.distance / METERS_TO_MILES).toFixed(2);
                 const durationMinutes = Math.floor(activity.moving_time / 60);
                 const durationSeconds = activity.moving_time % 60;
-                const pace = activity.distance > 0 
-                  ? (activity.moving_time / 60) / (activity.distance / 1609.34)
-                  : 0;
-                const paceMin = Math.floor(pace);
-                const paceSec = Math.floor((pace - paceMin) * 60);
+                
+                // Calculate pace with proper zero handling
+                let paceMin = 0;
+                let paceSec = 0;
+                if (activity.distance > 0 && activity.moving_time > 0) {
+                  const pace = (activity.moving_time / 60) / (activity.distance / METERS_TO_MILES);
+                  paceMin = Math.floor(pace);
+                  paceSec = Math.floor((pace - paceMin) * 60);
+                }
                 
                 // Format date
                 const activityDate = activity.start_date_local 
@@ -256,7 +263,10 @@ function Dashboard() {
                       <div>
                         <p className="text-gray-500">Pace</p>
                         <p className="font-semibold text-gray-900">
-                          {paceMin}:{paceSec.toString().padStart(2, '0')}/mi
+                          {activity.distance > 0 && activity.moving_time > 0 
+                            ? `${paceMin}:${paceSec.toString().padStart(2, '0')}/mi`
+                            : 'N/A'
+                          }
                         </p>
                       </div>
                     </div>
