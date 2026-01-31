@@ -1,0 +1,49 @@
+name: Deploy Lambda Functions
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'backend/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy ${{ matrix.lambda.name }} Lambda
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        lambda:
+          - name: auth_start
+            secret: LAMBDA_AUTH_START_NAME
+          - name: auth_callback
+            secret: LAMBDA_AUTH_CALLBACK_NAME
+          - name: auth_disconnect
+            secret: LAMBDA_AUTH_DISCONNECT_NAME
+          - name: me
+            secret: LAMBDA_ME_NAME
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Package ${{ matrix.lambda.name }} Lambda
+        run: |
+          cd backend/${{ matrix.lambda.name }}
+          zip -r function.zip lambda_function.py
+
+      - name: Deploy ${{ matrix.lambda.name }} Lambda
+        run: |
+          aws lambda update-function-code \
+            --function-name ${{ secrets[matrix.lambda.secret] }} \
+            --zip-file fileb://backend/${{ matrix.lambda.name }}/function.zip

@@ -71,9 +71,11 @@ npm run preview
 
 ## Deployment
 
+### Frontend Deployment
+
 The app automatically deploys to GitHub Pages when changes are pushed to the `main` branch via GitHub Actions.
 
-### Setup GitHub Pages Deployment
+#### Setup GitHub Pages Deployment
 
 1. Go to your repository Settings → Pages
 2. Set Source to "GitHub Actions"
@@ -81,6 +83,12 @@ The app automatically deploys to GitHub Pages when changes are pushed to the `ma
    - Go to Settings → Secrets and variables → Actions
    - Add a new secret named `VITE_API_BASE_URL`
    - Set the value to your AWS backend endpoint
+
+### Backend Deployment
+
+AWS Lambda functions automatically deploy when changes are pushed to the `backend/` directory on the `main` branch.
+
+For setup instructions, see [LAMBDA_DEPLOYMENT.md](LAMBDA_DEPLOYMENT.md).
 
 ## Environment Variables
 
