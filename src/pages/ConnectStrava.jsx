@@ -30,7 +30,7 @@ function ConnectStrava() {
         
         // Clean up the URL if we just connected
         if (justConnected) {
-          window.history.replaceState({}, '', '/');
+          window.history.replaceState({}, '', window.location.pathname);
         }
       } else {
         setAuthState({
