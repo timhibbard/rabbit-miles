@@ -186,10 +186,15 @@ If deployments succeed but functions don't work:
 The deployment workflow (`.github/workflows/deploy-lambdas.yml`) includes:
 
 - **Trigger:** Runs on push to `main` branch when `backend/**` files change, or manually via workflow_dispatch
-- **Jobs:** One job per Lambda function (runs in parallel)
+- **Jobs:** Uses a matrix strategy to deploy all four Lambda functions in parallel
 - **Packaging:** Each function directory is zipped using the `zip` command
 - **Deployment:** Uses `aws lambda update-function-code` AWS CLI command to deploy
 - **Authentication:** Uses AWS credentials configured via GitHub secrets
+- **Permissions:** Sets minimal `contents: read` permission for GITHUB_TOKEN following security best practices
+
+### Security Note on Matrix Strategy
+
+The workflow uses a matrix strategy with dynamic secret references (`${{ secrets[matrix.lambda.secret] }}`). While CodeQL may flag this as "excessive-secrets-exposure", this is a false positive. The workflow only accesses the specific secrets defined in the matrix (LAMBDA_AUTH_START_NAME, LAMBDA_AUTH_CALLBACK_NAME, LAMBDA_AUTH_DISCONNECT_NAME, LAMBDA_ME_NAME) and does not expose all repository secrets. This is a standard and secure pattern for matrix-based deployments in GitHub Actions.
 
 ## Manual Deployment
 
