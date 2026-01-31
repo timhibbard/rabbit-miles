@@ -4,7 +4,7 @@ This guide explains how to set up automatic deployment of AWS Lambda functions u
 
 ## Overview
 
-The repository includes a GitHub Actions workflow that automatically deploys all four Lambda functions whenever changes are pushed to the `backend/` directory on the `main` branch. The workflow uses the official AWS Lambda Deploy Action.
+The repository includes a GitHub Actions workflow that automatically deploys all four Lambda functions whenever changes are pushed to the `backend/` directory on the `main` branch. The workflow uses the AWS CLI to package and deploy Lambda functions.
 
 ## Lambda Functions
 
@@ -187,9 +187,9 @@ The deployment workflow (`.github/workflows/deploy-lambdas.yml`) includes:
 
 - **Trigger:** Runs on push to `main` branch when `backend/**` files change, or manually via workflow_dispatch
 - **Jobs:** One job per Lambda function (runs in parallel)
-- **Runtime:** Python 3.12
-- **Handler:** `lambda_function.handler`
-- **Packaging:** AWS Lambda Deploy Action automatically packages each function directory
+- **Packaging:** Each function directory is zipped using the `zip` command
+- **Deployment:** Uses `aws lambda update-function-code` AWS CLI command to deploy
+- **Authentication:** Uses AWS credentials configured via GitHub secrets
 
 ## Manual Deployment
 
@@ -238,6 +238,8 @@ After setting up auto-deployment:
 
 ## Additional Resources
 
-- [AWS Lambda Deploy Action Documentation](https://github.com/marketplace/actions/aws-lambda-deploy)
+- [AWS Lambda Documentation](https://docs.aws.amazon.com/lambda/)
+- [AWS CLI Lambda Commands](https://docs.aws.amazon.com/cli/latest/reference/lambda/)
 - [AWS IAM Best Practices](https://docs.aws.amazon.com/IAM/latest/UserGuide/best-practices.html)
 - [GitHub Actions Secrets](https://docs.github.com/en/actions/security-guides/encrypted-secrets)
+- [AWS Configure Credentials Action](https://github.com/aws-actions/configure-aws-credentials)

@@ -23,13 +23,16 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
+      - name: Package auth_start Lambda
+        run: |
+          cd backend/auth_start
+          zip -r function.zip lambda_function.py
+
       - name: Deploy auth_start Lambda
-        uses: aws-actions/aws-lambda-deploy-action@v1
-        with:
-          function-name: ${{ secrets.LAMBDA_AUTH_START_NAME }}
-          handler: lambda_function.handler
-          runtime: python3.12
-          source-path: backend/auth_start
+        run: |
+          aws lambda update-function-code \
+            --function-name ${{ secrets.LAMBDA_AUTH_START_NAME }} \
+            --zip-file fileb://backend/auth_start/function.zip
 
   deploy-auth-callback:
     name: Deploy auth_callback Lambda
@@ -45,13 +48,16 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
+      - name: Package auth_callback Lambda
+        run: |
+          cd backend/auth_callback
+          zip -r function.zip lambda_function.py
+
       - name: Deploy auth_callback Lambda
-        uses: aws-actions/aws-lambda-deploy-action@v1
-        with:
-          function-name: ${{ secrets.LAMBDA_AUTH_CALLBACK_NAME }}
-          handler: lambda_function.handler
-          runtime: python3.12
-          source-path: backend/auth_callback
+        run: |
+          aws lambda update-function-code \
+            --function-name ${{ secrets.LAMBDA_AUTH_CALLBACK_NAME }} \
+            --zip-file fileb://backend/auth_callback/function.zip
 
   deploy-auth-disconnect:
     name: Deploy auth_disconnect Lambda
@@ -67,13 +73,16 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
+      - name: Package auth_disconnect Lambda
+        run: |
+          cd backend/auth_disconnect
+          zip -r function.zip lambda_function.py
+
       - name: Deploy auth_disconnect Lambda
-        uses: aws-actions/aws-lambda-deploy-action@v1
-        with:
-          function-name: ${{ secrets.LAMBDA_AUTH_DISCONNECT_NAME }}
-          handler: lambda_function.handler
-          runtime: python3.12
-          source-path: backend/auth_disconnect
+        run: |
+          aws lambda update-function-code \
+            --function-name ${{ secrets.LAMBDA_AUTH_DISCONNECT_NAME }} \
+            --zip-file fileb://backend/auth_disconnect/function.zip
 
   deploy-me:
     name: Deploy me Lambda
@@ -89,10 +98,13 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
+      - name: Package me Lambda
+        run: |
+          cd backend/me
+          zip -r function.zip lambda_function.py
+
       - name: Deploy me Lambda
-        uses: aws-actions/aws-lambda-deploy-action@v1
-        with:
-          function-name: ${{ secrets.LAMBDA_ME_NAME }}
-          handler: lambda_function.handler
-          runtime: python3.12
-          source-path: backend/me
+        run: |
+          aws lambda update-function-code \
+            --function-name ${{ secrets.LAMBDA_ME_NAME }} \
+            --zip-file fileb://backend/me/function.zip
