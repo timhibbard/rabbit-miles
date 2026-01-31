@@ -17,7 +17,7 @@ import hmac
 import hashlib
 import base64
 from urllib.request import Request, urlopen
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 import boto3
 
 rds = boto3.client("rds-data")
@@ -36,7 +36,6 @@ STRAVA_TOKEN_URL = "https://www.strava.com/oauth/token"
 # Extract path from API_BASE_URL for cookie Path attribute
 # API_BASE_URL format: https://domain.com/stage or https://domain.com
 # We need the path portion (e.g., /stage) for cookies to work with API Gateway
-from urllib.parse import urlparse
 _parsed_api_base = urlparse(API_BASE)
 COOKIE_PATH = _parsed_api_base.path if _parsed_api_base.path else "/"
 
