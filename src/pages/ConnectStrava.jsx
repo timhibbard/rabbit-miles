@@ -14,6 +14,10 @@ function ConnectStrava() {
   });
 
   useEffect(() => {
+    // Check if we just returned from OAuth callback
+    const urlParams = new URLSearchParams(window.location.search);
+    const justConnected = urlParams.get('connected') === '1';
+    
     // Check if user is already connected
     const checkAuth = async () => {
       const result = await fetchMe();
@@ -23,6 +27,11 @@ function ConnectStrava() {
           connected: true,
           user: result.user,
         });
+        
+        // Clean up the URL if we just connected
+        if (justConnected) {
+          window.history.replaceState({}, '', '/');
+        }
       } else {
         setAuthState({
           loading: false,
