@@ -31,15 +31,36 @@ _parsed_api_base = urlparse(API_BASE)
 COOKIE_PATH = _parsed_api_base.path or "/"
 
 
-def _parse_cookies(headers: dict) -> dict:
-    cookie_header = (headers or {}).get("cookie") or (headers or {}).get("Cookie") or ""
+def _parse_cookies(event: dict) -> dict:
+    """Parse cookies from API Gateway HTTP API v2 event format or headers"""
     out = {}
-    for part in cookie_header.split(";"):
-        part = part.strip()
-        if not part or "=" not in part:
+    
+    # API Gateway HTTP API v2 provides cookies in event['cookies'] array
+    cookies_array = event.get("cookies") or []
+    for cookie_str in cookies_array:
+        if not cookie_str or "=" not in cookie_str:
             continue
-        k, v = part.split("=", 1)
-        out[k] = v
+        # Handle cookie strings that might have multiple cookies separated by semicolons
+        for part in cookie_str.split(";"):
+            part = part.strip()
+            if not part or "=" not in part:
+                continue
+            k, v = part.split("=", 1)
+            out[k] = v
+    
+    # Also check headers for backwards compatibility
+    headers = event.get("headers") or {}
+    cookie_header = headers.get("cookie") or headers.get("Cookie") or ""
+    if cookie_header:
+        for part in cookie_header.split(";"):
+            part = part.strip()
+            if not part or "=" not in part:
+                continue
+            k, v = part.split("=", 1)
+            # Prefer cookies from event['cookies'] array (v2 format) over headers (v1 format)
+            if k not in out:
+                out[k] = v
+    
     return out
 
 
@@ -72,8 +93,7 @@ def _exec_sql(sql: str, parameters: list = None):
 
 
 def handler(event, context):
-    headers = event.get("headers") or {}
-    cookies = _parse_cookies(headers)
+    cookies = _parse_cookies(event)
     session = cookies.get("rm_session")
     if not session:
         # still clear cookie and redirect

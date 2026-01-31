@@ -68,33 +68,57 @@ def handler(event, context):
         }
     
     try:
-        cookie_header = (event.get("headers") or {}).get("cookie") or (event.get("headers") or {}).get("Cookie")
-        print(f"Cookie header received: {cookie_header is not None}")
-        if not cookie_header or "rm_session=" not in cookie_header:
-            print(f"No rm_session cookie found. Cookie header: {cookie_header[:100] if cookie_header else 'None'}")
-            return {
-                "statusCode": 401,
-                "headers": cors_headers,
-                "body": json.dumps({"error": "not authenticated"})
-            }
+        # API Gateway HTTP API v2 provides cookies in event['cookies'] array, not in headers
+        # Format: ['cookie1=value1', 'cookie2=value2']
+        cookies_array = event.get("cookies") or []
         
-        # Parse cookies safely
+        # Also check headers for backwards compatibility (v1 format or testing)
+        cookie_header = (event.get("headers") or {}).get("cookie") or (event.get("headers") or {}).get("Cookie")
+        
+        print(f"Cookies array: {cookies_array}")
+        print(f"Cookie header: {cookie_header}")
+        
+        # Parse cookies from both sources
+        # Note: Cookie parsing logic is intentionally inlined here for performance and clarity
+        # in this security-critical authentication path, rather than using a helper function
         tok = None
-        for part in cookie_header.split(";"):
-            part = part.strip()
-            if not part or "=" not in part:
+        
+        # First, try the cookies array (API Gateway HTTP API v2 format)
+        for cookie_str in cookies_array:
+            if not cookie_str or "=" not in cookie_str:
                 continue
-            k, v = part.split("=", 1)
-            if k == "rm_session":
-                tok = v
+            # Handle cookie strings that might have multiple cookies separated by semicolons
+            for part in cookie_str.split(";"):
+                part = part.strip()
+                if not part or "=" not in part:
+                    continue
+                k, v = part.split("=", 1)
+                if k == "rm_session":
+                    tok = v
+                    break
+            if tok:
                 break
         
+        # Fallback to cookie header if not found in cookies array
+        if not tok and cookie_header:
+            for part in cookie_header.split(";"):
+                part = part.strip()
+                if not part or "=" not in part:
+                    continue
+                k, v = part.split("=", 1)
+                if k == "rm_session":
+                    tok = v
+                    break
+        
         if not tok:
+            print(f"No rm_session cookie found in cookies array ({len(cookies_array)} items) or cookie header")
             return {
                 "statusCode": 401,
                 "headers": cors_headers,
                 "body": json.dumps({"error": "not authenticated"})
             }
+        
+        print(f"Found rm_session cookie: {tok[:20]}...")
         
         aid = verify_session_token(tok)
         if not aid:
