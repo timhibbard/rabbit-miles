@@ -20,6 +20,27 @@ function Dashboard() {
   });
   const navigate = useNavigate();
 
+  // Load activities for the authenticated user
+  const loadActivities = async () => {
+    setActivitiesState({ loading: true, activities: [], error: null });
+    
+    const result = await fetchActivities(10, 0);
+    
+    if (result.success) {
+      setActivitiesState({
+        loading: false,
+        activities: result.data.activities || [],
+        error: null,
+      });
+    } else {
+      setActivitiesState({
+        loading: false,
+        activities: [],
+        error: result.error || 'Failed to load activities',
+      });
+    }
+  };
+
   useEffect(() => {
     // Check authentication status via /me endpoint
     const checkAuth = async () => {
@@ -54,27 +75,6 @@ function Dashboard() {
 
     checkAuth();
   }, [navigate]);
-
-  // Load activities for the authenticated user
-  const loadActivities = async () => {
-    setActivitiesState({ loading: true, activities: [], error: null });
-    
-    const result = await fetchActivities(10, 0);
-    
-    if (result.success) {
-      setActivitiesState({
-        loading: false,
-        activities: result.data.activities || [],
-        error: null,
-      });
-    } else {
-      setActivitiesState({
-        loading: false,
-        activities: [],
-        error: result.error || 'Failed to load activities',
-      });
-    }
-  };
 
   // Loading state
   if (authState.loading) {
