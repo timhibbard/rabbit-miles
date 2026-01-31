@@ -69,7 +69,7 @@ def handler(event, context):
     }
     url = "https://www.strava.com/oauth/authorize?" + urlencode(params)
 
-    cookie_val = f"rm_state={state}; HttpOnly; Secure; SameSite=Lax; Path={COOKIE_PATH}; Max-Age=600"
+    cookie_val = f"rm_state={state}; HttpOnly; Secure; SameSite=None; Path={COOKIE_PATH}; Max-Age=600"
 
     return {
         "statusCode": 302,
