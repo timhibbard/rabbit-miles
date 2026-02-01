@@ -58,9 +58,12 @@ function Dashboard() {
     if (result.success) {
       const message = result.data.message || 'Activities refreshed successfully';
       const totalStored = result.data.total_activities_stored || 0;
+      const detailMessage = totalStored > 0 
+        ? `${message} (${totalStored} activities synced)`
+        : `${message} (no new activities found)`;
       setRefreshState({
         refreshing: false,
-        message: `${message} (${totalStored} activities synced)`,
+        message: detailMessage,
         error: null,
       });
       // Reload activities after successful refresh

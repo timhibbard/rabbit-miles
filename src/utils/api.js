@@ -62,7 +62,6 @@ export const refreshActivities = async () => {
       console.log('User not authenticated (401)');
       return { success: false, notConnected: true };
     }
-    console.error('Error calling /activities/fetch:', error.message, error.response?.data);
     return { success: false, error: error.message };
   }
 };
