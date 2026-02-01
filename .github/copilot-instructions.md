@@ -40,7 +40,7 @@ The backend exposes these endpoints via API Gateway:
 - GET /auth/callback  
   Validates OAuth state, exchanges Strava code for tokens, upserts the user record, creates a signed `rm_session` cookie, and redirects back to the frontend.
 
-- POST /auth/disconnect  
+- GET /auth/disconnect  
   Clears Strava tokens in the database, clears the session cookie, and redirects to the frontend.
 
 - GET /me  
