@@ -60,20 +60,20 @@ Ensure the Lambda execution role has the necessary permissions:
 After deployment, test that the endpoint works correctly:
 
 1. **Test with valid authentication:**
-   - Log in to the application at https://timhibbard.github.io
+   - Log in to the application at your frontend URL (e.g., https://YOUR-DOMAIN.github.io)
    - Click the "Refresh Activities" button on the Dashboard
    - Should see success message with number of activities synced
 
 2. **Test without authentication (should fail gracefully):**
    ```bash
-   curl -X POST https://9zke9jame0.execute-api.us-east-1.amazonaws.com/prod/activities/fetch \
+   curl -X POST https://YOUR-API-GATEWAY-URL/prod/activities/fetch \
      -H "Content-Type: application/json"
    ```
    Expected: 401 response with `{"error": "not authenticated"}`
 
 3. **Test with invalid session (should fail gracefully):**
    ```bash
-   curl -X POST https://9zke9jame0.execute-api.us-east-1.amazonaws.com/prod/activities/fetch \
+   curl -X POST https://YOUR-API-GATEWAY-URL/prod/activities/fetch \
      -H "Content-Type: application/json" \
      -H "Cookie: rm_session=invalid.token.here"
    ```

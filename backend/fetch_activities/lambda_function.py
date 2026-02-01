@@ -65,6 +65,36 @@ def verify_session_token(tok):
         return None
 
 
+def parse_session_cookie(event):
+    """Parse rm_session cookie from API Gateway event"""
+    cookies_array = event.get("cookies") or []
+    cookie_header = (event.get("headers") or {}).get("cookie") or (event.get("headers") or {}).get("Cookie")
+    
+    # Try cookies array first (API Gateway HTTP API v2 format)
+    for cookie_str in cookies_array:
+        if not cookie_str or "=" not in cookie_str:
+            continue
+        for part in cookie_str.split(";"):
+            part = part.strip()
+            if not part or "=" not in part:
+                continue
+            k, v = part.split("=", 1)
+            if k == "rm_session":
+                return v
+    
+    # Fallback to cookie header
+    if cookie_header:
+        for part in cookie_header.split(";"):
+            part = part.strip()
+            if not part or "=" not in part:
+                continue
+            k, v = part.split("=", 1)
+            if k == "rm_session":
+                return v
+    
+    return None
+
+
 def _get_strava_creds():
     """Get Strava client credentials from env or Secrets Manager"""
     client_id = os.environ.get("STRAVA_CLIENT_ID")
@@ -267,36 +297,7 @@ def handler(event, context):
     
     try:
         # Parse cookies to get session token
-        cookies_array = event.get("cookies") or []
-        cookie_header = (event.get("headers") or {}).get("cookie") or (event.get("headers") or {}).get("Cookie")
-        
-        tok = None
-        
-        # Try cookies array first (API Gateway HTTP API v2 format)
-        for cookie_str in cookies_array:
-            if not cookie_str or "=" not in cookie_str:
-                continue
-            for part in cookie_str.split(";"):
-                part = part.strip()
-                if not part or "=" not in part:
-                    continue
-                k, v = part.split("=", 1)
-                if k == "rm_session":
-                    tok = v
-                    break
-            if tok:
-                break
-        
-        # Fallback to cookie header
-        if not tok and cookie_header:
-            for part in cookie_header.split(";"):
-                part = part.strip()
-                if not part or "=" not in part:
-                    continue
-                k, v = part.split("=", 1)
-                if k == "rm_session":
-                    tok = v
-                    break
+        tok = parse_session_cookie(event)
         
         if not tok:
             return {
