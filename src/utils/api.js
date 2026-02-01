@@ -49,4 +49,21 @@ export const fetchActivities = async (limit = 10, offset = 0) => {
   }
 };
 
+// Refresh activities from Strava
+export const refreshActivities = async () => {
+  try {
+    console.log('Calling /activities/fetch endpoint...');
+    const response = await api.post('/activities/fetch');
+    console.log('/activities/fetch response:', response.data);
+    return { success: true, data: response.data };
+  } catch (error) {
+    console.error('/activities/fetch endpoint error:', error);
+    if (error.response?.status === 401) {
+      console.log('User not authenticated (401)');
+      return { success: false, notConnected: true };
+    }
+    return { success: false, error: error.message };
+  }
+};
+
 export default api;

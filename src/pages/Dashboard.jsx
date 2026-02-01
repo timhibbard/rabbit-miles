@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { fetchMe, fetchActivities } from '../utils/api';
+import { fetchMe, fetchActivities, refreshActivities } from '../utils/api';
 
 // Constants
 const METERS_TO_MILES = 1609.34;
@@ -19,6 +19,11 @@ function Dashboard() {
   const [activitiesState, setActivitiesState] = useState({
     loading: false,
     activities: [],
+    error: null,
+  });
+  const [refreshState, setRefreshState] = useState({
+    refreshing: false,
+    message: null,
     error: null,
   });
   const navigate = useNavigate();
@@ -41,6 +46,42 @@ function Dashboard() {
         activities: [],
         error: result.error || 'Failed to load activities',
       });
+    }
+  };
+
+  // Refresh activities from Strava
+  const handleRefreshActivities = async () => {
+    setRefreshState({ refreshing: true, message: null, error: null });
+    
+    const result = await refreshActivities();
+    
+    if (result.success) {
+      const message = result.data.message || 'Activities refreshed successfully';
+      const totalStored = result.data.total_activities_stored || 0;
+      const detailMessage = totalStored > 0 
+        ? `${message} (${totalStored} activities synced)`
+        : `${message} (no new activities found)`;
+      setRefreshState({
+        refreshing: false,
+        message: detailMessage,
+        error: null,
+      });
+      // Reload activities after successful refresh
+      loadActivities();
+      // Clear success message after 5 seconds
+      setTimeout(() => {
+        setRefreshState(prev => ({ ...prev, message: null }));
+      }, 5000);
+    } else {
+      setRefreshState({
+        refreshing: false,
+        message: null,
+        error: result.error || 'Failed to refresh activities',
+      });
+      // Clear error message after 10 seconds
+      setTimeout(() => {
+        setRefreshState(prev => ({ ...prev, error: null }));
+      }, 10000);
     }
   };
 
@@ -185,9 +226,56 @@ function Dashboard() {
         </div>
 
         <div className="bg-white rounded-lg shadow p-6">
-          <h2 className="text-xl font-semibold text-gray-900 mb-4">
-            Recent Activities
-          </h2>
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-xl font-semibold text-gray-900">
+              Recent Activities
+            </h2>
+            <button
+              onClick={handleRefreshActivities}
+              disabled={refreshState.refreshing}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-white font-medium focus:outline-none focus:ring-2 focus:ring-orange-500 ${
+                refreshState.refreshing
+                  ? 'bg-gray-400 cursor-not-allowed'
+                  : 'bg-orange-600 hover:bg-orange-700'
+              }`}
+            >
+              {refreshState.refreshing ? (
+                <>
+                  <div className="inline-block animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                  <span>Refreshing...</span>
+                </>
+              ) : (
+                <>
+                  <svg
+                    className="w-4 h-4"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth="2"
+                      d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                    ></path>
+                  </svg>
+                  <span>Refresh Activities</span>
+                </>
+              )}
+            </button>
+          </div>
+          
+          {refreshState.message && (
+            <div className="mb-4 bg-green-50 border border-green-200 rounded-lg p-4">
+              <p className="text-green-800">{refreshState.message}</p>
+            </div>
+          )}
+          
+          {refreshState.error && (
+            <div className="mb-4 bg-red-50 border border-red-200 rounded-lg p-4">
+              <p className="text-red-800">{refreshState.error}</p>
+            </div>
+          )}
           
           {activitiesState.loading && (
             <div className="text-center py-8">
