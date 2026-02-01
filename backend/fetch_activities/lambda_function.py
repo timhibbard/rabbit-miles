@@ -236,7 +236,7 @@ def store_activities(athlete_id, activities):
             athlete_id, strava_activity_id, name, distance, moving_time, elapsed_time,
             total_elevation_gain, type, start_date, start_date_local, timezone, polyline, updated_at
         )
-        VALUES (:aid, :sid, :name, :dist, :mt, :et, :elev, :type, :sd, :sdl, :tz, :poly, now())
+        VALUES (:aid, :sid, :name, :dist, :mt, :et, :elev, :type, CAST(:sd AS TIMESTAMP), CAST(:sdl AS TIMESTAMP), :tz, :poly, now())
         ON CONFLICT (athlete_id, strava_activity_id) 
         DO UPDATE SET
             name = EXCLUDED.name,
