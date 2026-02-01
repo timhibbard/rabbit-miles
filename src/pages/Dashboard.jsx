@@ -303,14 +303,15 @@ function Dashboard() {
             <div className="space-y-4">
               {activitiesState.activities.map((activity) => {
                 const distanceMiles = (activity.distance / METERS_TO_MILES).toFixed(2);
-                const durationMinutes = Math.floor(activity.moving_time / 60);
-                const durationSeconds = activity.moving_time % 60;
+                const durationMinutes = Math.floor(activity.elapsed_time / 60);
+                const durationSeconds = activity.elapsed_time % 60;
                 
                 // Calculate pace with proper zero handling
+                // Pace = elapsed_time (minutes) / distance (miles)
                 let paceMin = 0;
                 let paceSec = 0;
-                if (activity.distance > 0 && activity.moving_time > 0) {
-                  const pace = (activity.moving_time / 60) / (activity.distance / METERS_TO_MILES);
+                if (activity.distance > 0 && activity.elapsed_time > 0) {
+                  const pace = (activity.elapsed_time / 60) / (activity.distance / METERS_TO_MILES);
                   paceMin = Math.floor(pace);
                   paceSec = Math.floor((pace - paceMin) * 60);
                 }
@@ -354,7 +355,7 @@ function Dashboard() {
                       <div>
                         <p className="text-gray-500">Pace</p>
                         <p className="font-semibold text-gray-900">
-                          {activity.distance > 0 && activity.moving_time > 0 
+                          {activity.distance > 0 && activity.elapsed_time > 0 
                             ? `${paceMin}:${paceSec.toString().padStart(2, '0')}/mi`
                             : 'N/A'
                           }
