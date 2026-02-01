@@ -63,7 +63,7 @@ def handler(event, context):
         "client_id": os.environ["STRAVA_CLIENT_ID"],
         "response_type": "code",
         "redirect_uri": redirect_uri,
-        "scope": "read,activity:read_all",
+        "scope": "read,activity:read",
         "state": state,
         "approval_prompt": "force",  # Force re-authorization to ensure correct scope
     }
