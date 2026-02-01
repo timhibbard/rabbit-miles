@@ -20,10 +20,12 @@ import boto3
 rds = boto3.client("rds-data")
 sm = boto3.client("secretsmanager")
 
-DB_CLUSTER_ARN = os.environ["DB_CLUSTER_ARN"]
-DB_SECRET_ARN = os.environ["DB_SECRET_ARN"]
+# Get environment variables safely - validation happens in handler
+DB_CLUSTER_ARN = os.environ.get("DB_CLUSTER_ARN", "")
+DB_SECRET_ARN = os.environ.get("DB_SECRET_ARN", "")
 DB_NAME = os.environ.get("DB_NAME", "postgres")
-APP_SECRET = os.environ["APP_SECRET"].encode()
+APP_SECRET_STR = os.environ.get("APP_SECRET", "")
+APP_SECRET = APP_SECRET_STR.encode() if APP_SECRET_STR else b""
 FRONTEND_URL = os.environ.get("FRONTEND_URL", "").rstrip("/")
 
 STRAVA_ACTIVITIES_URL = "https://www.strava.com/api/v3/athlete/activities"
@@ -345,6 +347,23 @@ def handler(event, context):
         }
     
     try:
+        # Validate required environment variables
+        if not DB_CLUSTER_ARN or not DB_SECRET_ARN:
+            print("ERROR: Missing DB_CLUSTER_ARN or DB_SECRET_ARN environment variable")
+            return {
+                "statusCode": 500,
+                "headers": cors_headers,
+                "body": json.dumps({"error": "server configuration error"})
+            }
+        
+        if not APP_SECRET:
+            print("ERROR: Missing APP_SECRET environment variable")
+            return {
+                "statusCode": 500,
+                "headers": cors_headers,
+                "body": json.dumps({"error": "server configuration error"})
+            }
+        
         # Parse cookies to get session token
         tok = parse_session_cookie(event)
         
