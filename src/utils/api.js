@@ -29,4 +29,24 @@ export const fetchMe = async () => {
   }
 };
 
+// Fetch activities for the authenticated user
+export const fetchActivities = async (limit = 10, offset = 0) => {
+  try {
+    console.log(`Calling /activities endpoint (limit=${limit}, offset=${offset})...`);
+    const response = await api.get('/activities', {
+      params: { limit, offset },
+    });
+    console.log('/activities response:', response.data);
+    return { success: true, data: response.data };
+  } catch (error) {
+    console.error('/activities endpoint error:', error);
+    if (error.response?.status === 401) {
+      console.log('User not authenticated (401)');
+      return { success: false, notConnected: true };
+    }
+    console.error('Error calling /activities:', error.message, error.response?.data);
+    return { success: false, error: error.message };
+  }
+};
+
 export default api;
