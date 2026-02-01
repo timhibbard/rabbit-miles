@@ -26,6 +26,10 @@ jobs:
             secret: LAMBDA_AUTH_DISCONNECT_NAME
           - name: me
             secret: LAMBDA_ME_NAME
+          - name: get_activities
+            secret: LAMBDA_GET_ACTIVITIES
+          - name: fetch_activities
+            secret: LAMBDA_FETCH_ACTIVITIES
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
