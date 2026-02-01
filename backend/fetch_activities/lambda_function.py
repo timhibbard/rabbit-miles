@@ -403,11 +403,17 @@ def handler(event, context):
         
         print(f"fetch_activities_for_athlete returned: {stored_count} activities stored")
         
+        # Provide helpful message based on result
+        if stored_count == 0:
+            message = "Successfully fetched activities (no new activities found). If you have activities in Strava but don't see them here, try disconnecting and reconnecting to grant the required permissions."
+        else:
+            message = "Successfully fetched activities"
+        
         return {
             "statusCode": 200,
             "headers": cors_headers,
             "body": json.dumps({
-                "message": f"Successfully fetched activities",
+                "message": message,
                 "total_activities_stored": stored_count
             })
         }
