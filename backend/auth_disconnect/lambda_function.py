@@ -1,5 +1,6 @@
 # rabbitmiles-auth-disconnect
 # Handler: lambda_function.handler
+# Method: GET (user navigates to this endpoint, it clears session and redirects)
 #
 # Env vars required:
 # DB_CLUSTER_ARN, DB_SECRET_ARN, DB_NAME=postgres
