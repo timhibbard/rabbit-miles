@@ -178,20 +178,40 @@ def fetch_strava_activities(access_token, per_page=30, page=1):
     
     try:
         with urlopen(req, timeout=30) as resp:
-            activities = json.loads(resp.read().decode())
+            response_body = resp.read().decode()
+            print(f"Strava API response status: {resp.status}, body length: {len(response_body)}")
+            activities = json.loads(response_body)
+            print(f"Parsed {len(activities) if isinstance(activities, list) else 'non-list'} activities from Strava")
         return activities
     except Exception as e:
         print(f"Failed to fetch activities from Strava: {e}")
+        print(f"Exception type: {type(e).__name__}")
+        if hasattr(e, 'code'):
+            print(f"HTTP status code: {e.code}")
+        if hasattr(e, 'read'):
+            try:
+                error_body = e.read().decode()
+                print(f"Error response body: {error_body}")
+            except:
+                pass
         raise
 
 
 def store_activities(athlete_id, activities):
     """Store activities in database"""
     stored_count = 0
+    failed_count = 0
+    
+    if not isinstance(activities, list):
+        print(f"ERROR: activities is not a list, got {type(activities)}: {activities}")
+        return 0
+    
+    print(f"Attempting to store {len(activities)} activities for athlete {athlete_id}")
     
     for activity in activities:
         strava_activity_id = activity.get("id")
         if not strava_activity_id:
+            print(f"WARNING: Skipping activity without id: {activity.keys() if isinstance(activity, dict) else type(activity)}")
             continue
         
         # Extract activity data
@@ -250,10 +270,14 @@ def store_activities(athlete_id, activities):
         try:
             _exec_sql(sql, params)
             stored_count += 1
+            print(f"Successfully stored activity {strava_activity_id}: {name}")
         except Exception as e:
-            print(f"Failed to store activity {strava_activity_id}: {e}")
+            failed_count += 1
+            print(f"ERROR: Failed to store activity {strava_activity_id} ({name}): {e}")
+            print(f"Activity data: distance={distance}, moving_time={moving_time}, type={activity_type}")
             continue
     
+    print(f"Storage complete: {stored_count} stored, {failed_count} failed")
     return stored_count
 
 
@@ -261,26 +285,51 @@ def fetch_activities_for_athlete(athlete_id, access_token, refresh_token, expire
     """Fetch and store activities for a single athlete"""
     current_time = int(time.time())
     
+    print(f"=== fetch_activities_for_athlete START ===")
+    print(f"athlete_id: {athlete_id}")
+    print(f"Token expires_at: {expires_at}, current_time: {current_time}, diff: {expires_at - current_time}s")
+    
     # Check if token needs refresh (with 5-minute buffer to prevent expiration during API call)
     TOKEN_REFRESH_BUFFER = 300  # 5 minutes
     if expires_at < current_time + TOKEN_REFRESH_BUFFER:
         print(f"Access token expired or expiring soon for athlete {athlete_id}, refreshing...")
-        access_token = refresh_access_token(athlete_id, refresh_token)
+        try:
+            access_token = refresh_access_token(athlete_id, refresh_token)
+            print(f"Token refresh successful, new token: {'***' if access_token else 'MISSING'}")
+        except Exception as e:
+            print(f"ERROR: Token refresh failed: {e}")
+            raise
+    else:
+        print(f"Access token is valid, skipping refresh")
     
     # Fetch activities from Strava (first page, 30 activities)
-    print(f"Fetching activities for athlete {athlete_id}...")
-    activities = fetch_strava_activities(access_token, per_page=30, page=1)
+    print(f"Fetching activities from Strava API for athlete {athlete_id}...")
+    try:
+        activities = fetch_strava_activities(access_token, per_page=30, page=1)
+        print(f"fetch_strava_activities returned: {type(activities)} with {len(activities) if isinstance(activities, list) else 'N/A'} items")
+    except Exception as e:
+        print(f"ERROR: Failed to fetch activities from Strava: {e}")
+        raise
     
     # Store activities in database
-    stored_count = store_activities(athlete_id, activities)
+    print(f"Storing activities in database...")
+    try:
+        stored_count = store_activities(athlete_id, activities)
+        print(f"store_activities returned: {stored_count}")
+    except Exception as e:
+        print(f"ERROR: Failed to store activities: {e}")
+        raise
     
-    print(f"Stored {stored_count} activities for athlete {athlete_id}")
+    print(f"=== fetch_activities_for_athlete END: {stored_count} activities stored ===")
     return stored_count
 
 
 def handler(event, context):
     """Lambda handler - requires authentication, fetches activities for authenticated user only"""
     cors_headers = get_cors_headers()
+    
+    print(f"fetch_activities handler called")
+    print(f"Request method: {event.get('requestContext', {}).get('http', {}).get('method')}")
     
     # Handle OPTIONS preflight
     if event.get("requestContext", {}).get("http", {}).get("method") == "OPTIONS":
@@ -300,6 +349,7 @@ def handler(event, context):
         tok = parse_session_cookie(event)
         
         if not tok:
+            print("ERROR: No session cookie found")
             return {
                 "statusCode": 401,
                 "headers": cors_headers,
@@ -309,11 +359,14 @@ def handler(event, context):
         # Verify session token
         athlete_id = verify_session_token(tok)
         if not athlete_id:
+            print("ERROR: Invalid session token")
             return {
                 "statusCode": 401,
                 "headers": cors_headers,
                 "body": json.dumps({"error": "invalid session"})
             }
+        
+        print(f"Authenticated as athlete_id: {athlete_id}")
         
         # Get user's tokens from database
         sql = "SELECT access_token, refresh_token, expires_at FROM users WHERE athlete_id = :aid"
@@ -322,6 +375,7 @@ def handler(event, context):
         
         records = result.get("records", [])
         if not records:
+            print(f"ERROR: User {athlete_id} not found in database")
             return {
                 "statusCode": 404,
                 "headers": cors_headers,
@@ -333,7 +387,10 @@ def handler(event, context):
         refresh_token = record[1].get("stringValue", "")
         expires_at = int(record[2].get("longValue", 0))
         
+        print(f"Retrieved tokens from database: access_token={'***' if access_token else 'MISSING'}, refresh_token={'***' if refresh_token else 'MISSING'}, expires_at={expires_at}")
+        
         if not access_token or not refresh_token:
+            print("ERROR: User not connected to Strava (tokens missing)")
             return {
                 "statusCode": 400,
                 "headers": cors_headers,
@@ -341,13 +398,22 @@ def handler(event, context):
             }
         
         # Fetch and store activities for this athlete
+        print(f"Calling fetch_activities_for_athlete...")
         stored_count = fetch_activities_for_athlete(athlete_id, access_token, refresh_token, expires_at)
+        
+        print(f"fetch_activities_for_athlete returned: {stored_count} activities stored")
+        
+        # Provide helpful message based on result
+        if stored_count == 0:
+            message = "Successfully fetched activities (no new activities found). If you have activities in Strava but don't see them here, try disconnecting and reconnecting to grant the required permissions."
+        else:
+            message = "Successfully fetched activities"
         
         return {
             "statusCode": 200,
             "headers": cors_headers,
             "body": json.dumps({
-                "message": f"Successfully fetched activities",
+                "message": message,
                 "total_activities_stored": stored_count
             })
         }

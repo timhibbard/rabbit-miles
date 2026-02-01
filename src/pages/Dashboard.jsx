@@ -58,9 +58,12 @@ function Dashboard() {
     if (result.success) {
       const message = result.data.message || 'Activities refreshed successfully';
       const totalStored = result.data.total_activities_stored || 0;
+      
+      // Show the message from backend (includes helpful hint for 0 activities)
       const detailMessage = totalStored > 0 
         ? `${message} (${totalStored} activities synced)`
-        : `${message} (no new activities found)`;
+        : message; // Use backend message as-is when 0 activities
+      
       setRefreshState({
         refreshing: false,
         message: detailMessage,
@@ -68,10 +71,10 @@ function Dashboard() {
       });
       // Reload activities after successful refresh
       loadActivities();
-      // Clear success message after 5 seconds
+      // Clear success message after 8 seconds (longer for hint message)
       setTimeout(() => {
         setRefreshState(prev => ({ ...prev, message: null }));
-      }, 5000);
+      }, 8000);
     } else {
       setRefreshState({
         refreshing: false,
