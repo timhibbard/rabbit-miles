@@ -4,10 +4,12 @@ from urllib.parse import urlparse
 import boto3
 
 rds = boto3.client("rds-data")
-DB_CLUSTER_ARN = os.environ["DB_CLUSTER_ARN"]
-DB_SECRET_ARN = os.environ["DB_SECRET_ARN"]
+# Get environment variables safely - validation happens in handler
+DB_CLUSTER_ARN = os.environ.get("DB_CLUSTER_ARN", "")
+DB_SECRET_ARN = os.environ.get("DB_SECRET_ARN", "")
 DB_NAME = os.environ.get("DB_NAME", "postgres")
-APP_SECRET = os.environ["APP_SECRET"].encode()
+APP_SECRET_STR = os.environ.get("APP_SECRET", "")
+APP_SECRET = APP_SECRET_STR.encode() if APP_SECRET_STR else b""
 FRONTEND_URL = os.environ.get("FRONTEND_URL", "").rstrip("/")
 
 def get_cors_origin():
@@ -68,6 +70,23 @@ def handler(event, context):
         }
     
     try:
+        # Validate required environment variables
+        if not DB_CLUSTER_ARN or not DB_SECRET_ARN:
+            print("ERROR: Missing DB_CLUSTER_ARN or DB_SECRET_ARN environment variable")
+            return {
+                "statusCode": 500,
+                "headers": cors_headers,
+                "body": json.dumps({"error": "server configuration error"})
+            }
+        
+        if not APP_SECRET:
+            print("ERROR: Missing APP_SECRET environment variable")
+            return {
+                "statusCode": 500,
+                "headers": cors_headers,
+                "body": json.dumps({"error": "server configuration error"})
+            }
+        
         # API Gateway HTTP API v2 provides cookies in event['cookies'] array, not in headers
         # Format: ['cookie1=value1', 'cookie2=value2']
         cookies_array = event.get("cookies") or []

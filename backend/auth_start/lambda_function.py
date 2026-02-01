@@ -10,18 +10,19 @@ import os, secrets, time
 from urllib.parse import urlencode, urlparse
 import boto3
 
-API_BASE = os.environ["API_BASE_URL"].rstrip("/")
+# Get environment variables safely - validation happens in handler
+API_BASE = os.environ.get("API_BASE_URL", "").rstrip("/")
 
 rds = boto3.client("rds-data")
-DB_CLUSTER_ARN = os.environ["DB_CLUSTER_ARN"]
-DB_SECRET_ARN = os.environ["DB_SECRET_ARN"]
+DB_CLUSTER_ARN = os.environ.get("DB_CLUSTER_ARN", "")
+DB_SECRET_ARN = os.environ.get("DB_SECRET_ARN", "")
 DB_NAME = os.environ.get("DB_NAME", "postgres")
 
 # Extract path from API_BASE_URL for cookie Path attribute
 # API_BASE_URL format: https://domain.com/stage or https://domain.com
 # We need the path portion (e.g., /stage) for cookies to work with API Gateway
-_parsed_api_base = urlparse(API_BASE)
-COOKIE_PATH = _parsed_api_base.path or "/"
+_parsed_api_base = urlparse(API_BASE) if API_BASE else None
+COOKIE_PATH = _parsed_api_base.path if _parsed_api_base and _parsed_api_base.path else "/"
 
 def _exec_sql(sql: str, parameters: list | None = None):
     kwargs = {
