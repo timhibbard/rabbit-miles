@@ -47,7 +47,7 @@ aws apigatewayv2 get-routes --api-id $API_ID
 
 ### 2. Verify the Fix
 
-1. Navigate to https://timhibbard.github.io/rabbit-miles/connect
+1. Navigate to `https://<your-github-username>.github.io/rabbit-miles/connect`
 2. Log in with Strava (if not already logged in)
 3. Click the "Disconnect Strava" button
 4. Verify you are redirected back to the frontend without a 404 error
@@ -64,10 +64,21 @@ aws apigatewayv2 get-routes --api-id $API_ID
 - Frontend shows disconnected state
 
 ## Why GET Instead of POST?
-1. **Consistency**: Other auth endpoints (`/auth/start`, `/auth/callback`) use GET
+1. **Consistency**: Other auth endpoints (`/auth/start`, `/auth/callback`) use GET, including `/auth/callback` which also changes state by creating a session
 2. **User Experience**: Simple navigation (not a form submission)
-3. **Idempotency**: Disconnect operation is safe to retry
+3. **Idempotency**: Disconnect operation is safe to retry without side effects
 4. **Frontend Pattern**: Using `window.location.href` is simpler and matches existing patterns
+5. **Protection**: Requires valid session cookie, preventing casual/accidental disconnects
+
+### Security Considerations
+While GET requests for state-changing operations are not ideal HTTP semantics, this is acceptable because:
+- The operation requires a valid, signed session cookie (prevents CSRF and unauthorized access)
+- The operation is idempotent (multiple disconnects have the same effect)
+- This matches the pattern of `/auth/callback` which also changes state
+- Browser prefetching and link crawlers won't have the session cookie
+- The user must be authenticated to trigger the disconnect
+
+For a more RESTful approach, consider changing the frontend to use a POST request with a form or fetch API in a future enhancement.
 
 ## Rollback
 If you need to revert:
