@@ -1,17 +1,18 @@
 # fetch_activities Lambda function
 # Fetches activities from Strava API and stores them in the database
-# Can be invoked:
-# 1. By API Gateway endpoint (e.g., POST /activities/fetch)
-# 2. By CloudWatch Events (scheduled)
-#
+# 
 # Env vars required:
 # DB_CLUSTER_ARN, DB_SECRET_ARN, DB_NAME=postgres
 # STRAVA_CLIENT_ID, STRAVA_CLIENT_SECRET (or STRAVA_SECRET_ARN)
+# APP_SECRET (for session verification)
 # FRONTEND_URL (for CORS)
 
 import os
 import json
 import time
+import base64
+import hmac
+import hashlib
 from urllib.request import Request, urlopen
 from urllib.parse import urlencode, urlparse
 import boto3
@@ -22,6 +23,7 @@ sm = boto3.client("secretsmanager")
 DB_CLUSTER_ARN = os.environ["DB_CLUSTER_ARN"]
 DB_SECRET_ARN = os.environ["DB_SECRET_ARN"]
 DB_NAME = os.environ.get("DB_NAME", "postgres")
+APP_SECRET = os.environ["APP_SECRET"].encode()
 FRONTEND_URL = os.environ.get("FRONTEND_URL", "").rstrip("/")
 
 STRAVA_ACTIVITIES_URL = "https://www.strava.com/api/v3/athlete/activities"
@@ -46,6 +48,51 @@ def get_cors_headers():
         headers["Access-Control-Allow-Origin"] = origin
         headers["Access-Control-Allow-Credentials"] = "true"
     return headers
+
+
+def verify_session_token(tok):
+    """Verify session token and return athlete_id"""
+    try:
+        b, sig = tok.rsplit(".", 1)
+        expected = hmac.new(APP_SECRET, b.encode(), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(sig, expected):
+            return None
+        data = json.loads(base64.urlsafe_b64decode(b + "=" * (-len(b) % 4)).decode())
+        if data.get("exp", 0) < time.time():
+            return None
+        return int(data.get("aid"))
+    except Exception:
+        return None
+
+
+def parse_session_cookie(event):
+    """Parse rm_session cookie from API Gateway event"""
+    cookies_array = event.get("cookies") or []
+    cookie_header = (event.get("headers") or {}).get("cookie") or (event.get("headers") or {}).get("Cookie")
+    
+    # Try cookies array first (API Gateway HTTP API v2 format)
+    for cookie_str in cookies_array:
+        if not cookie_str or "=" not in cookie_str:
+            continue
+        for part in cookie_str.split(";"):
+            part = part.strip()
+            if not part or "=" not in part:
+                continue
+            k, v = part.split("=", 1)
+            if k == "rm_session":
+                return v
+    
+    # Fallback to cookie header
+    if cookie_header:
+        for part in cookie_header.split(";"):
+            part = part.strip()
+            if not part or "=" not in part:
+                continue
+            k, v = part.split("=", 1)
+            if k == "rm_session":
+                return v
+    
+    return None
 
 
 def _get_strava_creds():
@@ -232,7 +279,7 @@ def fetch_activities_for_athlete(athlete_id, access_token, refresh_token, expire
 
 
 def handler(event, context):
-    """Lambda handler - can be invoked via API Gateway or scheduled event"""
+    """Lambda handler - requires authentication, fetches activities for authenticated user only"""
     cors_headers = get_cors_headers()
     
     # Handle OPTIONS preflight
@@ -249,45 +296,59 @@ def handler(event, context):
         }
     
     try:
-        # Get all users with valid tokens
-        sql = "SELECT athlete_id, access_token, refresh_token, expires_at FROM users WHERE access_token IS NOT NULL"
-        result = _exec_sql(sql)
+        # Parse cookies to get session token
+        tok = parse_session_cookie(event)
+        
+        if not tok:
+            return {
+                "statusCode": 401,
+                "headers": cors_headers,
+                "body": json.dumps({"error": "not authenticated"})
+            }
+        
+        # Verify session token
+        athlete_id = verify_session_token(tok)
+        if not athlete_id:
+            return {
+                "statusCode": 401,
+                "headers": cors_headers,
+                "body": json.dumps({"error": "invalid session"})
+            }
+        
+        # Get user's tokens from database
+        sql = "SELECT access_token, refresh_token, expires_at FROM users WHERE athlete_id = :aid"
+        params = [{"name": "aid", "value": {"longValue": athlete_id}}]
+        result = _exec_sql(sql, params)
         
         records = result.get("records", [])
         if not records:
             return {
-                "statusCode": 200,
+                "statusCode": 404,
                 "headers": cors_headers,
-                "body": json.dumps({"message": "No users to fetch activities for", "count": 0})
+                "body": json.dumps({"error": "user not found"})
             }
         
-        total_stored = 0
-        successful_athletes = []
-        failed_athletes = []
+        record = records[0]
+        access_token = record[0].get("stringValue", "")
+        refresh_token = record[1].get("stringValue", "")
+        expires_at = int(record[2].get("longValue", 0))
         
-        for record in records:
-            try:
-                athlete_id = int(record[0].get("longValue"))
-                access_token = record[1].get("stringValue", "")
-                refresh_token = record[2].get("stringValue", "")
-                expires_at = int(record[3].get("longValue", 0))
-                
-                stored = fetch_activities_for_athlete(athlete_id, access_token, refresh_token, expires_at)
-                total_stored += stored
-                successful_athletes.append(athlete_id)
-            except Exception as e:
-                print(f"Failed to fetch activities for athlete {athlete_id}: {e}")
-                failed_athletes.append(athlete_id)
-                continue
+        if not access_token or not refresh_token:
+            return {
+                "statusCode": 400,
+                "headers": cors_headers,
+                "body": json.dumps({"error": "user not connected to Strava"})
+            }
+        
+        # Fetch and store activities for this athlete
+        stored_count = fetch_activities_for_athlete(athlete_id, access_token, refresh_token, expires_at)
         
         return {
             "statusCode": 200,
             "headers": cors_headers,
             "body": json.dumps({
                 "message": f"Successfully fetched activities",
-                "total_activities_stored": total_stored,
-                "successful_athletes": successful_athletes,
-                "failed_athletes": failed_athletes
+                "total_activities_stored": stored_count
             })
         }
     except Exception as e:

@@ -36,22 +36,26 @@ aws rds-data execute-statement \
 - `DB_CLUSTER_ARN` - RDS cluster ARN
 - `DB_SECRET_ARN` - RDS secret ARN for database credentials
 - `DB_NAME` - Database name (default: "postgres")
+- `APP_SECRET` - Secret for session token verification (same as other authenticated endpoints)
 - `STRAVA_CLIENT_ID` - Strava OAuth client ID
 - `STRAVA_CLIENT_SECRET` - Strava OAuth client secret (or use STRAVA_SECRET_ARN)
 - `STRAVA_SECRET_ARN` - Alternative to STRAVA_CLIENT_SECRET
 - `FRONTEND_URL` - Frontend URL for CORS
 
-**API Gateway Route:** `POST /activities/fetch` (optional, for manual triggering)
+**API Gateway Route:** `POST /activities/fetch`
 
 **Features:**
+- Requires authentication via session cookie
+- Fetches activities only for the authenticated user
 - Automatically refreshes expired Strava tokens (with 5-minute buffer)
-- Fetches up to 30 most recent activities per user
-- Handles errors gracefully per user
-- Returns summary of successful and failed athlete fetches
+- Fetches up to 30 most recent activities
+- Handles errors gracefully with proper CORS headers
+- Returns number of activities stored
 
 **Usage:**
-- Can be triggered manually via API Gateway
-- Can be scheduled via CloudWatch Events for periodic sync (recommended)
+- Triggered by authenticated users via API Gateway (POST /activities/fetch)
+- User must be logged in with valid session cookie
+- Each user can only refresh their own activities
 
 #### get_activities Lambda
 
@@ -187,16 +191,7 @@ Added `fetchActivities` function to call the `/activities` endpoint with paginat
 
 5. **Deploy API Gateway**
 
-6. **(Optional) Set up CloudWatch Events to schedule fetch_activities:**
-   ```bash
-   aws events put-rule \
-     --name rabbitmiles-daily-activity-sync \
-     --schedule-expression "rate(1 day)"
-   
-   aws events put-targets \
-     --rule rabbitmiles-daily-activity-sync \
-     --targets "Id"="1","Arn"="arn:aws:lambda:REGION:ACCOUNT_ID:function:rabbitmiles-fetch-activities"
-   ```
+**Note:** The `fetch_activities` endpoint now requires authentication and only syncs activities for the authenticated user. CloudWatch-based scheduled syncing for all users would require a separate Lambda function or modified implementation.
 
 ### Frontend Deployment
 
@@ -204,19 +199,16 @@ The frontend changes will be automatically deployed by GitHub Actions when merge
 
 ## Initial Activity Sync
 
-After deployment, trigger an initial fetch of activities:
+After deployment, users can trigger activity fetch by clicking the "Refresh Activities" button on the Dashboard. This requires the user to be authenticated.
+
+Alternatively, you can test the endpoint directly:
 
 ```bash
 curl -X POST https://YOUR-API-GATEWAY-URL/prod/activities/fetch \
-  -H "Content-Type: application/json"
-```
-
-Or invoke the Lambda directly:
-
-```bash
-aws lambda invoke \
-  --function-name rabbitmiles-fetch-activities \
-  response.json
+  -H "Content-Type: application/json" \
+  -H "Cookie: rm_session=YOUR_SESSION_TOKEN" \
+  --cookie-jar cookies.txt \
+  --cookie cookies.txt
 ```
 
 ## Testing
@@ -237,10 +229,12 @@ Monitor the Lambda functions in CloudWatch:
 ## Security Notes
 
 - All endpoints use cookie-based authentication
-- Session tokens are verified before returning user data
+- Session tokens are verified before accessing or refreshing data
+- Users can only refresh their own activities (not other users')
 - Strava tokens are automatically refreshed when expired
 - 5-minute buffer prevents token expiration during API calls
 - No sensitive data is exposed to the frontend
+- Proper CORS headers returned even on authentication failures
 
 ## Future Enhancements
 
