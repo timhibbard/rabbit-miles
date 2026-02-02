@@ -188,14 +188,18 @@ def handler(event, context):
         # Format activities for response
         activities = []
         for record in records:
+            # RDS Data API returns DECIMAL columns as stringValue, not doubleValue
+            distance_str = record[3].get("stringValue", "0")
+            elevation_str = record[6].get("stringValue", "0")
+            
             activity = {
                 "id": int(record[0].get("longValue", 0)),
                 "strava_activity_id": int(record[1].get("longValue", 0)),
                 "name": record[2].get("stringValue", ""),
-                "distance": float(record[3].get("doubleValue", 0)),
+                "distance": float(distance_str) if distance_str else 0.0,
                 "moving_time": int(record[4].get("longValue", 0)),
                 "elapsed_time": int(record[5].get("longValue", 0)),
-                "total_elevation_gain": float(record[6].get("doubleValue", 0)),
+                "total_elevation_gain": float(elevation_str) if elevation_str else 0.0,
                 "type": record[7].get("stringValue", ""),
                 "start_date": record[8].get("stringValue", "") if not record[8].get("isNull") else None,
                 "start_date_local": record[9].get("stringValue", "") if not record[9].get("isNull") else None,
