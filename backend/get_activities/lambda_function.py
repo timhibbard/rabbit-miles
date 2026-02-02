@@ -210,6 +210,13 @@ def handler(event, context):
             except (ValueError, TypeError):
                 distance_on_trail = None
             
+            # Get time_on_trail, checking for null first
+            time_on_trail = None
+            if not record[11].get("isNull"):
+                time_on_trail_value = record[11].get("longValue")
+                if time_on_trail_value is not None:
+                    time_on_trail = int(time_on_trail_value)
+            
             activity = {
                 "id": int(record[0].get("longValue", 0)),
                 "strava_activity_id": int(record[1].get("longValue", 0)),
@@ -222,7 +229,7 @@ def handler(event, context):
                 "start_date": record[8].get("stringValue", "") if not record[8].get("isNull") else None,
                 "start_date_local": record[9].get("stringValue", "") if not record[9].get("isNull") else None,
                 "timezone": record[10].get("stringValue", ""),
-                "time_on_trail": int(record[11].get("longValue", 0)) if not record[11].get("isNull") else None,
+                "time_on_trail": time_on_trail,
                 "distance_on_trail": distance_on_trail,
             }
             activities.append(activity)

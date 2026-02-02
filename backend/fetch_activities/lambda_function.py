@@ -254,6 +254,8 @@ def store_activities(athlete_id, activities):
             start_date_local = EXCLUDED.start_date_local,
             timezone = EXCLUDED.timezone,
             polyline = EXCLUDED.polyline,
+            time_on_trail = COALESCE(activities.time_on_trail, EXCLUDED.time_on_trail),
+            distance_on_trail = COALESCE(activities.distance_on_trail, EXCLUDED.distance_on_trail),
             updated_at = now()
         """
         
