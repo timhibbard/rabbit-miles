@@ -233,12 +233,15 @@ def store_activities(athlete_id, activities):
             polyline = activity["map"].get("summary_polyline", "")
         
         # Insert or update activity
+        # Note: time_on_trail and distance_on_trail are initialized as NULL
+        # and will be computed later through trail intersection calculations
         sql = """
         INSERT INTO activities (
             athlete_id, strava_activity_id, name, distance, moving_time, elapsed_time,
-            total_elevation_gain, type, start_date, start_date_local, timezone, polyline, updated_at
+            total_elevation_gain, type, start_date, start_date_local, timezone, polyline,
+            time_on_trail, distance_on_trail, updated_at
         )
-        VALUES (:aid, :sid, :name, :dist, :mt, :et, :elev, :type, CAST(:sd AS TIMESTAMP), CAST(:sdl AS TIMESTAMP), :tz, :poly, now())
+        VALUES (:aid, :sid, :name, :dist, :mt, :et, :elev, :type, CAST(:sd AS TIMESTAMP), CAST(:sdl AS TIMESTAMP), :tz, :poly, NULL, NULL, now())
         ON CONFLICT (athlete_id, strava_activity_id) 
         DO UPDATE SET
             name = EXCLUDED.name,
@@ -251,6 +254,8 @@ def store_activities(athlete_id, activities):
             start_date_local = EXCLUDED.start_date_local,
             timezone = EXCLUDED.timezone,
             polyline = EXCLUDED.polyline,
+            time_on_trail = COALESCE(activities.time_on_trail, EXCLUDED.time_on_trail),
+            distance_on_trail = COALESCE(activities.distance_on_trail, EXCLUDED.distance_on_trail),
             updated_at = now()
         """
         
