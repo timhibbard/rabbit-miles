@@ -6,6 +6,7 @@ A React SPA for tracking running miles with Strava integration.
 
 - 📊 Dashboard for viewing running statistics
 - 🔗 Connect with Strava via OAuth
+- 🔔 Real-time activity updates via Strava webhooks
 - ⚙️ Settings page for managing preferences
 - 📱 Responsive design with Tailwind CSS
 - 🚀 Static site deployed to GitHub Pages
@@ -88,7 +89,9 @@ The app automatically deploys to GitHub Pages when changes are pushed to the `ma
 
 AWS Lambda functions automatically deploy when changes are pushed to the `backend/` directory on the `main` branch.
 
-For setup instructions, see [LAMBDA_DEPLOYMENT.md](LAMBDA_DEPLOYMENT.md).
+For setup instructions, see:
+- [LAMBDA_DEPLOYMENT.md](LAMBDA_DEPLOYMENT.md) - General Lambda deployment
+- [WEBHOOK_SETUP.md](WEBHOOK_SETUP.md) - Strava webhook configuration
 
 ## Environment Variables
 
@@ -119,6 +122,19 @@ src/
 3. Backend handles OAuth with Strava and sets httpOnly cookies
 4. App calls `/me` endpoint to check authentication status
 5. Dashboard displays user information from `/me` response
+
+## Webhook Flow
+
+When configured, Strava sends real-time updates when activities are created, updated, or deleted:
+
+1. User creates/updates/deletes an activity in Strava
+2. Strava sends webhook event to `{API_BASE_URL}/strava/webhook`
+3. Webhook handler queues event to SQS (<2 seconds)
+4. Webhook processor fetches activity details from Strava API
+5. Activity is automatically updated in database
+6. Frontend sees updates on next data refresh
+
+For setup instructions, see [WEBHOOK_SETUP.md](WEBHOOK_SETUP.md).
 
 ## License
 
