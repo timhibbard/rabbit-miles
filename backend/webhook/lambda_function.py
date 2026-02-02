@@ -133,13 +133,19 @@ def handle_webhook_event(event):
             "idempotency_key": {"DataType": "String", "StringValue": idempotency_key}
         }
         
-        sqs.send_message(
-            QueueUrl=SQS_QUEUE_URL,
-            MessageBody=json.dumps(webhook_event),
-            MessageAttributes=message_attributes,
-            MessageDeduplicationId=idempotency_key,  # For FIFO queues
-            MessageGroupId=str(owner_id)  # Group by athlete for ordered processing
-        )
+        # Build SQS message parameters
+        sqs_params = {
+            "QueueUrl": SQS_QUEUE_URL,
+            "MessageBody": json.dumps(webhook_event),
+            "MessageAttributes": message_attributes
+        }
+        
+        # Add FIFO-specific parameters if using a FIFO queue (URL ends with .fifo)
+        if SQS_QUEUE_URL.endswith(".fifo"):
+            sqs_params["MessageDeduplicationId"] = idempotency_key
+            sqs_params["MessageGroupId"] = str(owner_id)
+        
+        sqs.send_message(**sqs_params)
         
         print(f"Event sent to SQS: {idempotency_key}")
         
