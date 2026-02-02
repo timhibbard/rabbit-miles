@@ -52,7 +52,7 @@ def handle_subscription_validation(event):
     
     # Verify the token matches our expected value
     if hub_verify_token != VERIFY_TOKEN:
-        print(f"ERROR: Invalid verify_token. Expected: {VERIFY_TOKEN}, Got: {hub_verify_token}")
+        print(f"ERROR: Invalid verify_token received")
         return {
             "statusCode": 403,
             "headers": {"Content-Type": "application/json"},

@@ -30,6 +30,9 @@ DB_NAME = os.environ.get("DB_NAME", "postgres")
 STRAVA_TOKEN_URL = "https://www.strava.com/oauth/token"
 STRAVA_ACTIVITY_URL = "https://www.strava.com/api/v3/activities"
 
+# Token refresh buffer - refresh tokens 5 minutes before expiry
+TOKEN_REFRESH_BUFFER_SECONDS = 300
+
 
 def _get_strava_creds():
     """Get Strava client credentials from env or Secrets Manager"""
@@ -144,7 +147,7 @@ def fetch_activity_details(access_token, activity_id):
             try:
                 error_body = e.read().decode()
                 print(f"Error response body: {error_body}")
-            except:
+            except Exception:
                 pass
         raise
 
@@ -308,8 +311,7 @@ def process_webhook_event(webhook_event):
     
     # Check if token needs refresh
     current_time = int(time.time())
-    TOKEN_REFRESH_BUFFER = 300  # 5 minutes
-    if expires_at < current_time + TOKEN_REFRESH_BUFFER:
+    if expires_at < current_time + TOKEN_REFRESH_BUFFER_SECONDS:
         print(f"Access token expired or expiring soon for athlete {owner_id}, refreshing...")
         try:
             access_token = refresh_access_token(owner_id, refresh_token)
