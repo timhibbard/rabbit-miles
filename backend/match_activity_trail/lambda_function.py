@@ -1,0 +1,458 @@
+# match_activity_trail Lambda function
+# Calculates how much of an activity was on the trail
+# 
+# This Lambda can be triggered by:
+# 1. SQS message with activity details (automated webhook processing)
+# 2. Direct invocation with activity_id for testing
+#
+# Env vars required:
+# DB_CLUSTER_ARN, DB_SECRET_ARN, DB_NAME=postgres
+# TRAIL_DATA_BUCKET (e.g., rabbitmiles-trail-data)
+
+import os
+import json
+import boto3
+from datetime import datetime
+
+rds = boto3.client("rds-data")
+s3 = boto3.client("s3")
+
+# Get environment variables
+DB_CLUSTER_ARN = os.environ.get("DB_CLUSTER_ARN", "")
+DB_SECRET_ARN = os.environ.get("DB_SECRET_ARN", "")
+DB_NAME = os.environ.get("DB_NAME", "postgres")
+TRAIL_DATA_BUCKET = os.environ.get("TRAIL_DATA_BUCKET", "rabbitmiles-trail-data")
+
+# Trail tolerance in meters (50m on each side = 100m buffer zone)
+TRAIL_TOLERANCE_METERS = 50
+
+
+def _exec_sql(sql, parameters=None):
+    """Execute SQL statement using RDS Data API"""
+    kwargs = {
+        "resourceArn": DB_CLUSTER_ARN,
+        "secretArn": DB_SECRET_ARN,
+        "database": DB_NAME,
+        "sql": sql,
+    }
+    if parameters:
+        kwargs["parameters"] = parameters
+    return rds.execute_statement(**kwargs)
+
+
+def decode_polyline(polyline_str):
+    """
+    Decode Google encoded polyline to list of (lat, lon) tuples.
+    Algorithm: https://developers.google.com/maps/documentation/utilities/polylinealgorithm
+    """
+    coordinates = []
+    index = 0
+    lat = 0
+    lng = 0
+    
+    while index < len(polyline_str):
+        # Decode latitude
+        result = 0
+        shift = 0
+        while True:
+            b = ord(polyline_str[index]) - 63
+            index += 1
+            result |= (b & 0x1f) << shift
+            shift += 5
+            if b < 0x20:
+                break
+        
+        dlat = ~(result >> 1) if (result & 1) else (result >> 1)
+        lat += dlat
+        
+        # Decode longitude
+        result = 0
+        shift = 0
+        while True:
+            b = ord(polyline_str[index]) - 63
+            index += 1
+            result |= (b & 0x1f) << shift
+            shift += 5
+            if b < 0x20:
+                break
+        
+        dlng = ~(result >> 1) if (result & 1) else (result >> 1)
+        lng += dlng
+        
+        coordinates.append((lat / 1e5, lng / 1e5))
+    
+    return coordinates
+
+
+def haversine_distance(lat1, lon1, lat2, lon2):
+    """
+    Calculate the great circle distance in meters between two points 
+    on the earth (specified in decimal degrees).
+    """
+    from math import radians, cos, sin, asin, sqrt
+    
+    # Convert decimal degrees to radians
+    lon1, lat1, lon2, lat2 = map(radians, [lon1, lat1, lon2, lat2])
+    
+    # Haversine formula
+    dlon = lon2 - lon1
+    dlat = lat2 - lat1
+    a = sin(dlat / 2)**2 + cos(lat1) * cos(lat2) * sin(dlon / 2)**2
+    c = 2 * asin(sqrt(a))
+    
+    # Radius of earth in meters
+    r = 6371000
+    return c * r
+
+
+def point_to_segment_distance(px, py, ax, ay, bx, by):
+    """
+    Calculate the minimum distance from a point (px, py) to a line segment (ax, ay) -> (bx, by).
+    Uses the cross product method to find perpendicular distance.
+    Returns distance in the same units as the input coordinates.
+    """
+    # Vector from a to b
+    abx = bx - ax
+    aby = by - ay
+    
+    # Vector from a to p
+    apx = px - ax
+    apy = py - ay
+    
+    # If segment is a point
+    if abx == 0 and aby == 0:
+        return haversine_distance(py, px, ay, ax)
+    
+    # Project point onto line (calculate t parameter)
+    # t represents position along segment: 0 = point a, 1 = point b
+    ab_ab = abx * abx + aby * aby
+    ap_ab = apx * abx + apy * aby
+    t = ap_ab / ab_ab
+    
+    # Clamp t to [0, 1] to stay within segment
+    t = max(0, min(1, t))
+    
+    # Find closest point on segment
+    closest_x = ax + t * abx
+    closest_y = ay + t * aby
+    
+    # Return distance from point to closest point on segment
+    return haversine_distance(py, px, closest_y, closest_x)
+
+
+def load_trail_data_from_s3():
+    """Load trail GeoJSON data from S3 bucket"""
+    print(f"Loading trail data from S3 bucket: {TRAIL_DATA_BUCKET}")
+    
+    trail_coordinates = []
+    
+    # Load main trail
+    try:
+        response = s3.get_object(Bucket=TRAIL_DATA_BUCKET, Key="trails/main.geojson")
+        main_geojson = json.loads(response['Body'].read().decode('utf-8'))
+        
+        # Extract coordinates from GeoJSON features
+        for feature in main_geojson.get('features', []):
+            geometry = feature.get('geometry', {})
+            if geometry.get('type') == 'LineString':
+                coords = geometry.get('coordinates', [])
+                # GeoJSON uses [lon, lat] format, convert to [lat, lon]
+                trail_coordinates.extend([(lat, lon) for lon, lat in coords])
+            elif geometry.get('type') == 'MultiLineString':
+                for line in geometry.get('coordinates', []):
+                    trail_coordinates.extend([(lat, lon) for lon, lat in line])
+        
+        print(f"Loaded {len(trail_coordinates)} points from main trail")
+    except Exception as e:
+        print(f"Error loading main trail: {e}")
+    
+    # Load spurs trail
+    try:
+        response = s3.get_object(Bucket=TRAIL_DATA_BUCKET, Key="trails/spurs.geojson")
+        spurs_geojson = json.loads(response['Body'].read().decode('utf-8'))
+        
+        spur_count = 0
+        for feature in spurs_geojson.get('features', []):
+            geometry = feature.get('geometry', {})
+            if geometry.get('type') == 'LineString':
+                coords = geometry.get('coordinates', [])
+                trail_coordinates.extend([(lat, lon) for lon, lat in coords])
+                spur_count += len(coords)
+            elif geometry.get('type') == 'MultiLineString':
+                for line in geometry.get('coordinates', []):
+                    trail_coordinates.extend([(lat, lon) for lon, lat in line])
+                    spur_count += len(line)
+        
+        print(f"Loaded {spur_count} points from spurs trail")
+    except Exception as e:
+        print(f"Error loading spurs trail: {e}")
+    
+    if not trail_coordinates:
+        raise RuntimeError("No trail data loaded from S3")
+    
+    return trail_coordinates
+
+
+def calculate_trail_intersection(activity_coords, trail_coords, tolerance_meters):
+    """
+    Calculate how much of the activity was on the trail.
+    
+    Returns:
+        tuple: (distance_on_trail_meters, time_ratio)
+    """
+    if not activity_coords or not trail_coords:
+        return 0.0, 0.0
+    
+    print(f"Calculating intersection: {len(activity_coords)} activity points vs {len(trail_coords)} trail points")
+    
+    # Track which activity segments are on the trail
+    on_trail_segments = []
+    total_distance = 0.0
+    
+    # Check each segment of the activity path
+    for i in range(len(activity_coords) - 1):
+        lat1, lon1 = activity_coords[i]
+        lat2, lon2 = activity_coords[i + 1]
+        
+        # Calculate segment length
+        segment_distance = haversine_distance(lat1, lon1, lat2, lon2)
+        total_distance += segment_distance
+        
+        # Check if segment midpoint is within tolerance of any trail segment
+        mid_lat = (lat1 + lat2) / 2
+        mid_lon = (lon1 + lon2) / 2
+        
+        is_on_trail = False
+        
+        # Check distance to each trail segment
+        for j in range(len(trail_coords) - 1):
+            trail_lat1, trail_lon1 = trail_coords[j]
+            trail_lat2, trail_lon2 = trail_coords[j + 1]
+            
+            # Calculate distance from activity segment midpoint to trail segment
+            distance_to_trail = point_to_segment_distance(
+                mid_lon, mid_lat,
+                trail_lon1, trail_lat1,
+                trail_lon2, trail_lat2
+            )
+            
+            if distance_to_trail <= tolerance_meters:
+                is_on_trail = True
+                break
+        
+        on_trail_segments.append((is_on_trail, segment_distance))
+    
+    # Calculate distance on trail
+    distance_on_trail = sum(dist for on_trail, dist in on_trail_segments if on_trail)
+    
+    # Calculate time ratio (proportional to distance)
+    # This is a simplified estimation assuming constant speed
+    time_ratio = distance_on_trail / total_distance if total_distance > 0 else 0.0
+    
+    print(f"Results: {distance_on_trail:.2f}m on trail out of {total_distance:.2f}m total ({time_ratio * 100:.1f}%)")
+    
+    return distance_on_trail, time_ratio
+
+
+def get_activity_from_db(activity_id):
+    """Fetch activity details from database"""
+    sql = """
+    SELECT athlete_id, strava_activity_id, polyline, moving_time, distance
+    FROM activities
+    WHERE id = :id
+    """
+    params = [{"name": "id", "value": {"longValue": activity_id}}]
+    
+    result = _exec_sql(sql, params)
+    records = result.get("records", [])
+    
+    if not records:
+        return None
+    
+    record = records[0]
+    
+    # Handle DECIMAL fields that come back as stringValue
+    distance_str = record[4].get("stringValue")
+    distance = float(distance_str) if distance_str else 0.0
+    
+    return {
+        "activity_id": activity_id,
+        "athlete_id": int(record[0].get("longValue", 0)),
+        "strava_activity_id": int(record[1].get("longValue", 0)),
+        "polyline": record[2].get("stringValue", ""),
+        "moving_time": int(record[3].get("longValue", 0)),
+        "distance": distance
+    }
+
+
+def update_activity_trail_metrics(activity_id, distance_on_trail, time_on_trail):
+    """Update activity with trail metrics and last_matched timestamp"""
+    sql = """
+    UPDATE activities
+    SET distance_on_trail = :dist,
+        time_on_trail = :time,
+        last_matched = :matched_at
+    WHERE id = :id
+    """
+    
+    params = [
+        {"name": "dist", "value": {"doubleValue": float(distance_on_trail)}},
+        {"name": "time", "value": {"longValue": time_on_trail}},
+        {"name": "matched_at", "value": {"stringValue": datetime.utcnow().isoformat()}},
+        {"name": "id", "value": {"longValue": activity_id}},
+    ]
+    
+    _exec_sql(sql, params)
+    print(f"Updated activity {activity_id} with trail metrics")
+
+
+def match_activity(activity_id):
+    """Match a single activity against trail data"""
+    print(f"Matching activity {activity_id} against trail")
+    
+    # Get activity from database
+    activity = get_activity_from_db(activity_id)
+    
+    if not activity:
+        raise ValueError(f"Activity {activity_id} not found in database")
+    
+    polyline = activity.get("polyline", "")
+    if not polyline:
+        print(f"Activity {activity_id} has no polyline data, skipping")
+        # Still update last_matched to indicate we checked
+        update_activity_trail_metrics(activity_id, 0.0, 0)
+        return {
+            "activity_id": activity_id,
+            "distance_on_trail": 0.0,
+            "time_on_trail": 0,
+            "message": "No polyline data"
+        }
+    
+    # Decode activity polyline
+    print(f"Decoding polyline for activity {activity_id}")
+    activity_coords = decode_polyline(polyline)
+    print(f"Decoded {len(activity_coords)} coordinates")
+    
+    # Load trail data from S3
+    trail_coords = load_trail_data_from_s3()
+    
+    # Calculate intersection
+    distance_on_trail, time_ratio = calculate_trail_intersection(
+        activity_coords, trail_coords, TRAIL_TOLERANCE_METERS
+    )
+    
+    # Calculate time on trail based on moving_time
+    moving_time = activity.get("moving_time", 0)
+    time_on_trail = int(moving_time * time_ratio)
+    
+    # Update database
+    update_activity_trail_metrics(activity_id, distance_on_trail, time_on_trail)
+    
+    print(f"Activity {activity_id} matched: {distance_on_trail:.2f}m, {time_on_trail}s on trail")
+    
+    return {
+        "activity_id": activity_id,
+        "distance_on_trail": distance_on_trail,
+        "time_on_trail": time_on_trail,
+        "message": "Successfully matched"
+    }
+
+
+def handler(event, context):
+    """
+    Lambda handler for matching activities to trail.
+    
+    Accepts:
+    1. Direct invocation with activity_id in body/query: {"activity_id": 123}
+    2. SQS message with activity details (from webhook processor)
+    """
+    print(f"match_activity_trail handler invoked")
+    print(f"Event: {json.dumps(event, default=str)}")
+    
+    # Validate required environment variables
+    if not DB_CLUSTER_ARN or not DB_SECRET_ARN:
+        print("ERROR: Missing DB_CLUSTER_ARN or DB_SECRET_ARN")
+        return {
+            "statusCode": 500,
+            "body": json.dumps({"error": "server configuration error"})
+        }
+    
+    if not TRAIL_DATA_BUCKET:
+        print("ERROR: Missing TRAIL_DATA_BUCKET")
+        return {
+            "statusCode": 500,
+            "body": json.dumps({"error": "server configuration error"})
+        }
+    
+    try:
+        # Handle SQS trigger
+        if "Records" in event:
+            print(f"Processing {len(event['Records'])} SQS records")
+            results = []
+            
+            for record in event["Records"]:
+                message_body = json.loads(record.get("body", "{}"))
+                activity_id = message_body.get("activity_id")
+                
+                if not activity_id:
+                    print(f"Skipping SQS record without activity_id: {record.get('messageId')}")
+                    continue
+                
+                try:
+                    result = match_activity(activity_id)
+                    results.append(result)
+                except Exception as e:
+                    print(f"Error matching activity {activity_id}: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    # Continue processing other records
+            
+            return {
+                "statusCode": 200,
+                "body": json.dumps({
+                    "message": f"Processed {len(results)} activities",
+                    "results": results
+                })
+            }
+        
+        # Handle direct invocation
+        else:
+            # Parse activity_id from body or query string
+            body = {}
+            if event.get("body"):
+                try:
+                    body = json.loads(event["body"])
+                except json.JSONDecodeError:
+                    pass
+            
+            query_params = event.get("queryStringParameters") or {}
+            activity_id = body.get("activity_id") or query_params.get("activity_id")
+            
+            if not activity_id:
+                return {
+                    "statusCode": 400,
+                    "body": json.dumps({"error": "activity_id is required"})
+                }
+            
+            activity_id = int(activity_id)
+            result = match_activity(activity_id)
+            
+            return {
+                "statusCode": 200,
+                "body": json.dumps(result)
+            }
+    
+    except ValueError as e:
+        print(f"Validation error: {e}")
+        return {
+            "statusCode": 404,
+            "body": json.dumps({"error": str(e)})
+        }
+    except Exception as e:
+        print(f"Error in match_activity_trail handler: {e}")
+        import traceback
+        traceback.print_exc()
+        return {
+            "statusCode": 500,
+            "body": json.dumps({"error": "internal server error"})
+        }
