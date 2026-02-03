@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { fetchMe, fetchActivities, refreshActivities } from '../utils/api';
 
 // Constants
 const METERS_TO_MILES = 1609.34;
+const ACTIVITY_POLL_INTERVAL = 30000; // Poll every 30 seconds
 
 function Dashboard() {
   const [stats] = useState({
@@ -26,11 +27,16 @@ function Dashboard() {
     message: null,
     error: null,
   });
+  const [isPolling, setIsPolling] = useState(false);
+  const pollingIntervalRef = useRef(null);
   const navigate = useNavigate();
 
   // Load activities for the authenticated user
-  const loadActivities = async () => {
-    setActivitiesState({ loading: true, activities: [], error: null });
+  const loadActivities = async (silent = false) => {
+    // If not silent, show loading state
+    if (!silent) {
+      setActivitiesState({ loading: true, activities: [], error: null });
+    }
     
     const result = await fetchActivities(10, 0);
     
@@ -70,7 +76,7 @@ function Dashboard() {
         error: null,
       });
       // Reload activities after successful refresh
-      loadActivities();
+      loadActivities(false);
       // Clear success message after 8 seconds (longer for hint message)
       setTimeout(() => {
         setRefreshState(prev => ({ ...prev, message: null }));
@@ -86,6 +92,26 @@ function Dashboard() {
         setRefreshState(prev => ({ ...prev, error: null }));
       }, 10000);
     }
+  };
+
+  // Start automatic polling for activity updates
+  const startPolling = () => {
+    if (pollingIntervalRef.current) return; // Already polling
+    
+    setIsPolling(true);
+    pollingIntervalRef.current = setInterval(() => {
+      // Silent refresh - don't show loading spinner
+      loadActivities(true);
+    }, ACTIVITY_POLL_INTERVAL);
+  };
+
+  // Stop automatic polling
+  const stopPolling = () => {
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+      pollingIntervalRef.current = null;
+    }
+    setIsPolling(false);
   };
 
   useEffect(() => {
@@ -104,7 +130,9 @@ function Dashboard() {
           error: null,
         });
         // Fetch activities after successful authentication
-        loadActivities();
+        loadActivities(false);
+        // Start automatic polling
+        startPolling();
       } else if (result.notConnected) {
         // User is not connected (401 response)
         console.log('Dashboard: User not connected, redirecting to /connect');
@@ -121,6 +149,12 @@ function Dashboard() {
     };
 
     checkAuth();
+
+    // Cleanup polling on unmount
+    return () => {
+      stopPolling();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [navigate]);
 
   // Loading state
@@ -230,9 +264,17 @@ function Dashboard() {
 
         <div className="bg-white rounded-lg shadow p-6">
           <div className="flex justify-between items-center mb-4">
-            <h2 className="text-xl font-semibold text-gray-900">
-              Recent Activities
-            </h2>
+            <div className="flex items-center gap-3">
+              <h2 className="text-xl font-semibold text-gray-900">
+                Recent Activities
+              </h2>
+              {isPolling && (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                  <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+                  Auto-updating
+                </span>
+              )}
+            </div>
             <button
               onClick={handleRefreshActivities}
               disabled={refreshState.refreshing}
