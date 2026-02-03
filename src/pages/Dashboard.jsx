@@ -36,6 +36,9 @@ function Dashboard() {
   const loadActivities = useCallback(async (silent = false) => {
     // Prevent overlapping requests
     if (isLoadingRef.current) {
+      if (silent) {
+        console.log('Skipping silent refresh - request already in progress');
+      }
       return;
     }
     
@@ -65,12 +68,8 @@ function Dashboard() {
           error: result.error || 'Failed to load activities',
         });
       } else {
-        // For silent refresh, keep existing activities and just log the error
+        // For silent refresh, just log the error
         console.warn('Silent activity refresh failed:', result.error);
-        setActivitiesState(prev => ({
-          ...prev,
-          loading: false,
-        }));
       }
     }
   }, []);
