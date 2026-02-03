@@ -233,8 +233,9 @@ def store_activities(athlete_id, activities):
             polyline = activity["map"].get("summary_polyline", "")
         
         # Insert or update activity
-        # Note: time_on_trail and distance_on_trail are initialized as NULL
-        # and will be computed later through trail intersection calculations
+        # Note: time_on_trail, distance_on_trail, and last_matched are initialized as NULL
+        # time_on_trail and distance_on_trail will be computed later through trail intersection calculations
+        # last_matched will be set when the activity is checked against trail matching database
         sql = """
         INSERT INTO activities (
             athlete_id, strava_activity_id, name, distance, moving_time, elapsed_time,

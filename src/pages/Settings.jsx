@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
-import { fetchMe } from '../utils/api';
+import { fetchMe, resetTrailMatching } from '../utils/api';
 
 function Settings() {
   const [authState, setAuthState] = useState({
     loading: true,
     isConnected: false,
   });
+  const [resetting, setResetting] = useState(false);
 
   useEffect(() => {
     // Check if user is connected via /me endpoint
@@ -25,6 +26,27 @@ function Settings() {
       // TODO: Call disconnect API endpoint when it becomes available
       // For now, just show a message
       alert('Disconnect functionality will be available soon. Please contact support to disconnect your account.');
+    }
+  };
+
+  const handleResetTrailMatching = async () => {
+    if (!window.confirm('Are you sure you want to reset trail matching for all activities? This will mark all activities as unprocessed for trail matching.')) {
+      return;
+    }
+
+    setResetting(true);
+    try {
+      const result = await resetTrailMatching();
+      if (result.success) {
+        alert(`Success! ${result.data.activities_reset} activities have been reset for trail matching.`);
+      } else {
+        alert(`Failed to reset trail matching: ${result.error || 'Unknown error'}`);
+      }
+    } catch (error) {
+      console.error('Error resetting trail matching:', error);
+      alert('An unexpected error occurred. Please try again.');
+    } finally {
+      setResetting(false);
     }
   };
 
@@ -117,6 +139,27 @@ function Settings() {
               </div>
             </div>
           </div>
+
+          {/* Trail Matching Section */}
+          {authState.isConnected && (
+            <div className="p-6 border-b border-gray-200">
+              <h2 className="text-xl font-semibold text-gray-900 mb-4">
+                Trail Matching
+              </h2>
+              <div>
+                <p className="text-sm text-gray-600 mb-4">
+                  Reset trail matching to re-process all activities. This will mark all activities as unprocessed for the trail matcher.
+                </p>
+                <button
+                  onClick={handleResetTrailMatching}
+                  disabled={resetting}
+                  className="px-4 py-2 bg-orange-600 text-white rounded-md hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {resetting ? 'Resetting...' : 'Reset Trail Matching'}
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* About Section */}
           <div className="p-6">
