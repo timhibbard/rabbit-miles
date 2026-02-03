@@ -30,7 +30,7 @@ function Settings() {
   };
 
   const handleResetTrailMatching = async () => {
-    if (!window.confirm('Are you sure you want to reset trail matching for all activities? This will mark all activities as unprocessed for trail matching.')) {
+    if (!window.confirm('Are you sure you want to reset trail matching for all your activities? This will mark all your activities as unprocessed for trail matching.')) {
       return;
     }
 
@@ -148,7 +148,7 @@ function Settings() {
               </h2>
               <div>
                 <p className="text-sm text-gray-600 mb-4">
-                  Reset trail matching to re-process all activities. This will mark all activities as unprocessed for the trail matcher.
+                  Reset trail matching to re-process all your activities. This will mark all your activities as unprocessed for the trail matcher.
                 </p>
                 <button
                   onClick={handleResetTrailMatching}

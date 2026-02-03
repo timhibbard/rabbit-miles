@@ -164,10 +164,12 @@ def handler(event, context):
             }
         
         # Reset last_matched for all activities belonging to authenticated user
+        # Note: We don't check IS NOT NULL as it's a no-op to set NULL to NULL
+        # and the athlete_id index will efficiently filter the results
         sql = """
         UPDATE activities 
         SET last_matched = NULL 
-        WHERE athlete_id = :aid AND last_matched IS NOT NULL
+        WHERE athlete_id = :aid
         """
         
         params = [
