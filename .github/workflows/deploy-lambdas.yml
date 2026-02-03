@@ -36,6 +36,8 @@ jobs:
             secret: LAMBDA_WEBHOOK_PROCESSOR
           - name: reset_last_matched
             secret: LAMBDA_RESET_LAST_MATCHED
+          - name: update_trail_data
+            secret: LAMBDA_UPDATE_TRAIL_DATA
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
