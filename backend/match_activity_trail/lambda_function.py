@@ -291,7 +291,7 @@ def update_activity_trail_metrics(activity_id, distance_on_trail, time_on_trail)
     UPDATE activities
     SET distance_on_trail = :dist,
         time_on_trail = :time,
-        last_matched = :matched_at
+        last_matched = CAST(:matched_at AS TIMESTAMP)
     WHERE id = :id
     """
     
