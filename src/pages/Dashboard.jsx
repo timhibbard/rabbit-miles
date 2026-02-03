@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { fetchMe, fetchActivities, refreshActivities } from '../utils/api';
 
 // Constants
 const METERS_TO_MILES = 1609.34;
+const ACTIVITY_POLL_INTERVAL = 30000; // Poll every 30 seconds
 
 function Dashboard() {
   const [stats] = useState({
@@ -26,13 +27,31 @@ function Dashboard() {
     message: null,
     error: null,
   });
+  const [isPolling, setIsPolling] = useState(false);
+  const pollingIntervalRef = useRef(null);
+  const isLoadingRef = useRef(false);
   const navigate = useNavigate();
 
   // Load activities for the authenticated user
-  const loadActivities = async () => {
-    setActivitiesState({ loading: true, activities: [], error: null });
+  const loadActivities = useCallback(async (silent = false) => {
+    // Prevent overlapping requests
+    if (isLoadingRef.current) {
+      if (silent) {
+        console.log('Skipping silent refresh - request already in progress');
+      }
+      return;
+    }
+    
+    isLoadingRef.current = true;
+    
+    // If not silent, show loading state
+    if (!silent) {
+      setActivitiesState({ loading: true, activities: [], error: null });
+    }
     
     const result = await fetchActivities(10, 0);
+    
+    isLoadingRef.current = false;
     
     if (result.success) {
       setActivitiesState({
@@ -41,13 +60,19 @@ function Dashboard() {
         error: null,
       });
     } else {
-      setActivitiesState({
-        loading: false,
-        activities: [],
-        error: result.error || 'Failed to load activities',
-      });
+      // For silent refresh, don't update error state to avoid disrupting UI
+      if (!silent) {
+        setActivitiesState({
+          loading: false,
+          activities: [],
+          error: result.error || 'Failed to load activities',
+        });
+      } else {
+        // For silent refresh, just log the error
+        console.warn('Silent activity refresh failed:', result.error);
+      }
     }
-  };
+  }, []);
 
   // Refresh activities from Strava
   const handleRefreshActivities = async () => {
@@ -70,7 +95,7 @@ function Dashboard() {
         error: null,
       });
       // Reload activities after successful refresh
-      loadActivities();
+      loadActivities(false);
       // Clear success message after 8 seconds (longer for hint message)
       setTimeout(() => {
         setRefreshState(prev => ({ ...prev, message: null }));
@@ -88,6 +113,26 @@ function Dashboard() {
     }
   };
 
+  // Start automatic polling for activity updates
+  const startPolling = useCallback(() => {
+    if (pollingIntervalRef.current) return; // Already polling
+    
+    setIsPolling(true);
+    pollingIntervalRef.current = setInterval(() => {
+      // Silent refresh - don't show loading spinner
+      loadActivities(true);
+    }, ACTIVITY_POLL_INTERVAL);
+  }, [loadActivities]);
+
+  // Stop automatic polling
+  const stopPolling = useCallback(() => {
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+      pollingIntervalRef.current = null;
+    }
+    setIsPolling(false);
+  }, []);
+
   useEffect(() => {
     // Check authentication status via /me endpoint
     const checkAuth = async () => {
@@ -104,7 +149,9 @@ function Dashboard() {
           error: null,
         });
         // Fetch activities after successful authentication
-        loadActivities();
+        loadActivities(false);
+        // Start automatic polling
+        startPolling();
       } else if (result.notConnected) {
         // User is not connected (401 response)
         console.log('Dashboard: User not connected, redirecting to /connect');
@@ -121,7 +168,12 @@ function Dashboard() {
     };
 
     checkAuth();
-  }, [navigate]);
+
+    // Cleanup polling on unmount
+    return () => {
+      stopPolling();
+    };
+  }, [navigate, loadActivities, startPolling, stopPolling]);
 
   // Loading state
   if (authState.loading) {
@@ -230,9 +282,17 @@ function Dashboard() {
 
         <div className="bg-white rounded-lg shadow p-6">
           <div className="flex justify-between items-center mb-4">
-            <h2 className="text-xl font-semibold text-gray-900">
-              Recent Activities
-            </h2>
+            <div className="flex items-center gap-3">
+              <h2 className="text-xl font-semibold text-gray-900">
+                Recent Activities
+              </h2>
+              {isPolling && (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                  <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+                  Auto-updating
+                </span>
+              )}
+            </div>
             <button
               onClick={handleRefreshActivities}
               disabled={refreshState.refreshing}
