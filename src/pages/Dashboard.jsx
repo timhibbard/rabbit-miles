@@ -388,7 +388,7 @@ function Dashboard() {
           )}
           
           {/* Controls at bottom */}
-          <div className="mt-6 pt-6 border-t border-gray-200 flex justify-between items-center">
+          <div className="mt-6 pt-6 border-t border-gray-200 flex justify-between items-center" aria-label="Activity controls">
             <div className="flex items-center gap-3">
               {isPolling && (
                 <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
