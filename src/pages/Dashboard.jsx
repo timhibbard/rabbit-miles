@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { fetchMe, fetchActivities, refreshActivities } from '../utils/api';
 
@@ -29,16 +29,26 @@ function Dashboard() {
   });
   const [isPolling, setIsPolling] = useState(false);
   const pollingIntervalRef = useRef(null);
+  const isLoadingRef = useRef(false);
   const navigate = useNavigate();
 
   // Load activities for the authenticated user
-  const loadActivities = async (silent = false) => {
+  const loadActivities = useCallback(async (silent = false) => {
+    // Prevent overlapping requests
+    if (isLoadingRef.current) {
+      return;
+    }
+    
+    isLoadingRef.current = true;
+    
     // If not silent, show loading state
     if (!silent) {
       setActivitiesState({ loading: true, activities: [], error: null });
     }
     
     const result = await fetchActivities(10, 0);
+    
+    isLoadingRef.current = false;
     
     if (result.success) {
       setActivitiesState({
@@ -47,13 +57,23 @@ function Dashboard() {
         error: null,
       });
     } else {
-      setActivitiesState({
-        loading: false,
-        activities: [],
-        error: result.error || 'Failed to load activities',
-      });
+      // For silent refresh, don't update error state to avoid disrupting UI
+      if (!silent) {
+        setActivitiesState({
+          loading: false,
+          activities: [],
+          error: result.error || 'Failed to load activities',
+        });
+      } else {
+        // For silent refresh, keep existing activities and just log the error
+        console.warn('Silent activity refresh failed:', result.error);
+        setActivitiesState(prev => ({
+          ...prev,
+          loading: false,
+        }));
+      }
     }
-  };
+  }, []);
 
   // Refresh activities from Strava
   const handleRefreshActivities = async () => {
@@ -95,7 +115,7 @@ function Dashboard() {
   };
 
   // Start automatic polling for activity updates
-  const startPolling = () => {
+  const startPolling = useCallback(() => {
     if (pollingIntervalRef.current) return; // Already polling
     
     setIsPolling(true);
@@ -103,16 +123,16 @@ function Dashboard() {
       // Silent refresh - don't show loading spinner
       loadActivities(true);
     }, ACTIVITY_POLL_INTERVAL);
-  };
+  }, [loadActivities]);
 
   // Stop automatic polling
-  const stopPolling = () => {
+  const stopPolling = useCallback(() => {
     if (pollingIntervalRef.current) {
       clearInterval(pollingIntervalRef.current);
       pollingIntervalRef.current = null;
     }
     setIsPolling(false);
-  };
+  }, []);
 
   useEffect(() => {
     // Check authentication status via /me endpoint
@@ -154,8 +174,7 @@ function Dashboard() {
     return () => {
       stopPolling();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [navigate]);
+  }, [navigate, loadActivities, startPolling, stopPolling]);
 
   // Loading state
   if (authState.loading) {
