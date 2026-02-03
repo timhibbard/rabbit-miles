@@ -227,10 +227,11 @@ def store_activities(athlete_id, activities):
         start_date_local = activity.get("start_date_local", "")
         timezone = activity.get("timezone", "")
         
-        # Get polyline from map summary_polyline
+        # Get polyline from map - prefer full polyline over summary_polyline
         polyline = ""
         if activity.get("map"):
-            polyline = activity["map"].get("summary_polyline", "")
+            # Try full polyline first, fallback to summary_polyline
+            polyline = activity["map"].get("polyline") or activity["map"].get("summary_polyline", "")
         
         # Insert or update activity
         # Note: time_on_trail, distance_on_trail, and last_matched are initialized as NULL
