@@ -125,6 +125,54 @@ This directory contains all AWS Lambda functions for the RabbitMiles backend API
 - `STRAVA_CLIENT_ID`: Strava API client ID
 - `STRAVA_CLIENT_SECRET`: Strava API client secret
 - `STRAVA_SECRET_ARN`: Alternative to separate client_id/secret
+- `MATCH_ACTIVITY_LAMBDA_ARN`: ARN of match_activity_trail Lambda (triggers trail matching)
+
+### Trail Matching Functions
+
+#### `match_activity_trail/`
+**Trigger:** Direct invocation or webhook_processor
+**Purpose:** Calculates trail metrics for activities
+- Decodes activity polyline (GPS path)
+- Loads trail GeoJSON from S3
+- Calculates distance and time on trail with 50m tolerance
+- Updates `distance_on_trail`, `time_on_trail`, and `last_matched` in database
+- Can be invoked with single activity_id for testing
+
+**Environment Variables:**
+- `DB_CLUSTER_ARN`: Aurora cluster ARN
+- `DB_SECRET_ARN`: Database credentials secret ARN
+- `DB_NAME`: Database name (default: postgres)
+- `TRAIL_DATA_BUCKET`: S3 bucket for trail GeoJSON (default: rabbitmiles-trail-data)
+
+**Request Format:**
+```json
+{"activity_id": 123}
+```
+
+**Algorithm:**
+- 50 meter tolerance on either side of trail
+- Haversine distance for accurate geodesic calculations
+- Point-to-segment distance for trail proximity
+- Time calculation proportional to distance ratio
+
+#### `match_unmatched_activities/`
+**Trigger:** Manual invocation or scheduled (EventBridge)
+**Purpose:** Batch process activities missing trail metrics
+- Finds activities where `last_matched IS NULL`
+- Processes 10 activities per invocation
+- Invokes `match_activity_trail` for each activity asynchronously
+- Used for backfilling existing activities and catching missed webhooks
+
+**Environment Variables:**
+- `DB_CLUSTER_ARN`: Aurora cluster ARN
+- `DB_SECRET_ARN`: Database credentials secret ARN
+- `DB_NAME`: Database name (default: postgres)
+- `MATCH_ACTIVITY_LAMBDA_ARN`: ARN of match_activity_trail Lambda
+
+**Use Cases:**
+- Initial backfill after deployment
+- Scheduled daily cleanup
+- Manual recovery after webhook issues
 
 ### Trail Data Functions
 
@@ -174,6 +222,9 @@ See `migrations/` directory for table schemas:
 - `users`: User accounts with Strava tokens
 - `oauth_states`: Temporary OAuth state tokens
 - `activities`: Activity data from Strava
+  - `time_on_trail`: Time spent on trail in seconds (computed by match_activity_trail)
+  - `distance_on_trail`: Distance covered on trail in meters (computed by match_activity_trail)
+  - `last_matched`: Timestamp when activity was last checked against trail data
 - `webhook_events`: Processed webhook events (for idempotency)
 
 ## Deployment

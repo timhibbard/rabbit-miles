@@ -325,6 +325,14 @@ function Dashboard() {
                 const durationMinutes = Math.floor(activity.elapsed_time / 60);
                 const durationSeconds = activity.elapsed_time % 60;
                 
+                // Calculate trail metrics if available
+                const distanceOnTrailMiles = activity.distance_on_trail 
+                  ? (activity.distance_on_trail / METERS_TO_MILES).toFixed(2)
+                  : null;
+                const timeOnTrailMinutes = activity.time_on_trail 
+                  ? Math.floor(activity.time_on_trail / 60)
+                  : null;
+                
                 // Calculate pace with proper zero handling
                 // Pace = elapsed_time (minutes) / distance (miles)
                 let paceMin = 0;
@@ -364,12 +372,22 @@ function Dashboard() {
                       <div>
                         <p className="text-gray-500">Distance</p>
                         <p className="font-semibold text-gray-900">{distanceMiles} mi</p>
+                        {distanceOnTrailMiles && (
+                          <p className="text-xs text-green-600 mt-0.5">
+                            {distanceOnTrailMiles} mi on trail
+                          </p>
+                        )}
                       </div>
                       <div>
                         <p className="text-gray-500">Duration</p>
                         <p className="font-semibold text-gray-900">
                           {durationMinutes}:{durationSeconds.toString().padStart(2, '0')}
                         </p>
+                        {timeOnTrailMinutes !== null && (
+                          <p className="text-xs text-green-600 mt-0.5">
+                            {timeOnTrailMinutes} min on trail
+                          </p>
+                        )}
                       </div>
                       <div>
                         <p className="text-gray-500">Pace</p>

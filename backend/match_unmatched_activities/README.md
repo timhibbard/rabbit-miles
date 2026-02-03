@@ -1,0 +1,199 @@
+# match_unmatched_activities Lambda Function
+
+This Lambda function finds activities in the database where `last_matched IS NULL` and triggers trail matching for them. It's used for backfilling existing activities and catching any activities that were missed during webhook processing.
+
+## Purpose
+
+- Identifies activities that haven't been matched against trail data
+- Triggers the `match_activity_trail` Lambda for each unmatched activity
+- Processes activities in batches to avoid overwhelming the system
+
+## Use Cases
+
+1. **Initial Backfill**: After deploying trail matching, process all existing activities
+2. **Scheduled Cleanup**: Run daily/weekly to catch any activities missed by webhooks
+3. **Manual Trigger**: Admin can invoke manually if needed
+
+## Invocation
+
+### Manual Invocation
+```bash
+aws lambda invoke \
+  --function-name match_unmatched_activities \
+  --invocation-type Event \
+  output.json
+```
+
+### Scheduled via EventBridge
+```json
+{
+  "schedule": "rate(1 day)",
+  "rule": "daily-match-unmatched-activities"
+}
+```
+
+## Environment Variables
+
+Required:
+- `DB_CLUSTER_ARN`: Aurora PostgreSQL cluster ARN
+- `DB_SECRET_ARN`: Database credentials secret ARN
+- `DB_NAME`: Database name (default: postgres)
+- `MATCH_ACTIVITY_LAMBDA_ARN`: ARN of match_activity_trail Lambda function
+
+## Batch Processing
+
+- Processes **10 activities per invocation** by default
+- Uses async Lambda invocation to trigger matching
+- Each activity is matched independently
+- Can be invoked multiple times for large backlogs
+
+## Response Format
+
+```json
+{
+  "message": "Triggered matching for 8 activities",
+  "total_found": 10,
+  "success": 8,
+  "failed": 2
+}
+```
+
+## Algorithm
+
+1. Query database for activities where `last_matched IS NULL`
+2. Order by `start_date DESC` (newest first)
+3. Limit to batch size (10)
+4. For each activity:
+   - Invoke `match_activity_trail` Lambda asynchronously
+   - Track success/failure count
+5. Return summary
+
+## Deployment
+
+```bash
+# Create deployment package
+cd backend/match_unmatched_activities
+zip -r function.zip lambda_function.py
+
+# Deploy to AWS Lambda
+aws lambda update-function-code \
+  --function-name match_unmatched_activities \
+  --zip-file fileb://function.zip
+
+# Set environment variables
+aws lambda update-function-configuration \
+  --function-name match_unmatched_activities \
+  --environment Variables={
+    DB_CLUSTER_ARN=arn:aws:rds:us-east-1:...,
+    DB_SECRET_ARN=arn:aws:secretsmanager:us-east-1:...,
+    DB_NAME=postgres,
+    MATCH_ACTIVITY_LAMBDA_ARN=arn:aws:lambda:us-east-1:...:function:match_activity_trail
+  }
+```
+
+## IAM Permissions Required
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "rds-data:ExecuteStatement"
+      ],
+      "Resource": "arn:aws:rds:us-east-1:ACCOUNT:cluster:CLUSTER_NAME"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "secretsmanager:GetSecretValue"
+      ],
+      "Resource": "arn:aws:secretsmanager:us-east-1:ACCOUNT:secret:SECRET_NAME"
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "lambda:InvokeFunction"
+      ],
+      "Resource": "arn:aws:lambda:us-east-1:ACCOUNT:function:match_activity_trail"
+    }
+  ]
+}
+```
+
+## Monitoring
+
+Check CloudWatch Logs for:
+- Number of unmatched activities found
+- Success/failure rates for Lambda invocations
+- Any errors during processing
+
+## Batch Size Tuning
+
+To process more activities per invocation, modify `BATCH_SIZE` in the code:
+
+```python
+# Increase batch size for faster backfilling
+BATCH_SIZE = 50  # Default is 10
+```
+
+Consider Lambda timeout and concurrent execution limits when increasing batch size.
+
+## For Large Backlogs
+
+If you have thousands of unmatched activities:
+
+1. Increase Lambda timeout (max 15 minutes)
+2. Increase batch size to 50-100
+3. Invoke multiple times in parallel
+4. Use Step Functions for orchestration
+
+Example Step Functions workflow:
+```json
+{
+  "Comment": "Process all unmatched activities",
+  "StartAt": "ProcessBatch",
+  "States": {
+    "ProcessBatch": {
+      "Type": "Task",
+      "Resource": "arn:aws:lambda:...:match_unmatched_activities",
+      "Next": "CheckIfMore",
+      "Retry": [{
+        "ErrorEquals": ["States.ALL"],
+        "MaxAttempts": 3
+      }]
+    },
+    "CheckIfMore": {
+      "Type": "Choice",
+      "Choices": [{
+        "Variable": "$.total_found",
+        "NumericGreaterThan": 0,
+        "Next": "Wait"
+      }],
+      "Default": "Done"
+    },
+    "Wait": {
+      "Type": "Wait",
+      "Seconds": 2,
+      "Next": "ProcessBatch"
+    },
+    "Done": {
+      "Type": "Succeed"
+    }
+  }
+}
+```
+
+## Scheduling Recommendations
+
+- **Initial deployment**: Invoke manually with high batch size
+- **Ongoing**: Schedule once daily to catch missed activities
+- **After webhook issues**: Invoke manually to recover
+
+## Error Handling
+
+- Individual Lambda invocation failures are logged but don't stop processing
+- Database query errors return 500 status
+- Missing environment variables return 500 status
+- Continues processing even if some invocations fail

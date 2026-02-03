@@ -21,11 +21,13 @@ import boto3
 
 rds = boto3.client("rds-data")
 sm = boto3.client("secretsmanager")
+lambda_client = boto3.client("lambda")
 
 # Get environment variables
 DB_CLUSTER_ARN = os.environ.get("DB_CLUSTER_ARN", "")
 DB_SECRET_ARN = os.environ.get("DB_SECRET_ARN", "")
 DB_NAME = os.environ.get("DB_NAME", "postgres")
+MATCH_ACTIVITY_LAMBDA_ARN = os.environ.get("MATCH_ACTIVITY_LAMBDA_ARN", "")
 
 STRAVA_TOKEN_URL = "https://www.strava.com/oauth/token"
 STRAVA_ACTIVITY_URL = "https://www.strava.com/api/v3/activities"
@@ -153,11 +155,11 @@ def fetch_activity_details(access_token, activity_id):
 
 
 def store_activity(athlete_id, activity):
-    """Store or update activity in database"""
+    """Store or update activity in database, returns activity_id if successful"""
     strava_activity_id = activity.get("id")
     if not strava_activity_id:
         print(f"ERROR: Activity missing id: {activity}")
-        return False
+        return None
     
     # Extract activity data
     name = activity.get("name", "")
@@ -176,7 +178,7 @@ def store_activity(athlete_id, activity):
         # Try full polyline first, fallback to summary_polyline
         polyline = activity["map"].get("polyline") or activity["map"].get("summary_polyline", "")
     
-    # Insert or update activity
+    # Insert or update activity and return the activity ID
     sql = """
     INSERT INTO activities (
         athlete_id, strava_activity_id, name, distance, moving_time, elapsed_time,
@@ -196,6 +198,7 @@ def store_activity(athlete_id, activity):
         timezone = EXCLUDED.timezone,
         polyline = EXCLUDED.polyline,
         updated_at = now()
+    RETURNING id
     """
     
     params = [
@@ -214,12 +217,19 @@ def store_activity(athlete_id, activity):
     ]
     
     try:
-        _exec_sql(sql, params)
-        print(f"Successfully stored activity {strava_activity_id}: {name}")
-        return True
+        result = _exec_sql(sql, params)
+        # Get the returned activity ID
+        records = result.get("records", [])
+        if records:
+            activity_id = int(records[0][0].get("longValue", 0))
+            print(f"Successfully stored activity {strava_activity_id}: {name} (id={activity_id})")
+            return activity_id
+        else:
+            print(f"WARNING: Activity stored but no ID returned for {strava_activity_id}")
+            return None
     except Exception as e:
         print(f"ERROR: Failed to store activity {strava_activity_id}: {e}")
-        return False
+        return None
 
 
 def delete_activity(athlete_id, strava_activity_id):
@@ -236,6 +246,27 @@ def delete_activity(athlete_id, strava_activity_id):
         return True
     except Exception as e:
         print(f"ERROR: Failed to delete activity {strava_activity_id}: {e}")
+        return False
+
+
+def trigger_trail_matching(activity_id):
+    """Trigger trail matching Lambda for an activity"""
+    if not MATCH_ACTIVITY_LAMBDA_ARN:
+        print("WARNING: MATCH_ACTIVITY_LAMBDA_ARN not configured, skipping trail matching")
+        return False
+    
+    try:
+        payload = json.dumps({"activity_id": activity_id})
+        response = lambda_client.invoke(
+            FunctionName=MATCH_ACTIVITY_LAMBDA_ARN,
+            InvocationType='Event',  # Async invocation
+            Payload=payload
+        )
+        print(f"Triggered trail matching for activity {activity_id}: status {response['StatusCode']}")
+        return True
+    except Exception as e:
+        print(f"WARNING: Failed to trigger trail matching for activity {activity_id}: {e}")
+        # Don't fail the webhook processing if trail matching fails
         return False
 
 
@@ -323,6 +354,7 @@ def process_webhook_event(webhook_event):
     
     # Handle different event types
     success = False
+    activity_id = None
     
     if aspect_type == "delete":
         # Delete activity from database
@@ -331,7 +363,12 @@ def process_webhook_event(webhook_event):
         # Fetch activity details from Strava and store
         try:
             activity = fetch_activity_details(access_token, object_id)
-            success = store_activity(owner_id, activity)
+            activity_id = store_activity(owner_id, activity)
+            success = activity_id is not None
+            
+            # Trigger trail matching for the activity
+            if success and activity_id:
+                trigger_trail_matching(activity_id)
         except Exception as e:
             print(f"ERROR: Failed to fetch/store activity: {e}")
             # Don't mark as processed if fetch failed (might be temporary)
