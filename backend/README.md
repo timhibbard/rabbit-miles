@@ -52,6 +52,50 @@ This directory contains all AWS Lambda functions for the RabbitMiles backend API
 - Requires authentication (session cookie)
 - Returns activities from database
 
+#### `update_activities/`
+**Trigger:** Manual invocation (on-demand or scheduled)
+**Purpose:** Updates activities in the database from Strava
+- Accepts either:
+  - Single athlete_id (fetches recent activities for that athlete)
+  - Single athlete_id + activity_id (updates a specific activity)
+- Can be invoked via API Gateway, Lambda Console, or CLI
+- Useful for testing and backfilling activity data
+- No authentication required (internal-only function)
+
+**Request Format (JSON body):**
+```json
+# Update recent activities for an athlete
+{"athlete_id": 123456}
+
+# Update a specific activity
+{"athlete_id": 123456, "activity_id": 789012}
+```
+
+**Or via query string:**
+```
+?athlete_id=123456
+?athlete_id=123456&activity_id=789012
+```
+
+**Response:**
+```json
+{
+  "message": "Activities updated successfully",
+  "athlete_id": 123456,
+  "total_activities": 30,
+  "stored": 30,
+  "failed": 0
+}
+```
+
+**Environment Variables:**
+- `DB_CLUSTER_ARN`: Aurora cluster ARN
+- `DB_SECRET_ARN`: Database credentials secret ARN
+- `DB_NAME`: Database name (default: postgres)
+- `STRAVA_CLIENT_ID`: Strava API client ID
+- `STRAVA_CLIENT_SECRET`: Strava API client secret
+- `STRAVA_SECRET_ARN`: Alternative to separate client_id/secret
+
 ### Webhook Functions
 
 #### `webhook/`
