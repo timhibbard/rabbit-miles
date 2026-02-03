@@ -27,7 +27,7 @@ CREATE INDEX IF NOT EXISTS idx_activities_strava_activity_id ON activities(strav
 
 -- Add comment for documentation
 COMMENT ON TABLE activities IS 'Stores Strava activity data for athletes';
-COMMENT ON COLUMN activities.polyline IS 'Google encoded polyline from Strava summary_polyline';
+COMMENT ON COLUMN activities.polyline IS 'Google encoded polyline from Strava (full polyline when available, otherwise summary_polyline)';
 COMMENT ON COLUMN activities.distance IS 'Activity distance in meters';
 COMMENT ON COLUMN activities.moving_time IS 'Moving time in seconds (excludes pauses)';
 COMMENT ON COLUMN activities.elapsed_time IS 'Elapsed time in seconds (includes pauses)';
