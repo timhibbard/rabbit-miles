@@ -9,6 +9,39 @@ This guide walks through deploying the new trail matching Lambda functions to AW
 - Existing Lambda functions and database already deployed
 - Database migrations 004 and 005 applied (for trail columns)
 
+## Automated Deployment (Recommended)
+
+The Lambda functions are configured to deploy automatically via GitHub Actions when changes are pushed to the `main` branch.
+
+### Setup GitHub Actions Secrets
+
+Before automated deployment can work, add these secrets to your GitHub repository:
+
+1. Go to https://github.com/timhibbard/rabbit-miles/settings/secrets/actions
+2. Add the following secrets:
+   - `LAMBDA_MATCH_ACTIVITY_TRAIL` = `match_activity_trail` (or your function name)
+   - `LAMBDA_MATCH_UNMATCHED_ACTIVITIES` = `match_unmatched_activities` (or your function name)
+
+See `GITHUB_ACTIONS_SECRETS.md` for detailed instructions.
+
+### Trigger Deployment
+
+After secrets are configured:
+
+```bash
+# Push to main branch
+git push origin main
+
+# OR manually trigger via GitHub Actions UI:
+# 1. Go to Actions tab
+# 2. Select "Deploy Lambda Functions"
+# 3. Click "Run workflow"
+```
+
+## Manual Deployment (First Time Setup)
+
+Use this method for initial Lambda function creation. After creation, use automated deployment above.
+
 ## Deployment Steps
 
 ### 1. Deploy match_activity_trail Lambda

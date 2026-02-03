@@ -40,6 +40,10 @@ jobs:
             secret: LAMBDA_UPDATE_TRAIL_DATA
           - name: update_activities
             secret: LAMBDA_UPDATE_ACTIVITIES
+          - name: match_activity_trail
+            secret: LAMBDA_MATCH_ACTIVITY_TRAIL
+          - name: match_unmatched_activities
+            secret: LAMBDA_MATCH_UNMATCHED_ACTIVITIES
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
