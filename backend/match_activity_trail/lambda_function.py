@@ -417,7 +417,9 @@ def handler(event, context):
         
         # Handle direct invocation
         else:
-            # Parse activity_id from body or query string
+            # Parse activity_id from body
+            # For direct Lambda invocation, pass: {"activity_id": 123}
+            # For API Gateway invocation, can use query string: ?activity_id=123
             body = {}
             if event.get("body"):
                 try:
@@ -425,13 +427,16 @@ def handler(event, context):
                 except json.JSONDecodeError:
                     pass
             
-            query_params = event.get("queryStringParameters") or {}
-            activity_id = body.get("activity_id") or query_params.get("activity_id")
+            # Try body first, then query params (for API Gateway compatibility)
+            activity_id = body.get("activity_id")
+            if not activity_id:
+                query_params = event.get("queryStringParameters") or {}
+                activity_id = query_params.get("activity_id")
             
             if not activity_id:
                 return {
                     "statusCode": 400,
-                    "body": json.dumps({"error": "activity_id is required"})
+                    "body": json.dumps({"error": "activity_id is required in body or query string"})
                 }
             
             activity_id = int(activity_id)
