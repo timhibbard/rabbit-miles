@@ -82,6 +82,26 @@ This directory contains all AWS Lambda functions for the RabbitMiles backend API
 - `STRAVA_CLIENT_SECRET`: Strava API client secret
 - `STRAVA_SECRET_ARN`: Alternative to separate client_id/secret
 
+### Trail Data Functions
+
+#### `update_trail_data/`
+**Trigger:** Manual invocation (on-demand)
+**Purpose:** Updates trail GeoJSON data in S3
+- Downloads main trail GeoJSON from greenvilleopenmap.info
+- Downloads spur trail GeoJSON from greenvilleopenmap.info
+- Stores both files in S3 bucket (overwrites existing)
+- Can be invoked manually via AWS Console or CLI
+- No authentication required (internal-only function)
+
+**Environment Variables:**
+- `TRAIL_DATA_BUCKET`: S3 bucket name for storing trail data
+
+**S3 Storage:**
+- Main trail: `trails/main.geojson`
+- Spurs: `trails/spurs.geojson`
+- Total size: ~116KB
+- Used by trail matching logic to determine activity metrics
+
 ## Common Environment Variables
 
 All Lambda functions may use:
@@ -94,6 +114,7 @@ All Lambda functions may use:
 - `STRAVA_CLIENT_ID`: Strava OAuth client ID
 - `STRAVA_CLIENT_SECRET`: Strava OAuth client secret
 - `STRAVA_SECRET_ARN`: Alternative to separate client_id/secret env vars
+- `TRAIL_DATA_BUCKET`: S3 bucket for trail GeoJSON data (used by `update_trail_data`)
 
 ## Database Access
 
