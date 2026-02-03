@@ -66,4 +66,21 @@ export const refreshActivities = async () => {
   }
 };
 
+// Reset trail matching for all activities
+export const resetTrailMatching = async () => {
+  try {
+    console.log('Calling /activities/reset-matching endpoint...');
+    const response = await api.post('/activities/reset-matching');
+    console.log('/activities/reset-matching response:', response.data);
+    return { success: true, data: response.data };
+  } catch (error) {
+    console.error('/activities/reset-matching endpoint error:', error);
+    if (error.response?.status === 401) {
+      console.log('User not authenticated (401)');
+      return { success: false, notConnected: true };
+    }
+    return { success: false, error: error.message };
+  }
+};
+
 export default api;
