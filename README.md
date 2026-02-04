@@ -2,9 +2,10 @@
 
 A React SPA for tracking running miles with Strava integration.
 
-## Production URL
+## Production URLs
 
-The application is deployed at: **https://rabbitmiles.com**
+- **Frontend**: https://rabbitmiles.com
+- **API**: https://api.rabbitmiles.com (or legacy AWS API Gateway URL)
 
 ## Features
 
@@ -50,7 +51,7 @@ cp .env.example .env
 
 4. Update the `.env` file with your backend API URL:
 ```env
-VITE_API_BASE_URL=https://9zke9jame0.execute-api.us-east-1.amazonaws.com/prod
+VITE_API_BASE_URL=https://api.rabbitmiles.com
 ```
 
 ### Development
@@ -87,7 +88,9 @@ The app automatically deploys to GitHub Pages when changes are pushed to the `ma
 3. Add your backend URL as a repository secret:
    - Go to Settings → Secrets and variables → Actions
    - Add a new secret named `VITE_API_BASE_URL`
-   - Set the value to your AWS backend endpoint
+   - Set the value to your API endpoint (e.g., `https://api.rabbitmiles.com`)
+
+For complete frontend migration instructions, see [MIGRATION_TO_RABBITMILES_COM.md](MIGRATION_TO_RABBITMILES_COM.md)
 
 ### Backend Deployment
 
@@ -96,6 +99,7 @@ AWS Lambda functions automatically deploy when changes are pushed to the `backen
 For setup instructions, see:
 - [LAMBDA_DEPLOYMENT.md](LAMBDA_DEPLOYMENT.md) - General Lambda deployment
 - [WEBHOOK_SETUP.md](WEBHOOK_SETUP.md) - Strava webhook configuration
+- [API_MIGRATION_TO_CUSTOM_DOMAIN.md](API_MIGRATION_TO_CUSTOM_DOMAIN.md) - Custom API domain setup
 
 ## Environment Variables
 

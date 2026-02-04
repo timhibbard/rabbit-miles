@@ -207,8 +207,11 @@ All Lambda functions may use:
 - `DB_CLUSTER_ARN`: Aurora PostgreSQL cluster ARN
 - `DB_SECRET_ARN`: Secrets Manager ARN for database credentials
 - `DB_NAME`: Database name (default: postgres)
-- `API_BASE_URL`: API Gateway base URL (e.g., https://xyz.execute-api.us-east-1.amazonaws.com/prod)
-- `FRONTEND_URL`: Frontend URL (e.g., https://timhibbard.github.io/rabbit-miles)
+- `API_BASE_URL`: API Gateway base URL
+  - Custom domain (recommended): `https://api.rabbitmiles.com`
+  - Default: `https://xyz.execute-api.us-east-1.amazonaws.com/prod`
+  - See [API_MIGRATION_TO_CUSTOM_DOMAIN.md](../API_MIGRATION_TO_CUSTOM_DOMAIN.md) for custom domain setup
+- `FRONTEND_URL`: Frontend URL (e.g., https://rabbitmiles.com)
 - `APP_SECRET`: Secret for signing session cookies
 - `STRAVA_CLIENT_ID`: Strava OAuth client ID
 - `STRAVA_CLIENT_SECRET`: Strava OAuth client secret

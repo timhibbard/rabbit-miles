@@ -104,12 +104,31 @@ aws lambda update-function-configuration \
   - Disconnect redirect
 - Keep other environment variables unchanged (DB_CLUSTER_ARN, APP_SECRET, etc.)
 
-### 6. GitHub Actions Secrets (No Changes Required)
+### 6. GitHub Actions Secrets (Manual Update Recommended)
 
-The `VITE_API_BASE_URL` secret remains unchanged because the backend API Gateway URL stays the same:
+While the backend API Gateway URL stays the same initially, you can optionally migrate to a custom API domain.
+
+**Current API URL (still works):**
 ```
 https://9zke9jame0.execute-api.us-east-1.amazonaws.com/prod
 ```
+
+**Recommended: Custom API Domain**
+
+For a fully branded experience, migrate the API to `api.rabbitmiles.com`.
+
+See **[API_MIGRATION_TO_CUSTOM_DOMAIN.md](API_MIGRATION_TO_CUSTOM_DOMAIN.md)** for complete instructions on:
+- Setting up SSL certificate in AWS Certificate Manager
+- Creating custom domain in API Gateway
+- Configuring DNS records
+- Updating Lambda environment variables
+- Testing the migration
+
+This is optional but recommended for:
+- Professional branding
+- Cleaner URLs (no `/prod` path needed)
+- Same root domain as frontend (improved CORS)
+- Future flexibility
 
 ## Testing Plan
 

@@ -4,8 +4,8 @@
 #
 # Env vars required:
 # DB_CLUSTER_ARN, DB_SECRET_ARN, DB_NAME=postgres
-# API_BASE_URL (e.g. https://9zke9jame0.execute-api.us-east-1.amazonaws.com/prod)
-# FRONTEND_URL (e.g. https://<you>.github.io/rabbitmiles)
+# API_BASE_URL (e.g. https://api.rabbitmiles.com or https://9zke9jame0.execute-api.us-east-1.amazonaws.com/prod)
+# FRONTEND_URL (e.g. https://rabbitmiles.com)
 # APP_SECRET (same secret used by auth callback / me)
 
 import os

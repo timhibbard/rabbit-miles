@@ -3,8 +3,8 @@
 #
 # Env vars required:
 # DB_CLUSTER_ARN, DB_SECRET_ARN, DB_NAME=postgres
-# API_BASE_URL (ex: https://9zke9jame0.execute-api.us-east-1.amazonaws.com)
-# FRONTEND_URL (ex: https://<you>.github.io/rabbitmiles)
+# API_BASE_URL (ex: https://api.rabbitmiles.com or https://9zke9jame0.execute-api.us-east-1.amazonaws.com/prod)
+# FRONTEND_URL (ex: https://rabbitmiles.com)
 # APP_SECRET (long random string)
 # STRAVA_CLIENT_ID
 # STRAVA_CLIENT_SECRET   (or set STRAVA_SECRET_ARN instead)
