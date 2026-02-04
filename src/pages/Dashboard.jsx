@@ -331,9 +331,7 @@ function Dashboard() {
     observer.observe(trigger);
 
     return () => {
-      if (trigger) {
-        observer.unobserve(trigger);
-      }
+      observer.disconnect();
     };
   }, [displayData.hasMore]);
 
@@ -646,7 +644,7 @@ function Dashboard() {
               </div>
             )}
             
-            {!displayData.hasMore && displayData.totalFiltered > INITIAL_ACTIVITIES_TO_SHOW && (
+            {!displayData.hasMore && displayCount > INITIAL_ACTIVITIES_TO_SHOW && (
               <div className="mt-6 text-center py-4">
                 <p className="text-sm text-gray-500">
                   You've reached the end. Showing all {displayData.totalFiltered} activities.
