@@ -38,6 +38,23 @@ def _exec_sql(sql: str, parameters: list | None = None):
     return rds.execute_statement(**kwargs)
 
 def handler(event, context):
+    # Validate required environment variables
+    if not FRONTEND:
+        print("ERROR: FRONTEND_URL environment variable not set")
+        return {
+            "statusCode": 500,
+            "headers": {"Content-Type": "application/json"},
+            "body": '{"error": "Server configuration error. Please contact support at tim@rabbitmiles.com."}'
+        }
+    
+    if not os.environ.get("STRAVA_CLIENT_ID"):
+        print("ERROR: STRAVA_CLIENT_ID environment variable not set")
+        return {
+            "statusCode": 500,
+            "headers": {"Content-Type": "application/json"},
+            "body": '{"error": "Server configuration error. Please contact support at tim@rabbitmiles.com."}'
+        }
+    
     state = secrets.token_urlsafe(24)
     
     # Store state in database with 10-minute expiration

@@ -50,7 +50,11 @@ function OAuthCallback() {
     // Forward to backend callback endpoint
     // The backend will validate state, exchange code for tokens, 
     // create session cookie, and redirect back to /connect
-    const backendCallbackUrl = `${API_BASE_URL}/auth/callback?code=${encodeURIComponent(params.code)}&state=${encodeURIComponent(params.state)}`;
+    const backendParams = new URLSearchParams({
+      code: params.code,
+      state: params.state,
+    });
+    const backendCallbackUrl = `${API_BASE_URL}/auth/callback?${backendParams.toString()}`;
     debug.log('OAuthCallback: Redirecting to backend:', backendCallbackUrl);
     
     // Redirect to backend - it will set cookies and redirect back
