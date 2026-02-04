@@ -233,8 +233,8 @@ def handler(event, context):
     max_age = 30 * 24 * 3600
     print(f"Created session token for athlete_id: {athlete_id}")
 
-    set_cookie = f"rm_session={session_token}; HttpOnly; Secure; SameSite=None; Path={COOKIE_PATH}; Max-Age={max_age}"
-    clear_state = f"rm_state=; HttpOnly; Secure; SameSite=None; Path={COOKIE_PATH}; Max-Age=0"
+    set_cookie = f"rm_session={session_token}; HttpOnly; Secure; SameSite=Lax; Path={COOKIE_PATH}; Max-Age={max_age}"
+    clear_state = f"rm_state=; HttpOnly; Secure; SameSite=Lax; Path={COOKIE_PATH}; Max-Age=0"
 
     # Redirect back to SPA - use /connect page to show success message
     redirect_to = f"{FRONTEND}/connect?connected=1"
