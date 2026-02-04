@@ -32,18 +32,16 @@ function ConnectStrava() {
     const hashParams = new URLSearchParams(hash);
     const sessionToken = hashParams.get('session');
     
-    console.log('ConnectStrava: Just connected?', justConnected);
-    console.log('ConnectStrava: Session token in URL fragment?', sessionToken ? 'Yes' : 'No');
-    
     // If we have a session token in the URL (Mobile Safari fallback), validate and store it
     if (sessionToken) {
-      // Basic validation: session token should have format base64.signature (two parts separated by dot)
-      // This prevents storing arbitrary malicious values
-      if (sessionToken.includes('.') && sessionToken.length > 50) {
-        console.log('ConnectStrava: Storing validated session token in sessionStorage');
+      // Validate token format: should be base64url.hex_signature (JWT-like structure)
+      // Base64url: alphanumeric, dash, underscore (no padding)
+      // Hex signature: 64 hex chars (SHA256)
+      const tokenPattern = /^[A-Za-z0-9_-]+\.[a-f0-9]{64}$/;
+      if (tokenPattern.test(sessionToken)) {
         sessionStorage.setItem('rm_session', sessionToken);
       } else {
-        console.warn('ConnectStrava: Invalid session token format, ignoring');
+        console.warn('Invalid session token format detected');
       }
     }
     
