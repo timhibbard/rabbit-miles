@@ -48,6 +48,7 @@ function ActivityDetail() {
   const [debugInfo, setDebugInfo] = useState(null);
   const [currentPage, setCurrentPage] = useState(0);
   const [resettingMatching, setResettingMatching] = useState(false);
+  const [resetStatus, setResetStatus] = useState(null);
   const [hoveredPointIndex, setHoveredPointIndex] = useState(null);
   const [lastMatchedTimestamp, setLastMatchedTimestamp] = useState(null);
   const [showRefreshNotification, setShowRefreshNotification] = useState(false);
@@ -182,23 +183,23 @@ function ActivityDetail() {
   };
 
   const handleResetMatching = async () => {
-    if (!window.confirm('Reset trail matching for this activity? This will clear the last_matched timestamp and allow it to be reprocessed.')) {
-      return;
-    }
-    
     setResettingMatching(true);
+    setResetStatus('Resetting trail matching...');
+    
     try {
       const result = await resetActivityTrailMatching(id);
       if (result.success) {
-        alert('Trail matching reset successfully. The activity will be reprocessed.');
-        // Reload the activity to show updated state
-        window.location.reload();
+        setResetStatus('Trail matching reset successfully. Reloading...');
+        // Reload the activity to show updated state after a brief delay
+        setTimeout(() => {
+          window.location.reload();
+        }, 1500);
       } else {
-        alert(`Failed to reset trail matching: ${result.error || 'Unknown error'}`);
+        setResetStatus(`Failed to reset trail matching: ${result.error || 'Unknown error'}`);
+        setResettingMatching(false);
       }
     } catch (err) {
-      alert(`Error: ${err.message}`);
-    } finally {
+      setResetStatus(`Error: ${err.message}`);
       setResettingMatching(false);
     }
   };
@@ -472,9 +473,15 @@ function ActivityDetail() {
                   >
                     {resettingMatching ? 'Resetting...' : 'Reset last_matched to NULL'}
                   </button>
-                  <p className="text-xs text-gray-600 mt-1">
-                    This will clear the last_matched timestamp so the activity can be reprocessed
-                  </p>
+                  {resetStatus ? (
+                    <p className={`text-sm mt-2 ${resetStatus.startsWith('Failed') || resetStatus.startsWith('Error') ? 'text-red-600' : resetStatus.includes('successfully') ? 'text-green-600' : 'text-blue-600'}`}>
+                      {resetStatus}
+                    </p>
+                  ) : (
+                    <p className="text-xs text-gray-600 mt-1">
+                      This will clear the last_matched timestamp so the activity can be reprocessed
+                    </p>
+                  )}
                 </div>
                 <details className="mt-3">
                   <summary className="cursor-pointer text-orange-600 hover:text-orange-700 font-medium">
