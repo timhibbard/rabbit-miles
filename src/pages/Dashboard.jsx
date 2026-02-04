@@ -1,11 +1,12 @@
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { fetchMe, fetchActivities, refreshActivities } from '../utils/api';
+import Footer from '../components/Footer';
 
 // Constants
 const METERS_TO_MILES = 1609.34;
 const ACTIVITY_POLL_INTERVAL = 30000; // Poll every 30 seconds
-const MAX_DISPLAYED_ACTIVITIES = 10; // Number of activities to display in the list
+const ACTIVITIES_PER_PAGE = 15; // Number of activities to display per page
 const MAX_ACTIVITIES_FOR_STATS = 1000; // Maximum activities to fetch for stats calculation
 
 function Dashboard() {
@@ -29,6 +30,7 @@ function Dashboard() {
     error: null,
   });
   const [isPolling, setIsPolling] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
   const pollingIntervalRef = useRef(null);
   const isLoadingRef = useRef(false);
   const navigate = useNavigate();
@@ -120,6 +122,25 @@ function Dashboard() {
     };
   }, [activitiesState.activities, selectedTypes]);
 
+  // Calculate pagination details using useMemo
+  const paginationData = useMemo(() => {
+    const filteredActivities = activitiesState.activities.filter(activity => selectedTypes.includes(activity.type));
+    const totalFiltered = filteredActivities.length;
+    const totalPages = Math.ceil(totalFiltered / ACTIVITIES_PER_PAGE);
+    const startIndex = (currentPage - 1) * ACTIVITIES_PER_PAGE;
+    const endIndex = startIndex + ACTIVITIES_PER_PAGE;
+    const paginatedActivities = filteredActivities.slice(startIndex, endIndex);
+    
+    return {
+      filteredActivities,
+      totalFiltered,
+      totalPages,
+      startIndex,
+      endIndex,
+      paginatedActivities,
+    };
+  }, [activitiesState.activities, selectedTypes, currentPage]);
+
   // Load activities for the authenticated user
   const loadActivities = useCallback(async (silent = false) => {
     // Prevent overlapping requests
@@ -166,7 +187,7 @@ function Dashboard() {
   }, []);
 
   // Toggle activity type filter (Bike or Foot)
-  const toggleActivityType = (type) => {
+  const toggleActivityType = useCallback((type) => {
     if (type === 'Bike') {
       if (selectedTypes.includes('Ride')) {
         // Remove bike
@@ -184,7 +205,10 @@ function Dashboard() {
         setSelectedTypes(prev => [...prev, 'Run', 'Walk']);
       }
     }
-  };
+    
+    // Reset to page 1 after filter changes
+    setCurrentPage(1);
+  }, [selectedTypes]);
 
   // Refresh activities from Strava
   const handleRefreshActivities = async () => {
@@ -298,49 +322,55 @@ function Dashboard() {
   // Loading state
   if (authState.loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-orange-600 mb-4"></div>
-          <p className="text-gray-600">Loading...</p>
+      <>
+        <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+          <div className="text-center">
+            <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-orange-600 mb-4"></div>
+            <p className="text-gray-600">Loading...</p>
+          </div>
         </div>
-      </div>
+        <Footer />
+      </>
     );
   }
 
   // Error state
   if (authState.error) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center max-w-md mx-auto px-4">
-          <div className="bg-red-50 border border-red-200 rounded-lg p-6">
-            <svg
-              className="w-12 h-12 text-red-600 mx-auto mb-4"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth="2"
-                d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-              ></path>
-            </svg>
-            <h2 className="text-xl font-semibold text-gray-900 mb-2">
-              Unable to Connect
-            </h2>
-            <p className="text-gray-600 mb-4">
-              {authState.error}
-            </p>
-            <button
-              onClick={() => window.location.reload()}
-              className="px-6 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-orange-500"
-            >
-              Try Again
-            </button>
+      <>
+        <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+          <div className="text-center max-w-md mx-auto px-4">
+            <div className="bg-red-50 border border-red-200 rounded-lg p-6">
+              <svg
+                className="w-12 h-12 text-red-600 mx-auto mb-4"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="2"
+                  d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                ></path>
+              </svg>
+              <h2 className="text-xl font-semibold text-gray-900 mb-2">
+                Unable to Connect
+              </h2>
+              <p className="text-gray-600 mb-4">
+                {authState.error}
+              </p>
+              <button
+                onClick={() => window.location.reload()}
+                className="px-6 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-orange-500"
+              >
+                Try Again
+              </button>
+            </div>
           </div>
         </div>
-      </div>
+        <Footer />
+      </>
     );
   }
 
@@ -494,12 +524,10 @@ function Dashboard() {
             )
           )}
           
-          {!activitiesState.loading && !activitiesState.error && activitiesState.activities.length > 0 && (
-            <div className="space-y-4">
-              {activitiesState.activities
-                .filter(activity => selectedTypes.includes(activity.type))
-                .slice(0, MAX_DISPLAYED_ACTIVITIES) // Show only the most recent filtered activities
-                .map((activity) => {
+          {!activitiesState.loading && !activitiesState.error && paginationData.totalFiltered > 0 && (
+            <>
+              <div className="space-y-4">
+                {paginationData.paginatedActivities.map((activity) => {
                 const distanceMiles = (activity.distance / METERS_TO_MILES).toFixed(2);
                 const durationMinutes = Math.floor(activity.elapsed_time / 60);
                 const durationSeconds = activity.elapsed_time % 60;
@@ -582,6 +610,46 @@ function Dashboard() {
                 );
               })}
             </div>
+            
+            {/* Pagination Controls */}
+            {paginationData.totalPages > 1 && (
+              <div className="mt-6 flex items-center justify-between border-t border-gray-200 pt-4">
+                <div className="text-sm text-gray-600">
+                  Showing {paginationData.startIndex + 1} to {paginationData.startIndex + paginationData.paginatedActivities.length} of {paginationData.totalFiltered} activities
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => {
+                      setCurrentPage(prev => Math.max(1, prev - 1));
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }}
+                    disabled={currentPage === 1}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium focus:outline-none focus:ring-2 focus:ring-orange-500 ${
+                      currentPage === 1
+                        ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                        : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+                    }`}
+                  >
+                    Previous
+                  </button>
+                  <button
+                    onClick={() => {
+                      setCurrentPage(prev => Math.min(paginationData.totalPages, prev + 1));
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }}
+                    disabled={currentPage === paginationData.totalPages}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium focus:outline-none focus:ring-2 focus:ring-orange-500 ${
+                      currentPage === paginationData.totalPages
+                        ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                        : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+                    }`}
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
           )}
           
           {/* Controls at bottom */}
@@ -630,6 +698,9 @@ function Dashboard() {
           </div>
         </div>
       </div>
+      
+      {/* Footer */}
+      <Footer />
     </div>
   );
 }
