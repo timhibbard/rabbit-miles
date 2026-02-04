@@ -46,8 +46,9 @@ function ActivityDetail() {
           const coords = decodePolyline(result.data.polyline);
           setCoordinates(coords);
           
-          // Load trail data and calculate segments
-          if (result.data.distance_on_trail !== null && result.data.distance_on_trail > 0) {
+          // Load trail data and calculate segments if trail matching has been performed
+          // (distance_on_trail will be null if activity hasn't been trail-matched yet)
+          if (result.data.distance_on_trail !== null) {
             const trailData = await loadTrailData();
             if (trailData.length > 0) {
               const segments = calculateTrailSegments(coords, trailData);
@@ -153,10 +154,10 @@ function ActivityDetail() {
   
   const hasTrailData = activity.distance_on_trail !== null && activity.distance_on_trail > 0;
   
-  // Calculate pace
+  // Calculate pace using moving_time (excludes stopped time)
   let pace = 'N/A';
-  if (activity.distance > 0 && activity.elapsed_time > 0) {
-    const paceValue = (activity.elapsed_time / 60) / (activity.distance / METERS_TO_MILES);
+  if (activity.distance > 0 && activity.moving_time > 0) {
+    const paceValue = (activity.moving_time / 60) / (activity.distance / METERS_TO_MILES);
     const paceMin = Math.floor(paceValue);
     const paceSec = Math.floor((paceValue - paceMin) * 60);
     pace = `${paceMin}:${paceSec.toString().padStart(2, '0')}/mi`;
