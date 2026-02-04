@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { MapContainer, TileLayer, Polyline, useMap } from 'react-leaflet';
-import { fetchActivityDetail } from '../utils/api';
+import { fetchActivityDetail, resetActivityTrailMatching } from '../utils/api';
 import { decodePolyline } from '../utils/polyline';
 import { loadTrailData, calculateTrailSegments } from '../utils/trailMatching';
 import Footer from '../components/Footer';
 import 'leaflet/dist/leaflet.css';
 
 const METERS_TO_MILES = 1609.34;
+const POINTS_PER_PAGE = 200;
 
 // Component to fit map bounds to polyline
 function FitBounds({ bounds }) {
@@ -33,6 +34,8 @@ function ActivityDetail() {
   const [coordinates, setCoordinates] = useState([]);
   const [trailSegments, setTrailSegments] = useState([]);
   const [debugInfo, setDebugInfo] = useState(null);
+  const [currentPage, setCurrentPage] = useState(0);
+  const [resettingMatching, setResettingMatching] = useState(false);
 
   useEffect(() => {
     const loadActivity = async () => {
@@ -99,6 +102,28 @@ function ActivityDetail() {
       hour: 'numeric',
       minute: '2-digit',
     });
+  };
+
+  const handleResetMatching = async () => {
+    if (!window.confirm('Reset trail matching for this activity? This will clear the last_matched timestamp and allow it to be reprocessed.')) {
+      return;
+    }
+    
+    setResettingMatching(true);
+    try {
+      const result = await resetActivityTrailMatching(id);
+      if (result.success) {
+        alert('Trail matching reset successfully. The activity will be reprocessed.');
+        // Reload the activity to show updated state
+        window.location.reload();
+      } else {
+        alert(`Failed to reset trail matching: ${result.error || 'Unknown error'}`);
+      }
+    } catch (err) {
+      alert(`Error: ${err.message}`);
+    } finally {
+      setResettingMatching(false);
+    }
   };
 
   if (loading) {
@@ -337,15 +362,29 @@ function ActivityDetail() {
               <div className="mt-4 p-4 bg-gray-50 rounded-lg text-sm">
                 <h3 className="font-semibold text-gray-900 mb-2">Debug Information</h3>
                 <div className="space-y-1 text-gray-700">
+                  <p><strong>Activity ID:</strong> {activity.id}</p>
                   <p><strong>Total Points:</strong> {debugInfo.totalPoints}</p>
                   <p><strong>Points On Trail:</strong> {debugInfo.pointsOnTrail} ({((debugInfo.pointsOnTrail / debugInfo.totalPoints) * 100).toFixed(1)}%)</p>
                   <p><strong>Points Off Trail:</strong> {debugInfo.pointsOffTrail} ({((debugInfo.pointsOffTrail / debugInfo.totalPoints) * 100).toFixed(1)}%)</p>
                   <p><strong>Trail Segments Loaded:</strong> {debugInfo.numTrailSegments}</p>
                   <p><strong>Tolerance:</strong> {debugInfo.tolerance} meters</p>
+                  <p><strong>Last Matched:</strong> {activity.last_matched ? new Date(activity.last_matched).toLocaleString() : 'Never'}</p>
+                </div>
+                <div className="mt-3">
+                  <button
+                    onClick={handleResetMatching}
+                    disabled={resettingMatching}
+                    className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:bg-gray-400 disabled:cursor-not-allowed focus:outline-none focus:ring-2 focus:ring-red-500"
+                  >
+                    {resettingMatching ? 'Resetting...' : 'Reset last_matched to NULL'}
+                  </button>
+                  <p className="text-xs text-gray-600 mt-1">
+                    This will clear the last_matched timestamp so the activity can be reprocessed
+                  </p>
                 </div>
                 <details className="mt-3">
                   <summary className="cursor-pointer text-orange-600 hover:text-orange-700 font-medium">
-                    View point-by-point analysis (first 50 points)
+                    View point-by-point analysis ({POINTS_PER_PAGE} points per page)
                   </summary>
                   <div className="mt-2 max-h-96 overflow-y-auto">
                     <table className="min-w-full text-xs">
@@ -359,8 +398,8 @@ function ActivityDetail() {
                         </tr>
                       </thead>
                       <tbody>
-                        {debugInfo.points.slice(0, 50).map((point, idx) => (
-                          <tr key={idx} className={point.isOnTrail ? 'bg-green-50' : 'bg-blue-50'}>
+                        {debugInfo.points.slice(currentPage * POINTS_PER_PAGE, (currentPage + 1) * POINTS_PER_PAGE).map((point, idx) => (
+                          <tr key={point.pointIndex} className={point.isOnTrail ? 'bg-green-50' : 'bg-blue-50'}>
                             <td className="px-2 py-1">{point.pointIndex}</td>
                             <td className="px-2 py-1">{point.lat.toFixed(6)}</td>
                             <td className="px-2 py-1">{point.lon.toFixed(6)}</td>
@@ -370,6 +409,28 @@ function ActivityDetail() {
                         ))}
                       </tbody>
                     </table>
+                    {debugInfo.points.length > POINTS_PER_PAGE && (
+                      <div className="mt-3 flex items-center justify-between border-t border-gray-200 pt-3">
+                        <button
+                          onClick={() => setCurrentPage(Math.max(0, currentPage - 1))}
+                          disabled={currentPage === 0}
+                          className="px-3 py-1 text-sm bg-orange-600 text-white rounded disabled:bg-gray-300 disabled:cursor-not-allowed hover:bg-orange-700"
+                        >
+                          Previous
+                        </button>
+                        <span className="text-sm text-gray-600">
+                          Page {currentPage + 1} of {Math.ceil(debugInfo.points.length / POINTS_PER_PAGE)} 
+                          {' '}(showing {currentPage * POINTS_PER_PAGE + 1} - {Math.min((currentPage + 1) * POINTS_PER_PAGE, debugInfo.points.length)} of {debugInfo.points.length} points)
+                        </span>
+                        <button
+                          onClick={() => setCurrentPage(Math.min(Math.ceil(debugInfo.points.length / POINTS_PER_PAGE) - 1, currentPage + 1))}
+                          disabled={currentPage >= Math.ceil(debugInfo.points.length / POINTS_PER_PAGE) - 1}
+                          className="px-3 py-1 text-sm bg-orange-600 text-white rounded disabled:bg-gray-300 disabled:cursor-not-allowed hover:bg-orange-700"
+                        >
+                          Next
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </details>
               </div>
