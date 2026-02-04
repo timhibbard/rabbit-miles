@@ -23,36 +23,71 @@ function ConnectStrava() {
     const urlParams = new URLSearchParams(window.location.search);
     const justConnected = urlParams.get('connected') === '1';
     
+    console.log('ConnectStrava mounted');
+    console.log('URL:', window.location.href);
+    console.log('Search params:', window.location.search);
+    console.log('Hash:', window.location.hash);
+    console.log('justConnected:', justConnected);
+    
     // Extract session token from URL fragment (not query param for security)
     // The backend passes the token in the fragment (#session=...) to prevent it from:
     // - Being sent to the server
     // - Appearing in server logs or analytics
     // - Being included in Referer headers
     const hash = window.location.hash.substring(1); // Remove leading #
+    console.log('Hash after removing #:', hash);
+    
     const hashParams = new URLSearchParams(hash);
     const sessionToken = hashParams.get('session');
     
     // If we have a session token in the URL (Mobile Safari fallback), validate and store it
     if (sessionToken) {
-      console.log('Found session token in URL fragment:', sessionToken.substring(0, 20) + '...');
+      console.log('Found session token in URL fragment');
+      console.log('Token preview:', sessionToken.substring(0, 30) + '...' + sessionToken.substring(sessionToken.length - 10));
+      console.log('Token length:', sessionToken.length);
+      
       // Validate token format: should be base64url.hex_signature (JWT-like structure)
       // Base64url: alphanumeric, dash, underscore (no padding)
       // Hex signature: 64 hex chars (SHA256)
       const tokenPattern = /^[A-Za-z0-9_-]+\.[a-f0-9]{64}$/;
-      if (tokenPattern.test(sessionToken)) {
+      const isValid = tokenPattern.test(sessionToken);
+      console.log('Token format valid:', isValid);
+      
+      if (isValid) {
         console.log('Token format valid, storing in sessionStorage');
         sessionStorage.setItem('rm_session', sessionToken);
         console.log('Token stored successfully');
+        console.log('Verifying storage - token in sessionStorage:', sessionStorage.getItem('rm_session') ? 'present' : 'missing');
       } else {
-        console.warn('Invalid session token format detected. Token:', sessionToken);
+        console.warn('Invalid session token format detected');
+        console.warn('Expected format: base64url.hex64');
+        console.warn('Token:', sessionToken);
+        // Show parts for debugging
+        if (sessionToken.includes('.')) {
+          const parts = sessionToken.split('.');
+          console.warn('Token parts:', {
+            payload: parts[0].substring(0, 20) + '...',
+            signature: parts[1],
+            signatureLength: parts[1] ? parts[1].length : 0,
+            expectedSignatureLength: 64
+          });
+        }
       }
     } else {
       console.log('No session token found in URL fragment');
+      // Check if there's already a token in sessionStorage
+      const existingToken = sessionStorage.getItem('rm_session');
+      if (existingToken) {
+        console.log('Found existing token in sessionStorage');
+      } else {
+        console.log('No token in sessionStorage either');
+      }
     }
     
     // Clean up URL immediately to prevent token exposure
     // This clears both query params and fragment
     if (justConnected || sessionToken) {
+      console.log('Cleaning up URL');
       window.history.replaceState({}, '', window.location.pathname);
     }
     
@@ -70,6 +105,11 @@ function ConnectStrava() {
         });
       } else {
         console.log('ConnectStrava: User not connected');
+        if (result.notConnected) {
+          console.log('ConnectStrava: Got 401 - user needs to authenticate');
+        } else if (result.error) {
+          console.error('ConnectStrava: API error:', result.error);
+        }
         setAuthState({
           loading: false,
           connected: false,
