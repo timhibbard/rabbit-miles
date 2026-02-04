@@ -66,19 +66,28 @@ def get_unmatched_activities(limit=100):
 
 
 def invoke_match_activity(activity_id):
-    """Invoke match_activity_trail Lambda for a single activity"""
+    """
+    Invoke match_activity_trail Lambda for a single activity.
+    
+    Note: Uses async invocation (Event type), which returns True if the invocation
+    was successfully queued, NOT if the actual matching succeeded. The matching
+    happens asynchronously in the background.
+    
+    Returns:
+        bool: True if invocation was queued, False if invocation failed
+    """
     payload = json.dumps({"activity_id": activity_id})
     
     try:
         response = lambda_client.invoke(
             FunctionName=MATCH_ACTIVITY_LAMBDA_ARN,
-            InvocationType='Event',  # Async invocation
+            InvocationType='Event',  # Async invocation - returns immediately after queuing
             Payload=payload
         )
-        print(f"Invoked match_activity_trail for activity {activity_id}: {response['StatusCode']}")
+        print(f"Queued match_activity_trail for activity {activity_id}: {response['StatusCode']}")
         return True
     except Exception as e:
-        print(f"Failed to invoke match_activity_trail for activity {activity_id}: {e}")
+        print(f"Failed to queue match_activity_trail for activity {activity_id}: {e}")
         return False
 
 
@@ -125,25 +134,26 @@ def handler(event, context):
         print(f"Found {len(unmatched_activities)} unmatched activities")
         
         # Invoke match_activity_trail for each activity
-        success_count = 0
-        failed_count = 0
+        # Note: These are async invocations - they queue the work but don't wait for completion
+        queued_count = 0
+        failed_to_queue_count = 0
         
         for activity in unmatched_activities:
             activity_id = activity["id"]
             if invoke_match_activity(activity_id):
-                success_count += 1
+                queued_count += 1
             else:
-                failed_count += 1
+                failed_to_queue_count += 1
         
-        print(f"Invoked matching for {success_count} activities ({failed_count} failed)")
+        print(f"Queued matching for {queued_count} activities ({failed_to_queue_count} failed to queue)")
         
         return {
             "statusCode": 200,
             "body": json.dumps({
-                "message": f"Triggered matching for {success_count} activities",
+                "message": f"Queued matching for {queued_count} activities (async - check database for actual results)",
                 "total_found": len(unmatched_activities),
-                "success": success_count,
-                "failed": failed_count
+                "queued": queued_count,
+                "failed_to_queue": failed_to_queue_count
             })
         }
         

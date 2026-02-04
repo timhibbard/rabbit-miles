@@ -51,12 +51,14 @@ Required:
 
 ```json
 {
-  "message": "Triggered matching for 8 activities",
+  "message": "Queued matching for 8 activities (async - check database for actual results)",
   "total_found": 10,
-  "success": 8,
-  "failed": 2
+  "queued": 8,
+  "failed_to_queue": 2
 }
 ```
+
+**Important**: The response indicates that invocations were successfully **queued**, not that matching has completed. Because this Lambda uses async invocation (`InvocationType='Event'`), the actual matching happens in the background. To verify actual results, query the database for activities where `last_matched` has been updated.
 
 ## Algorithm
 
@@ -126,8 +128,13 @@ aws lambda update-function-configuration \
 
 Check CloudWatch Logs for:
 - Number of unmatched activities found
-- Success/failure rates for Lambda invocations
+- Success/failure rates for Lambda invocations being **queued** (not completion)
 - Any errors during processing
+
+**To verify actual matching results:**
+- Query the database: `SELECT COUNT(*) FROM activities WHERE last_matched IS NOT NULL`
+- Check CloudWatch Logs for `match_activity_trail` Lambda to see actual matching results
+- Look for activities where `last_matched` timestamp was recently updated
 
 ## Batch Size Tuning
 
