@@ -6,10 +6,13 @@ Tests:
 1. Polyline decoding
 2. Haversine distance calculation
 3. Point to segment distance calculation
+4. Handler activity_id extraction from different event formats
 """
 
 import sys
 import os
+import json
+from unittest.mock import patch, MagicMock
 
 # Test the utility functions directly without importing boto3 clients
 
@@ -196,6 +199,78 @@ def test_trail_tolerance():
     assert tolerance_degrees_lon < 0.001, "Tolerance should be less than 0.001 degrees"
 
 
+def test_handler_activity_id_extraction():
+    """Test that handler correctly extracts activity_id from different event formats"""
+    print("\nTesting handler activity_id extraction...")
+    
+    # Add lambda function directory to path
+    lambda_dir = os.path.dirname(__file__)
+    if lambda_dir not in sys.path:
+        sys.path.insert(0, lambda_dir)
+    
+    # Set required environment variables
+    os.environ['DB_CLUSTER_ARN'] = 'test-cluster-arn'
+    os.environ['DB_SECRET_ARN'] = 'test-secret-arn'
+    os.environ['DB_NAME'] = 'postgres'
+    os.environ['TRAIL_DATA_BUCKET'] = 'test-bucket'
+    
+    # Import lambda_function with mocked boto3
+    with patch('boto3.client'):
+        if 'lambda_function' in sys.modules:
+            del sys.modules['lambda_function']
+        import lambda_function
+        
+        # Mock the match_activity function to avoid actual processing
+        with patch.object(lambda_function, 'match_activity') as mock_match:
+            mock_match.return_value = {
+                "activity_id": 123,
+                "distance_on_trail": 1000.0,
+                "time_on_trail": 300,
+                "message": "Test match"
+            }
+            
+            # Test 1: Direct Lambda invocation (as used by match_unmatched_activities)
+            print("  Test 1: Direct Lambda invocation format...")
+            event1 = {"activity_id": 123}
+            result1 = lambda_function.handler(event1, None)
+            assert result1['statusCode'] == 200, "Expected status 200"
+            mock_match.assert_called_with(123)
+            print("  ✓ Direct invocation format works")
+            
+            mock_match.reset_mock()
+            
+            # Test 2: API Gateway with query string
+            print("  Test 2: API Gateway query string format...")
+            event2 = {"queryStringParameters": {"activity_id": "456"}}
+            result2 = lambda_function.handler(event2, None)
+            assert result2['statusCode'] == 200, "Expected status 200"
+            mock_match.assert_called_with(456)
+            print("  ✓ Query string format works")
+            
+            mock_match.reset_mock()
+            
+            # Test 3: API Gateway with JSON body
+            print("  Test 3: API Gateway JSON body format...")
+            event3 = {"body": json.dumps({"activity_id": 789})}
+            result3 = lambda_function.handler(event3, None)
+            assert result3['statusCode'] == 200, "Expected status 200"
+            mock_match.assert_called_with(789)
+            print("  ✓ JSON body format works")
+            
+            # Test 4: Missing activity_id
+            print("  Test 4: Missing activity_id...")
+            event4 = {}
+            result4 = lambda_function.handler(event4, None)
+            assert result4['statusCode'] == 400, f"Expected status 400, got {result4['statusCode']}"
+            body = json.loads(result4['body'])
+            assert 'error' in body, "Expected error in response"
+            assert 'activity_id is required' in body['error'], "Expected activity_id required error"
+            print("  ✓ Missing activity_id handled correctly")
+    
+    print("✓ All activity_id extraction tests passed")
+
+
+
 if __name__ == '__main__':
     print("Running match_activity_trail tests...\n")
     print("=" * 60)
@@ -205,6 +280,7 @@ if __name__ == '__main__':
         test_haversine_distance()
         test_point_to_segment_distance()
         test_trail_tolerance()
+        test_handler_activity_id_extraction()
         
         print("\n" + "=" * 60)
         print("✅ All tests passed!")
