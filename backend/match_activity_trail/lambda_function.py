@@ -291,7 +291,7 @@ def calculate_trail_intersection(activity_coords, trail_segments, tolerance_mete
         print(f"Quick rejection: No sample points within 5x tolerance of trail")
         return 0.0, 0.0
     
-    # OPTIMIZATION 3: Process segments
+    # Process activity segments to determine which portions are on the trail
     # Track which activity segments are on the trail
     on_trail_segments = []
     total_distance = 0.0
