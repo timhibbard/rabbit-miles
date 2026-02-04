@@ -22,18 +22,34 @@ function ConnectStrava() {
     // Check if we just returned from OAuth callback
     const urlParams = new URLSearchParams(window.location.search);
     const justConnected = urlParams.get('connected') === '1';
-    const sessionToken = urlParams.get('session');
     
-    // If we have a session token in the URL (Mobile Safari fallback), store it
-    // and immediately clean up the URL to prevent token exposure in browser history
-    let urlNeedsCleaning = false;
+    // Extract session token from URL fragment (not query param for security)
+    // The backend passes the token in the fragment (#session=...) to prevent it from:
+    // - Being sent to the server
+    // - Appearing in server logs or analytics
+    // - Being included in Referer headers
+    const hash = window.location.hash.substring(1); // Remove leading #
+    const hashParams = new URLSearchParams(hash);
+    const sessionToken = hashParams.get('session');
+    
+    console.log('ConnectStrava: Just connected?', justConnected);
+    console.log('ConnectStrava: Session token in URL fragment?', sessionToken ? 'Yes' : 'No');
+    
+    // If we have a session token in the URL (Mobile Safari fallback), validate and store it
     if (sessionToken) {
-      sessionStorage.setItem('rm_session', sessionToken);
-      urlNeedsCleaning = true;
+      // Basic validation: session token should have format base64.signature (two parts separated by dot)
+      // This prevents storing arbitrary malicious values
+      if (sessionToken.includes('.') && sessionToken.length > 50) {
+        console.log('ConnectStrava: Storing validated session token in sessionStorage');
+        sessionStorage.setItem('rm_session', sessionToken);
+      } else {
+        console.warn('ConnectStrava: Invalid session token format, ignoring');
+      }
     }
     
-    // Clean up URL parameters immediately if we have sensitive data
-    if (urlNeedsCleaning || justConnected) {
+    // Clean up URL immediately to prevent token exposure
+    // This clears both query params and fragment
+    if (justConnected || sessionToken) {
       window.history.replaceState({}, '', window.location.pathname);
     }
     
