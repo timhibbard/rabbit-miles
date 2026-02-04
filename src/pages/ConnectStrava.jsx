@@ -72,8 +72,8 @@ function ConnectStrava() {
           const parts = sessionToken.split('.');
           debug.warn('Token structure:', {
             hasTwoParts: parts.length === 2,
-            payloadLength: parts[0] ? parts[0].length : 0,
-            signatureLength: parts[1] ? parts[1].length : 0,
+            payloadLength: parts[0].length,
+            signatureLength: parts[1]?.length || 0,
             expectedSignatureLength: 64
           });
         }
