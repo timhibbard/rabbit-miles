@@ -31,6 +31,10 @@ FRONTEND_URL = os.environ.get("FRONTEND_URL", "").rstrip("/")
 STRAVA_ACTIVITIES_URL = "https://www.strava.com/api/v3/athlete/activities"
 STRAVA_TOKEN_URL = "https://www.strava.com/oauth/token"
 
+# Filter activities starting from Jan 1, 2026 00:00:00 UTC
+# Unix timestamp: 1767225600
+ACTIVITIES_START_DATE = 1767225600
+
 
 def get_cors_origin():
     """Extract origin (scheme + host) from FRONTEND_URL for CORS headers"""
@@ -175,7 +179,7 @@ def refresh_access_token(athlete_id, refresh_token):
 
 def fetch_strava_activities(access_token, per_page=30, page=1):
     """Fetch activities from Strava API"""
-    url = f"{STRAVA_ACTIVITIES_URL}?per_page={per_page}&page={page}"
+    url = f"{STRAVA_ACTIVITIES_URL}?per_page={per_page}&page={page}&after={ACTIVITIES_START_DATE}"
     req = Request(url, headers={"Authorization": f"Bearer {access_token}"})
     
     try:
