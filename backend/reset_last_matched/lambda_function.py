@@ -22,7 +22,7 @@ DB_NAME = os.environ.get("DB_NAME", "postgres")
 APP_SECRET_STR = os.environ.get("APP_SECRET", "")
 APP_SECRET = APP_SECRET_STR.encode() if APP_SECRET_STR else b""
 FRONTEND_URL = os.environ.get("FRONTEND_URL", "").rstrip("/")
-MATCH_ACTIVITY_TRAIL_LAMBDA = os.environ.get("MATCH_ACTIVITY_TRAIL_LAMBDA", "rabbitmiles-match-activity-trail")
+MATCH_ACTIVITY_LAMBDA_ARN = os.environ.get("MATCH_ACTIVITY_LAMBDA_ARN", "")
 
 
 def get_cors_origin():
@@ -215,18 +215,21 @@ def handler(event, context):
             # Invoke match_activity_trail lambda to re-process the activity
             # This is an async invocation (don't wait for response)
             invocation_triggered = False
-            try:
-                print(f"Invoking {MATCH_ACTIVITY_TRAIL_LAMBDA} for activity {activity_id}")
-                lambda_client.invoke(
-                    FunctionName=MATCH_ACTIVITY_TRAIL_LAMBDA,
-                    InvocationType='Event',  # Async invocation
-                    Payload=json.dumps({"activity_id": int(activity_id)})
-                )
-                print(f"Successfully invoked match_activity_trail lambda for activity {activity_id}")
-                invocation_triggered = True
-            except Exception as e:
-                print(f"Warning: Failed to invoke match_activity_trail lambda: {e}")
-                # Continue anyway, the activity is reset and can be matched later
+            if MATCH_ACTIVITY_LAMBDA_ARN:
+                try:
+                    print(f"Invoking {MATCH_ACTIVITY_LAMBDA_ARN} for activity {activity_id}")
+                    lambda_client.invoke(
+                        FunctionName=MATCH_ACTIVITY_LAMBDA_ARN,
+                        InvocationType='Event',  # Async invocation
+                        Payload=json.dumps({"activity_id": int(activity_id)})
+                    )
+                    print(f"Successfully invoked match_activity_trail lambda for activity {activity_id}")
+                    invocation_triggered = True
+                except Exception as e:
+                    print(f"Warning: Failed to invoke match_activity_trail lambda: {e}")
+                    # Continue anyway, the activity is reset and can be matched later
+            else:
+                print(f"Warning: MATCH_ACTIVITY_LAMBDA_ARN not configured, skipping trail matching invocation")
             
             message = f"Successfully reset activity {activity_id} for trail matching"
             if invocation_triggered:
