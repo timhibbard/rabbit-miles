@@ -236,6 +236,8 @@ Example Step Functions workflow:
 ## Scheduling Recommendations
 
 - **Initial deployment**: Invoke manually with high limit (e.g., 200+) for backfilling
+  - Note: Test with incrementally larger limits (100, 200, 300) to ensure Lambda doesn't timeout
+  - Consider Lambda timeout (default: 3 seconds, max: 15 minutes) when choosing limit
 - **Ongoing**: Schedule once daily with default limit (75) to catch missed activities
 - **After webhook issues**: Invoke manually with custom limit to recover
 

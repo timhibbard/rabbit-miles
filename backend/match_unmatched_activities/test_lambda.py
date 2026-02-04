@@ -33,6 +33,21 @@ def reload_lambda_function():
         return lambda_function
 
 
+def extract_limit_from_mock_call(mock_sql):
+    """
+    Helper function to extract the limit parameter from a mocked SQL call.
+    
+    Args:
+        mock_sql: The mocked _exec_sql function
+        
+    Returns:
+        int: The limit value used in the SQL call
+    """
+    call_args = mock_sql.call_args
+    params = call_args[0][1] if len(call_args[0]) > 1 else call_args[1].get('parameters')
+    return params[0]['value']['longValue']
+
+
 def test_handler_missing_env_vars():
     """Test that handler fails gracefully when environment variables are missing"""
     print("Testing handler with missing environment variables...")
@@ -91,9 +106,7 @@ def test_handler_no_unmatched_activities():
         assert body['processed'] == 0, "Expected processed count to be 0"
         
         # Verify the default limit of 75 was used
-        call_args = mock_sql.call_args
-        params = call_args[0][1] if len(call_args[0]) > 1 else call_args[1].get('parameters')
-        assert params[0]['value']['longValue'] == 75, "Expected default limit of 75"
+        assert extract_limit_from_mock_call(mock_sql) == 75, "Expected default limit of 75"
         
         print("✓ Handler correctly handles no unmatched activities")
         print("✓ Handler uses default limit of 75")
@@ -256,9 +269,7 @@ def test_handler_custom_limit():
         assert result['statusCode'] == 200, f"Expected status 200, got {result['statusCode']}"
         
         # Verify the custom limit was used in SQL call
-        call_args = mock_sql.call_args
-        params = call_args[0][1] if len(call_args[0]) > 1 else call_args[1].get('parameters')
-        assert params[0]['value']['longValue'] == 150, "Expected custom limit of 150"
+        assert extract_limit_from_mock_call(mock_sql) == 150, "Expected custom limit of 150"
         
         body = json.loads(result['body'])
         assert body['total_found'] == 5, f"Expected 5 activities found, got {body['total_found']}"
@@ -271,9 +282,7 @@ def test_handler_custom_limit():
         result = lambda_function.handler({"limit": 25}, None)
         
         # Verify the custom limit was used
-        call_args = mock_sql.call_args
-        params = call_args[0][1] if len(call_args[0]) > 1 else call_args[1].get('parameters')
-        assert params[0]['value']['longValue'] == 25, "Expected custom limit of 25"
+        assert extract_limit_from_mock_call(mock_sql) == 25, "Expected custom limit of 25"
         
         print("✓ Handler correctly uses custom limit parameter (25)")
 
