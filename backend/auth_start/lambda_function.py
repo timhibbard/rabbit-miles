@@ -70,12 +70,13 @@ def handler(event, context):
     }
     url = "https://www.strava.com/oauth/authorize?" + urlencode(params)
 
-    cookie_val = f"rm_state={state}; HttpOnly; Secure; SameSite=None; Path={COOKIE_PATH}; Max-Age=600"
+    cookie_val = f"rm_state={state}; HttpOnly; Secure; SameSite=None; Path={COOKIE_PATH}; Max-Age=600; Partitioned"
 
     return {
         "statusCode": 302,
-        "headers": { "Location": url, "Set-Cookie": cookie_val },
+        "headers": { "Location": url },
         # HTTP API v2: use 'cookies' array to ensure API Gateway returns Set-Cookie
+        # Do not use Set-Cookie header with cookies array to avoid conflicts
         "cookies": [ cookie_val ],
         "body": ""
     }
