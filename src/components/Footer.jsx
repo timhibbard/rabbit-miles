@@ -31,6 +31,15 @@ function Footer() {
             <ul className="space-y-2 text-sm">
               <li>
                 <a 
+                  href="mailto:tim@rabbitmiles.com"
+                  className="hover:text-white focus:outline-none focus:underline"
+                  aria-label="Contact support via email"
+                >
+                  tim@rabbitmiles.com
+                </a>
+              </li>
+              <li>
+                <a 
                   href="https://www.strava.com/athletes/3519964" 
                   target="_blank" 
                   rel="noopener noreferrer"
