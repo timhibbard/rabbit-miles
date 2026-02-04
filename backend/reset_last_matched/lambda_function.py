@@ -214,6 +214,7 @@ def handler(event, context):
             
             # Invoke match_activity_trail lambda to re-process the activity
             # This is an async invocation (don't wait for response)
+            invocation_triggered = False
             try:
                 print(f"Invoking {MATCH_ACTIVITY_TRAIL_LAMBDA} for activity {activity_id}")
                 lambda_client.invoke(
@@ -222,9 +223,14 @@ def handler(event, context):
                     Payload=json.dumps({"activity_id": int(activity_id)})
                 )
                 print(f"Successfully invoked match_activity_trail lambda for activity {activity_id}")
+                invocation_triggered = True
             except Exception as e:
                 print(f"Warning: Failed to invoke match_activity_trail lambda: {e}")
                 # Continue anyway, the activity is reset and can be matched later
+            
+            message = f"Successfully reset activity {activity_id} for trail matching"
+            if invocation_triggered:
+                message += " and triggered re-processing"
             
             return {
                 "statusCode": 200,
@@ -232,7 +238,7 @@ def handler(event, context):
                 "body": json.dumps({
                     "success": True,
                     "activities_reset": affected_rows,
-                    "message": f"Successfully reset activity {activity_id} for trail matching and triggered re-processing"
+                    "message": message
                 })
             }
         else:

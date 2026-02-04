@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { MapContainer, TileLayer, Polyline, Marker, useMap } from 'react-leaflet';
 import { fetchActivityDetail, resetActivityTrailMatching } from '../utils/api';
 import { decodePolyline } from '../utils/polyline';
-import { loadTrailData, calculateTrailSegments } from '../utils/trailMatching';
+import { loadTrailData, calculateTrailSegments, haversineDistance } from '../utils/trailMatching';
 import Footer from '../components/Footer';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -137,6 +137,25 @@ function ActivityDetail() {
     // Clean up on unmount
     return () => clearInterval(intervalId);
   }, [id, debugMode, loading, error, lastMatchedTimestamp]);
+
+  // Calculate distance in miles for points on trail
+  const onTrailDistanceMiles = useMemo(() => {
+    if (!debugInfo || !coordinates || coordinates.length < 2) {
+      return 0;
+    }
+    
+    let distance = 0;
+    for (let i = 0; i < coordinates.length - 1; i++) {
+      // Check if both current and next point are on trail
+      if (debugInfo.points[i]?.isOnTrail && debugInfo.points[i + 1]?.isOnTrail) {
+        const [lat1, lon1] = coordinates[i];
+        const [lat2, lon2] = coordinates[i + 1];
+        distance += haversineDistance(lat1, lon1, lat2, lon2);
+      }
+    }
+    
+    return (distance / METERS_TO_MILES).toFixed(2);
+  }, [debugInfo, coordinates]);
 
   const formatTime = (seconds) => {
     if (!seconds || seconds === 0) return '0:00';
@@ -439,26 +458,7 @@ function ActivityDetail() {
                 <div className="space-y-1 text-gray-700">
                   <p><strong>Activity ID:</strong> {activity.id}</p>
                   <p><strong>Total Points:</strong> {debugInfo.totalPoints}</p>
-                  <p><strong>Points On Trail:</strong> {debugInfo.pointsOnTrail} ({((debugInfo.pointsOnTrail / debugInfo.totalPoints) * 100).toFixed(1)}%) - {(() => {
-                    // Calculate distance for points on trail
-                    let distance = 0;
-                    for (let i = 0; i < coordinates.length - 1; i++) {
-                      if (debugInfo.points[i] && debugInfo.points[i].isOnTrail) {
-                        const [lat1, lon1] = coordinates[i];
-                        const [lat2, lon2] = coordinates[i + 1];
-                        // Haversine distance calculation
-                        const toRadians = (deg) => deg * (Math.PI / 180);
-                        const dLat = toRadians(lat2 - lat1);
-                        const dLon = toRadians(lon2 - lon1);
-                        const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-                          Math.cos(toRadians(lat1)) * Math.cos(toRadians(lat2)) *
-                          Math.sin(dLon / 2) * Math.sin(dLon / 2);
-                        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-                        distance += 6371000 * c; // Earth radius in meters
-                      }
-                    }
-                    return (distance / METERS_TO_MILES).toFixed(2);
-                  })()} mi</p>
+                  <p><strong>Points On Trail:</strong> {debugInfo.pointsOnTrail} ({((debugInfo.pointsOnTrail / debugInfo.totalPoints) * 100).toFixed(1)}%) - {onTrailDistanceMiles} mi</p>
                   <p><strong>Points Off Trail:</strong> {debugInfo.pointsOffTrail} ({((debugInfo.pointsOffTrail / debugInfo.totalPoints) * 100).toFixed(1)}%)</p>
                   <p><strong>Trail Segments Loaded:</strong> {debugInfo.numTrailSegments}</p>
                   <p><strong>Tolerance:</strong> {debugInfo.tolerance} meters</p>
