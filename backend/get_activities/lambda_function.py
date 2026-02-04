@@ -60,6 +60,52 @@ def verify_session_token(tok):
         return None
 
 
+def parse_authorization_header(headers):
+    auth_header = headers.get("authorization") or headers.get("Authorization")
+    if not auth_header:
+        return None
+    if auth_header.lower().startswith("bearer "):
+        return auth_header.split(" ", 1)[1].strip()
+    return None
+
+
+def parse_session_cookie(event):
+    headers = event.get("headers") or {}
+
+    cookies_array = event.get("cookies") or []
+    cookie_header = headers.get("cookie") or headers.get("Cookie")
+
+    for cookie_str in cookies_array:
+        if not cookie_str or "=" not in cookie_str:
+            continue
+        for part in cookie_str.split(";"):
+            part = part.strip()
+            if not part or "=" not in part:
+                continue
+            k, v = part.split("=", 1)
+            if k == "rm_session":
+                return v
+
+    if cookie_header:
+        for part in cookie_header.split(";"):
+            part = part.strip()
+            if not part or "=" not in part:
+                continue
+            k, v = part.split("=", 1)
+            if k == "rm_session":
+                return v
+
+    return None
+
+
+def parse_session_token(event):
+    headers = event.get("headers") or {}
+    bearer_token = parse_authorization_header(headers)
+    if bearer_token:
+        return bearer_token
+    return parse_session_cookie(event)
+
+
 def _exec_sql(sql, parameters=None):
     """Execute SQL statement using RDS Data API"""
     kwargs = {
@@ -84,7 +130,7 @@ def handler(event, context):
             "headers": {
                 **cors_headers,
                 "Access-Control-Allow-Methods": "GET, OPTIONS",
-                "Access-Control-Allow-Headers": "Content-Type, Cookie",
+                "Access-Control-Allow-Headers": "Content-Type, Cookie, Authorization",
                 "Access-Control-Max-Age": "86400"
             },
             "body": ""
@@ -108,42 +154,7 @@ def handler(event, context):
                 "body": json.dumps({"error": "server configuration error"})
             }
         
-        # Get session token from cookies
-        # API Gateway HTTP API v2 provides cookies in event['cookies'] array
-        
-        headers = event.get("headers") or {}
-        
-        tok = None
-        
-        # API Gateway HTTP API v2 provides cookies in event['cookies'] array
-        cookies_array = event.get("cookies") or []
-        cookie_header = headers.get("cookie") or headers.get("Cookie")
-        
-        # Try cookies array first (API Gateway HTTP API v2 format)
-        for cookie_str in cookies_array:
-            if not cookie_str or "=" not in cookie_str:
-                continue
-            for part in cookie_str.split(";"):
-                part = part.strip()
-                if not part or "=" not in part:
-                    continue
-                k, v = part.split("=", 1)
-                if k == "rm_session":
-                    tok = v
-                    break
-            if tok:
-                break
-        
-        # Fallback to cookie header
-        if not tok and cookie_header:
-            for part in cookie_header.split(";"):
-                part = part.strip()
-                if not part or "=" not in part:
-                    continue
-                k, v = part.split("=", 1)
-                if k == "rm_session":
-                    tok = v
-                    break
+        tok = parse_session_token(event)
         
         if not tok:
             return {
