@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { MapContainer, TileLayer, Polyline, useMap } from 'react-leaflet';
 import { fetchActivityDetail } from '../utils/api';
 import { decodePolyline } from '../utils/polyline';
@@ -25,11 +25,14 @@ function FitBounds({ bounds }) {
 function ActivityDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const debugMode = searchParams.get('debug') === '1';
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [activity, setActivity] = useState(null);
   const [coordinates, setCoordinates] = useState([]);
   const [trailSegments, setTrailSegments] = useState([]);
+  const [debugInfo, setDebugInfo] = useState(null);
 
   useEffect(() => {
     const loadActivity = async () => {
@@ -51,8 +54,14 @@ function ActivityDetail() {
           if (result.data.distance_on_trail !== null) {
             const trailData = await loadTrailData();
             if (trailData.length > 0) {
-              const segments = calculateTrailSegments(coords, trailData);
-              setTrailSegments(segments);
+              if (debugMode) {
+                const { segments, debugInfo } = calculateTrailSegments(coords, trailData, true);
+                setTrailSegments(segments);
+                setDebugInfo(debugInfo);
+              } else {
+                const segments = calculateTrailSegments(coords, trailData);
+                setTrailSegments(segments);
+              }
             }
           }
         }
@@ -312,6 +321,47 @@ function ActivityDetail() {
                 </p>
               )}
             </div>
+            {debugMode && debugInfo && (
+              <div className="mt-4 p-4 bg-gray-50 rounded-lg text-sm">
+                <h3 className="font-semibold text-gray-900 mb-2">Debug Information</h3>
+                <div className="space-y-1 text-gray-700">
+                  <p><strong>Total Points:</strong> {debugInfo.totalPoints}</p>
+                  <p><strong>Points On Trail:</strong> {debugInfo.pointsOnTrail} ({((debugInfo.pointsOnTrail / debugInfo.totalPoints) * 100).toFixed(1)}%)</p>
+                  <p><strong>Points Off Trail:</strong> {debugInfo.pointsOffTrail} ({((debugInfo.pointsOffTrail / debugInfo.totalPoints) * 100).toFixed(1)}%)</p>
+                  <p><strong>Trail Segments Loaded:</strong> {debugInfo.numTrailSegments}</p>
+                  <p><strong>Tolerance:</strong> {debugInfo.tolerance} meters</p>
+                </div>
+                <details className="mt-3">
+                  <summary className="cursor-pointer text-orange-600 hover:text-orange-700 font-medium">
+                    View point-by-point analysis (first 50 points)
+                  </summary>
+                  <div className="mt-2 max-h-96 overflow-y-auto">
+                    <table className="min-w-full text-xs">
+                      <thead className="bg-gray-100 sticky top-0">
+                        <tr>
+                          <th className="px-2 py-1 text-left">#</th>
+                          <th className="px-2 py-1 text-left">Lat</th>
+                          <th className="px-2 py-1 text-left">Lon</th>
+                          <th className="px-2 py-1 text-left">On Trail</th>
+                          <th className="px-2 py-1 text-left">Distance (m)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {debugInfo.points.slice(0, 50).map((point, idx) => (
+                          <tr key={idx} className={point.isOnTrail ? 'bg-green-50' : 'bg-blue-50'}>
+                            <td className="px-2 py-1">{point.pointIndex}</td>
+                            <td className="px-2 py-1">{point.lat.toFixed(6)}</td>
+                            <td className="px-2 py-1">{point.lon.toFixed(6)}</td>
+                            <td className="px-2 py-1">{point.isOnTrail ? '✓' : '✗'}</td>
+                            <td className="px-2 py-1">{point.minDistance}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </details>
+              </div>
+            )}
           </div>
         ) : (
           <div className="bg-white rounded-lg shadow p-6 mb-6">
