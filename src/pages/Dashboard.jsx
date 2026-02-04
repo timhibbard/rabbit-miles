@@ -5,12 +5,8 @@ import { fetchMe, fetchActivities, refreshActivities } from '../utils/api';
 // Constants
 const METERS_TO_MILES = 1609.34;
 const ACTIVITY_POLL_INTERVAL = 30000; // Poll every 30 seconds
-
-// Activity type filters
-const ACTIVITY_TYPES = {
-  BIKE: 'Ride',
-  FOOT: 'Run,Walk',
-};
+const MAX_DISPLAYED_ACTIVITIES = 10; // Number of activities to display in the list
+const MAX_ACTIVITIES_FOR_STATS = 1000; // Maximum activities to fetch for stats calculation
 
 function Dashboard() {
   // Activity type filter state - can select bike, foot, or both
@@ -134,7 +130,7 @@ function Dashboard() {
     }
     
     // Fetch all activities (increase limit to get all for stats calculation)
-    const result = await fetchActivities(1000, 0);
+    const result = await fetchActivities(MAX_ACTIVITIES_FOR_STATS, 0);
     
     isLoadingRef.current = false;
     
@@ -494,7 +490,7 @@ function Dashboard() {
             <div className="space-y-4">
               {activitiesState.activities
                 .filter(activity => selectedTypes.includes(activity.type))
-                .slice(0, 10) // Show only the 10 most recent filtered activities
+                .slice(0, MAX_DISPLAYED_ACTIVITIES) // Show only the most recent filtered activities
                 .map((activity) => {
                 const distanceMiles = (activity.distance / METERS_TO_MILES).toFixed(2);
                 const durationMinutes = Math.floor(activity.elapsed_time / 60);
