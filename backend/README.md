@@ -52,6 +52,13 @@ This directory contains all AWS Lambda functions for the RabbitMiles backend API
 - Requires authentication (session cookie)
 - Returns activities from database
 
+#### `get_activity_detail/`
+**Route:** `GET /activities/:id`
+**Purpose:** Returns detailed activity information including polyline
+- Requires authentication (session cookie)
+- Returns single activity with full details including polyline for mapping
+- Used by the activity detail page to show interactive maps
+
 #### `update_activities/`
 **Trigger:** Manual invocation (on-demand or scheduled)
 **Purpose:** Updates activities in the database from Strava
