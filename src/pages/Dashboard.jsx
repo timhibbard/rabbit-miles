@@ -524,7 +524,7 @@ function Dashboard() {
             )
           )}
           
-          {!activitiesState.loading && !activitiesState.error && activitiesState.activities.length > 0 && paginationData.totalFiltered > 0 && (
+          {!activitiesState.loading && !activitiesState.error && paginationData.totalFiltered > 0 && (
             <>
               <div className="space-y-4">
                 {paginationData.paginatedActivities.map((activity) => {
@@ -615,7 +615,7 @@ function Dashboard() {
             {paginationData.totalPages > 1 && (
               <div className="mt-6 flex items-center justify-between border-t border-gray-200 pt-4">
                 <div className="text-sm text-gray-600">
-                  Showing {paginationData.startIndex + 1} to {Math.min(paginationData.endIndex, paginationData.totalFiltered)} of {paginationData.totalFiltered} activities
+                  Showing {paginationData.startIndex + 1} to {paginationData.startIndex + paginationData.paginatedActivities.length} of {paginationData.totalFiltered} activities
                 </div>
                 <div className="flex gap-2">
                   <button
