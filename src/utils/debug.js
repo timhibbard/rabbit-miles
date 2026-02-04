@@ -57,7 +57,8 @@ export const showDebugInfo = (info) => {
   console.log('Timestamp:', new Date().toISOString());
   console.log('User Agent:', navigator.userAgent);
   console.log('URL:', window.location.href);
-  console.log('SessionStorage keys:', Object.keys(sessionStorage));
+  // Only log count of sessionStorage keys for security
+  console.log('SessionStorage key count:', sessionStorage.length);
   if (info) {
     console.log('Additional Info:', info);
   }

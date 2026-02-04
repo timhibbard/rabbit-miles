@@ -29,7 +29,7 @@ api.interceptors.request.use(
     // Check if we have a session token in sessionStorage (Mobile Safari fallback)
     const sessionToken = sessionStorage.getItem('rm_session');
     if (sessionToken) {
-      debug.log('Adding Authorization header with session token:', sessionToken.substring(0, 20) + '...');
+      debug.log('Adding Authorization header with session token');
       config.headers.Authorization = `Bearer ${sessionToken}`;
     } else {
       debug.log('No session token found in sessionStorage for this request');
@@ -42,7 +42,11 @@ api.interceptors.request.use(
       debug.log('URL:', config.url);
       debug.log('Base URL:', config.baseURL);
       debug.log('Full URL:', `${config.baseURL}${config.url}`);
-      debug.log('Headers:', config.headers);
+      // Filter sensitive headers before logging
+      const safeHeaders = { ...config.headers };
+      if (safeHeaders.Authorization) safeHeaders.Authorization = '[REDACTED]';
+      if (safeHeaders.Cookie) safeHeaders.Cookie = '[REDACTED]';
+      debug.log('Headers:', safeHeaders);
       debug.log('With Credentials:', config.withCredentials);
       if (config.params) debug.log('Params:', config.params);
       if (config.data) debug.log('Data:', config.data);

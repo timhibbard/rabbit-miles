@@ -128,11 +128,13 @@ https://timhibbard.github.io/rabbit-miles/connect?debug=1
 When debug mode is enabled:
 - 🐛 A yellow banner appears at the top of the page
 - Detailed logs are written to the browser console including:
-  - URL parsing and session token extraction
-  - Token validation and storage operations
-  - API request/response details
-  - CORS headers and authentication status
+  - URL parsing and session token detection
+  - Token format validation (without exposing token content)
+  - Token storage operations success/failure
+  - API request/response details with sanitized headers
   - Error details with full stack traces
+  
+**Security Note:** Token content is never logged - only presence, format validation, and storage status are shown.
 
 **Usage Tips:**
 - Use debug mode to troubleshoot authentication issues

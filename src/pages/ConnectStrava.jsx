@@ -49,7 +49,6 @@ function ConnectStrava() {
     // If we have a session token in the URL (Mobile Safari fallback), validate and store it
     if (sessionToken) {
       debug.log('Found session token in URL fragment');
-      debug.log('Token preview:', sessionToken.substring(0, 30) + '...' + sessionToken.substring(sessionToken.length - 10));
       debug.log('Token length:', sessionToken.length);
       
       // Validate token format: should be base64url.hex_signature (JWT-like structure)
@@ -63,17 +62,17 @@ function ConnectStrava() {
         debug.log('Token format valid, storing in sessionStorage');
         sessionStorage.setItem('rm_session', sessionToken);
         debug.log('Token stored successfully');
-        debug.log('Verifying storage - token in sessionStorage:', sessionStorage.getItem('rm_session') ? 'present' : 'missing');
+        const hasToken = sessionStorage.getItem('rm_session') !== null;
+        debug.log('Verifying storage - token in sessionStorage:', hasToken ? 'present' : 'missing');
       } else {
         console.warn('Invalid session token format detected');
         debug.warn('Expected format: base64url.hex64');
-        debug.warn('Token:', sessionToken);
-        // Show parts for debugging
+        // Show structural info for debugging without exposing token content
         if (sessionToken.includes('.')) {
           const parts = sessionToken.split('.');
-          debug.warn('Token parts:', {
-            payload: parts[0].substring(0, 20) + '...',
-            signature: parts[1],
+          debug.warn('Token structure:', {
+            hasTwoParts: parts.length === 2,
+            payloadLength: parts[0] ? parts[0].length : 0,
             signatureLength: parts[1] ? parts[1].length : 0,
             expectedSignatureLength: 64
           });
