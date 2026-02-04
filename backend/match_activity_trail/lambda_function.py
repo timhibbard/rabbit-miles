@@ -251,6 +251,7 @@ def calculate_trail_intersection(activity_coords, trail_segments, tolerance_mete
     
     # OPTIMIZATION 2: Sample-based quick check
     # Check a sample of activity points to see if any are near the trail
+    # This helps quickly identify activities that are nowhere near the trail
     sample_size = min(10, len(activity_coords))
     sample_indices = [i * len(activity_coords) // sample_size for i in range(sample_size)]
     found_nearby = False
