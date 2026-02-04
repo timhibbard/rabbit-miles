@@ -4,6 +4,7 @@
 # Env vars required:
 # DB_CLUSTER_ARN, DB_SECRET_ARN, DB_NAME=postgres
 # API_BASE_URL (ex: https://9zke9jame0.execute-api.us-east-1.amazonaws.com)
+# FRONTEND_URL (ex: https://timhibbard.github.io/rabbit-miles)
 # STRAVA_CLIENT_ID
 
 import os, secrets, time
@@ -12,6 +13,7 @@ import boto3
 
 # Get environment variables safely - validation happens in handler
 API_BASE = os.environ.get("API_BASE_URL", "").rstrip("/")
+FRONTEND = os.environ.get("FRONTEND_URL", "").rstrip("/")
 
 rds = boto3.client("rds-data")
 DB_CLUSTER_ARN = os.environ.get("DB_CLUSTER_ARN", "")
@@ -59,7 +61,7 @@ def handler(event, context):
             "body": '{"error": "Database configuration error. Please contact support at tim@rabbitmiles.com."}'
         }
     
-    redirect_uri = f"{API_BASE}/auth/callback"
+    redirect_uri = f"{FRONTEND}/callback"
     params = {
         "client_id": os.environ["STRAVA_CLIENT_ID"],
         "response_type": "code",
