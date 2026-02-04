@@ -22,8 +22,8 @@ DB_SECRET_ARN = os.environ.get("DB_SECRET_ARN", "")
 DB_NAME = os.environ.get("DB_NAME", "postgres")
 MATCH_ACTIVITY_LAMBDA_ARN = os.environ.get("MATCH_ACTIVITY_LAMBDA_ARN", "")
 
-# Batch size for processing activities
-BATCH_SIZE = 10
+# Default batch size for processing activities
+DEFAULT_BATCH_SIZE = 75
 
 
 def _exec_sql(sql, parameters=None):
@@ -97,6 +97,9 @@ def handler(event, context):
     
     Finds activities where last_matched IS NULL and triggers matching for them.
     Processes in batches to avoid overwhelming the match_activity_trail Lambda.
+    
+    Event payload (optional):
+        limit (int): Number of activities to process. Defaults to 75 if not provided.
     """
     print(f"match_unmatched_activities handler invoked")
     print(f"Event: {json.dumps(event, default=str)}")
@@ -117,9 +120,10 @@ def handler(event, context):
         }
     
     try:
-        # Get unmatched activities
-        print(f"Fetching up to {BATCH_SIZE} unmatched activities...")
-        unmatched_activities = get_unmatched_activities(limit=BATCH_SIZE)
+        # Get limit from event payload, or use default
+        limit = event.get("limit", DEFAULT_BATCH_SIZE) if isinstance(event, dict) else DEFAULT_BATCH_SIZE
+        print(f"Fetching up to {limit} unmatched activities...")
+        unmatched_activities = get_unmatched_activities(limit=limit)
         
         if not unmatched_activities:
             print("No unmatched activities found")
