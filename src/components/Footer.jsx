@@ -33,6 +33,7 @@ function Footer() {
                 <a 
                   href="mailto:tim@rabbitmiles.com"
                   className="hover:text-white focus:outline-none focus:underline"
+                  aria-label="Contact support via email"
                 >
                   tim@rabbitmiles.com
                 </a>
