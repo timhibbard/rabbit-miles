@@ -1,5 +1,9 @@
 # Mobile Safari Cookie Authentication Fix
 
+> **⚠️ IMPORTANT: THIS FIX HAS BEEN SUPERSEDED**  
+> The `Partitioned` attribute added in this fix caused authentication to fail on all browsers.  
+> See `FIX_SUMMARY_PARTITIONED_COOKIE.md` for the current fix that removes `Partitioned`.
+
 ## Summary
 
 Fixed an issue where mobile Safari users could not authenticate after connecting with Strava. The app would remain on the "Connect with Strava" page instead of redirecting to the dashboard.
