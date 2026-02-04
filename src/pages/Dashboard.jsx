@@ -52,7 +52,11 @@ function Dashboard() {
 
     const now = new Date();
     const startOfWeek = new Date(now);
-    startOfWeek.setDate(now.getDate() - now.getDay()); // Start of week (Sunday)
+    // Start of week (Monday) - getDay() returns 0 for Sunday, 1 for Monday, etc.
+    // For Monday-based week: if Sunday (0), go back 6 days; otherwise go back (day - 1) days
+    const dayOfWeek = now.getDay();
+    const daysToSubtract = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+    startOfWeek.setDate(now.getDate() - daysToSubtract);
     startOfWeek.setHours(0, 0, 0, 0);
 
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
