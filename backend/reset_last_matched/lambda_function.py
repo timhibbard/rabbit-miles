@@ -11,8 +11,9 @@ import hashlib
 from urllib.parse import urlparse
 import boto3
 
-# Initialize RDS Data client
+# Initialize RDS Data client and Lambda client
 rds_data = boto3.client("rds-data")
+lambda_client = boto3.client("lambda")
 
 # Environment variables
 DB_CLUSTER_ARN = os.environ.get("DB_CLUSTER_ARN", "")
@@ -21,6 +22,7 @@ DB_NAME = os.environ.get("DB_NAME", "postgres")
 APP_SECRET_STR = os.environ.get("APP_SECRET", "")
 APP_SECRET = APP_SECRET_STR.encode() if APP_SECRET_STR else b""
 FRONTEND_URL = os.environ.get("FRONTEND_URL", "").rstrip("/")
+MATCH_ACTIVITY_TRAIL_LAMBDA = os.environ.get("MATCH_ACTIVITY_TRAIL_LAMBDA", "rabbitmiles-match-activity-trail")
 
 
 def get_cors_origin():
@@ -210,13 +212,27 @@ def handler(event, context):
             
             print(f"Successfully reset last_matched for activity {activity_id} (athlete {aid})")
             
+            # Invoke match_activity_trail lambda to re-process the activity
+            # This is an async invocation (don't wait for response)
+            try:
+                print(f"Invoking {MATCH_ACTIVITY_TRAIL_LAMBDA} for activity {activity_id}")
+                lambda_client.invoke(
+                    FunctionName=MATCH_ACTIVITY_TRAIL_LAMBDA,
+                    InvocationType='Event',  # Async invocation
+                    Payload=json.dumps({"activity_id": int(activity_id)})
+                )
+                print(f"Successfully invoked match_activity_trail lambda for activity {activity_id}")
+            except Exception as e:
+                print(f"Warning: Failed to invoke match_activity_trail lambda: {e}")
+                # Continue anyway, the activity is reset and can be matched later
+            
             return {
                 "statusCode": 200,
                 "headers": cors_headers,
                 "body": json.dumps({
                     "success": True,
                     "activities_reset": affected_rows,
-                    "message": f"Successfully reset activity {activity_id} for trail matching"
+                    "message": f"Successfully reset activity {activity_id} for trail matching and triggered re-processing"
                 })
             }
         else:
