@@ -33,9 +33,14 @@ function ConnectStrava() {
       
       if (sessionToken) {
         // Validate token format: base64url.hex_signature
-        const tokenPattern = /^[A-Za-z0-9_-]+\.[a-f0-9]{64}$/;
+        // Require minimum 20 chars for base64url portion to ensure proper token format
+        const tokenPattern = /^[A-Za-z0-9_-]{20,}\.[a-f0-9]{64}$/;
         if (tokenPattern.test(sessionToken)) {
           debug.log('Valid session token found in URL fragment');
+          // Security note: sessionStorage makes token accessible to JavaScript on the page.
+          // This is a necessary trade-off for Mobile Safari ITP compatibility.
+          // The token has a 30-day expiration and is only valid for this app.
+          // CSP headers should be configured on the server to mitigate XSS risks.
           sessionStorage.setItem('rm_session', sessionToken);
         } else {
           console.warn('Invalid session token format in URL fragment');

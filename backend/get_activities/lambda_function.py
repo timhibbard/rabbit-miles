@@ -66,7 +66,9 @@ def parse_authorization_header(headers):
     if not auth_header:
         return None
     if auth_header.lower().startswith("bearer "):
-        return auth_header.split(" ", 1)[1].strip()
+        token = auth_header.split(" ", 1)[1].strip()
+        # Validate token is non-empty after stripping whitespace
+        return token if token else None
     return None
 
 
