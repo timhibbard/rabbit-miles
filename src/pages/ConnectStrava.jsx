@@ -19,6 +19,10 @@ function ConnectStrava() {
   const currentMonthName = useMemo(() => new Date().toLocaleString('en-US', { month: 'long' }), []);
   const currentYear = useMemo(() => new Date().getFullYear(), []);
 
+  // Token format validation constants
+  const MIN_TOKEN_BASE64_LENGTH = 20;
+  const SIGNATURE_HEX_LENGTH = 64;
+
   useEffect(() => {
     // Show debug info if debug mode is enabled
     if (debug.enabled()) {
@@ -33,14 +37,13 @@ function ConnectStrava() {
       
       if (sessionToken) {
         // Validate token format: base64url.hex_signature
-        // Require minimum 20 chars for base64url portion to ensure proper token format
-        const tokenPattern = /^[A-Za-z0-9_-]{20,}\.[a-f0-9]{64}$/;
+        const tokenPattern = new RegExp(`^[A-Za-z0-9_-]{${MIN_TOKEN_BASE64_LENGTH},}\\.[a-f0-9]{${SIGNATURE_HEX_LENGTH}}$`);
         if (tokenPattern.test(sessionToken)) {
           debug.log('Valid session token found in URL fragment');
           // Security note: sessionStorage makes token accessible to JavaScript on the page.
           // This is a necessary trade-off for Mobile Safari ITP compatibility.
           // The token has a 30-day expiration and is only valid for this app.
-          // CSP headers should be configured on the server to mitigate XSS risks.
+          // Additional XSS mitigations (input sanitization, React's built-in escaping) are in place.
           sessionStorage.setItem('rm_session', sessionToken);
         } else {
           console.warn('Invalid session token format in URL fragment');

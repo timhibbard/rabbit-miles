@@ -48,7 +48,14 @@ def verify_session_token(tok):
         return None
 
 def parse_authorization_header(headers):
-    """Extract bearer token from Authorization header"""
+    """
+    Extract bearer token from Authorization header.
+    
+    Returns the token string if valid, or None if:
+    - Authorization header is missing
+    - Header doesn't start with 'Bearer '
+    - Token is empty or whitespace-only after extraction
+    """
     auth_header = headers.get("authorization") or headers.get("Authorization")
     if not auth_header:
         return None
