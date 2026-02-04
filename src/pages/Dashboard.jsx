@@ -33,9 +33,9 @@ function Dashboard() {
   const isLoadingRef = useRef(false);
   const navigate = useNavigate();
 
-  // Get current month and year for labels
-  const currentMonthName = new Date().toLocaleString('en-US', { month: 'long' });
-  const currentYear = new Date().getFullYear();
+  // Get current month and year for labels (memoized to avoid recreating on every render)
+  const currentMonthName = useMemo(() => new Date().toLocaleString('en-US', { month: 'long' }), []);
+  const currentYear = useMemo(() => new Date().getFullYear(), []);
 
   // Calculate statistics from activities based on selected types using useMemo
   const stats = useMemo(() => {

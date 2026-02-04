@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { fetchMe } from '../utils/api';
 
@@ -13,9 +13,9 @@ function ConnectStrava() {
     user: null,
   });
 
-  // Get current month and year for labels
-  const currentMonthName = new Date().toLocaleString('en-US', { month: 'long' });
-  const currentYear = new Date().getFullYear();
+  // Get current month and year for labels (memoized to avoid recreating on every render)
+  const currentMonthName = useMemo(() => new Date().toLocaleString('en-US', { month: 'long' }), []);
+  const currentYear = useMemo(() => new Date().getFullYear(), []);
 
   useEffect(() => {
     // Check if we just returned from OAuth callback
