@@ -123,7 +123,7 @@ def handler(event, context):
             # Format: "Bearer <token>"
             if auth_header.startswith("Bearer "):
                 tok = auth_header[7:]  # Remove "Bearer " prefix
-                print(f"Found session token in Authorization header: {tok[:20]}...")
+                print("Found session token in Authorization header")
         
         # If not in Authorization header, try cookies
         if not tok:

@@ -102,7 +102,7 @@ def handler(event, context):
             # Format: "Bearer <token>"
             if auth_header.startswith("Bearer "):
                 tok = auth_header[7:]  # Remove "Bearer " prefix
-                print(f"Found session token in Authorization header: {tok[:20]}...")
+                print("Found session token in Authorization header")
         
         # If not in Authorization header, try cookies
         if not tok:
@@ -142,7 +142,7 @@ def handler(event, context):
                         break
             
             if tok:
-                print(f"Found rm_session cookie: {tok[:20]}...")
+                print("Found rm_session cookie")
         
         if not tok:
             print(f"No session token found in Authorization header or cookies")
@@ -154,7 +154,7 @@ def handler(event, context):
         
         aid = verify_session_token(tok)
         if not aid:
-            print(f"Session token verification failed for token: {tok[:20]}...")
+            print("Session token verification failed")
             return {
                 "statusCode": 401,
                 "headers": cors_headers,

@@ -24,12 +24,8 @@ function ConnectStrava() {
     const justConnected = urlParams.get('connected') === '1';
     const sessionToken = urlParams.get('session');
     
-    console.log('ConnectStrava: Just connected?', justConnected);
-    console.log('ConnectStrava: Session token in URL?', sessionToken ? 'Yes' : 'No');
-    
     // If we have a session token in the URL (Mobile Safari fallback), store it
     if (sessionToken) {
-      console.log('ConnectStrava: Storing session token in sessionStorage');
       sessionStorage.setItem('rm_session', sessionToken);
     }
     

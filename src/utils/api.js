@@ -18,7 +18,6 @@ api.interceptors.request.use(
     // Check if we have a session token in sessionStorage (Mobile Safari fallback)
     const sessionToken = sessionStorage.getItem('rm_session');
     if (sessionToken) {
-      console.log('Adding Authorization header with session token from sessionStorage');
       config.headers.Authorization = `Bearer ${sessionToken}`;
     }
     return config;

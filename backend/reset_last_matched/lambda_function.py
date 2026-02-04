@@ -68,7 +68,7 @@ def parse_session_cookie(event):
         # Format: "Bearer <token>"
         if auth_header.startswith("Bearer "):
             tok = auth_header[7:]  # Remove "Bearer " prefix
-            print(f"Found session token in Authorization header: {tok[:20]}...")
+            print("Found session token in Authorization header")
             return tok
     
     # If not in Authorization header, try cookies
