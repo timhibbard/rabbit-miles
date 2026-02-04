@@ -11,6 +11,18 @@ import 'leaflet/dist/leaflet.css';
 const METERS_TO_MILES = 1609.34;
 const POINTS_PER_PAGE = 200;
 const POLLING_INTERVAL_MS = 3000; // Poll every 3 seconds
+const RELOAD_DELAY_MS = 1500; // Delay before reload to show success message
+
+// Helper function to determine status message color
+const getStatusClassName = (status) => {
+  if (status.startsWith('Failed') || status.startsWith('Error')) {
+    return 'text-red-600';
+  }
+  if (status.includes('successfully')) {
+    return 'text-green-600';
+  }
+  return 'text-blue-600';
+};
 
 // Custom icon for hover marker
 const hoverIcon = L.icon({
@@ -193,7 +205,7 @@ function ActivityDetail() {
         // Reload the activity to show updated state after a brief delay
         setTimeout(() => {
           window.location.reload();
-        }, 1500);
+        }, RELOAD_DELAY_MS);
       } else {
         setResetStatus(`Failed to reset trail matching: ${result.error || 'Unknown error'}`);
         setResettingMatching(false);
@@ -474,7 +486,7 @@ function ActivityDetail() {
                     {resettingMatching ? 'Resetting...' : 'Reset last_matched to NULL'}
                   </button>
                   {resetStatus ? (
-                    <p className={`text-sm mt-2 ${resetStatus.startsWith('Failed') || resetStatus.startsWith('Error') ? 'text-red-600' : resetStatus.includes('successfully') ? 'text-green-600' : 'text-blue-600'}`}>
+                    <p className={`text-sm mt-2 ${getStatusClassName(resetStatus)}`}>
                       {resetStatus}
                     </p>
                   ) : (
