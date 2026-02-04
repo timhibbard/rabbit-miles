@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { fetchMe } from '../utils/api';
 
@@ -12,6 +12,10 @@ function ConnectStrava() {
     connected: false,
     user: null,
   });
+
+  // Get current month and year for labels (memoized to avoid recreating on every render)
+  const currentMonthName = useMemo(() => new Date().toLocaleString('en-US', { month: 'long' }), []);
+  const currentYear = useMemo(() => new Date().getFullYear(), []);
 
   useEffect(() => {
     // Check if we just returned from OAuth callback
@@ -344,11 +348,11 @@ function ConnectStrava() {
                     <div className="text-2xl font-bold text-gray-900">12.4 mi</div>
                   </div>
                   <div className="bg-gray-50 rounded p-3">
-                    <div className="text-xs text-gray-500 mb-1">This Month</div>
+                    <div className="text-xs text-gray-500 mb-1">{currentMonthName}</div>
                     <div className="text-2xl font-bold text-gray-900">45.2 mi</div>
                   </div>
                   <div className="bg-gray-50 rounded p-3">
-                    <div className="text-xs text-gray-500 mb-1">This Year</div>
+                    <div className="text-xs text-gray-500 mb-1">{currentYear}</div>
                     <div className="text-2xl font-bold text-gray-900">156.8 mi</div>
                   </div>
                 </div>

@@ -33,6 +33,10 @@ function Dashboard() {
   const isLoadingRef = useRef(false);
   const navigate = useNavigate();
 
+  // Get current month and year for labels (memoized to avoid recreating on every render)
+  const currentMonthName = useMemo(() => new Date().toLocaleString('en-US', { month: 'long' }), []);
+  const currentYear = useMemo(() => new Date().getFullYear(), []);
+
   // Calculate statistics from activities based on selected types using useMemo
   const stats = useMemo(() => {
     const activities = activitiesState.activities;
@@ -421,7 +425,7 @@ function Dashboard() {
 
           <div className="bg-white rounded-lg shadow p-6">
             <h3 className="text-sm font-medium text-gray-500 mb-2">
-              This Month
+              {currentMonthName}
             </h3>
             <p className="text-3xl font-bold text-gray-900">
               {stats.thisMonth.toFixed(1)}
@@ -433,7 +437,7 @@ function Dashboard() {
 
           <div className="bg-white rounded-lg shadow p-6">
             <h3 className="text-sm font-medium text-gray-500 mb-2">
-              This Year
+              {currentYear}
             </h3>
             <p className="text-3xl font-bold text-gray-900">
               {stats.thisYear.toFixed(1)}
