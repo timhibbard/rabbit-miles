@@ -427,8 +427,13 @@ def handler(event, context):
                 except json.JSONDecodeError:
                     pass
             
-            # Try body first, then query params (for API Gateway compatibility)
-            activity_id = body.get("activity_id")
+            # Try multiple sources for activity_id:
+            # 1. Direct in event (for Lambda-to-Lambda invocation)
+            # 2. In body (for API Gateway with body)
+            # 3. In queryStringParameters (for API Gateway with query string)
+            activity_id = event.get("activity_id")
+            if not activity_id:
+                activity_id = body.get("activity_id")
             if not activity_id:
                 query_params = event.get("queryStringParameters") or {}
                 activity_id = query_params.get("activity_id")
