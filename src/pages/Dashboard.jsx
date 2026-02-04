@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { fetchMe, fetchActivities, refreshActivities } from '../utils/api';
 import Footer from '../components/Footer';
 
@@ -561,9 +561,10 @@ function Dashboard() {
                   : '';
                 
                 return (
-                  <div 
+                  <Link
                     key={activity.id}
-                    className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50 transition-colors"
+                    to={`/activity/${activity.id}`}
+                    className="block border border-gray-200 rounded-lg p-4 hover:bg-gray-50 hover:border-orange-300 transition-colors"
                   >
                     <div className="flex justify-between items-start mb-2">
                       <div>
@@ -606,7 +607,7 @@ function Dashboard() {
                         </p>
                       </div>
                     </div>
-                  </div>
+                  </Link>
                 );
               })}
             </div>
