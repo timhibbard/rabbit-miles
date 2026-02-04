@@ -6,7 +6,8 @@ import Footer from '../components/Footer';
 // Constants
 const METERS_TO_MILES = 1609.34;
 const ACTIVITY_POLL_INTERVAL = 30000; // Poll every 30 seconds
-const ACTIVITIES_PER_PAGE = 15; // Number of activities to display per page
+const INITIAL_ACTIVITIES_TO_SHOW = 15; // Initial number of activities to display
+const ACTIVITIES_INCREMENT = 15; // Number of activities to load when scrolling
 const MAX_ACTIVITIES_FOR_STATS = 1000; // Maximum activities to fetch for stats calculation
 
 function Dashboard() {
@@ -30,9 +31,10 @@ function Dashboard() {
     error: null,
   });
   const [isPolling, setIsPolling] = useState(false);
-  const [currentPage, setCurrentPage] = useState(1);
+  const [displayCount, setDisplayCount] = useState(INITIAL_ACTIVITIES_TO_SHOW);
   const pollingIntervalRef = useRef(null);
   const isLoadingRef = useRef(false);
+  const loadMoreTriggerRef = useRef(null);
   const navigate = useNavigate();
 
   // Get current month and year for labels (memoized to avoid recreating on every render)
@@ -122,24 +124,20 @@ function Dashboard() {
     };
   }, [activitiesState.activities, selectedTypes]);
 
-  // Calculate pagination details using useMemo
-  const paginationData = useMemo(() => {
+  // Calculate display data using useMemo
+  const displayData = useMemo(() => {
     const filteredActivities = activitiesState.activities.filter(activity => selectedTypes.includes(activity.type));
     const totalFiltered = filteredActivities.length;
-    const totalPages = Math.ceil(totalFiltered / ACTIVITIES_PER_PAGE);
-    const startIndex = (currentPage - 1) * ACTIVITIES_PER_PAGE;
-    const endIndex = startIndex + ACTIVITIES_PER_PAGE;
-    const paginatedActivities = filteredActivities.slice(startIndex, endIndex);
+    const visibleActivities = filteredActivities.slice(0, displayCount);
+    const hasMore = displayCount < totalFiltered;
     
     return {
       filteredActivities,
       totalFiltered,
-      totalPages,
-      startIndex,
-      endIndex,
-      paginatedActivities,
+      visibleActivities,
+      hasMore,
     };
-  }, [activitiesState.activities, selectedTypes, currentPage]);
+  }, [activitiesState.activities, selectedTypes, displayCount]);
 
   // Load activities for the authenticated user
   const loadActivities = useCallback(async (silent = false) => {
@@ -206,8 +204,8 @@ function Dashboard() {
       }
     }
     
-    // Reset to page 1 after filter changes
-    setCurrentPage(1);
+    // Reset to initial display count after filter changes
+    setDisplayCount(INITIAL_ACTIVITIES_TO_SHOW);
   }, [selectedTypes]);
 
   // Refresh activities from Strava
@@ -310,6 +308,34 @@ function Dashboard() {
       stopPolling();
     };
   }, [navigate, loadActivities, startPolling, stopPolling]);
+
+  // Intersection observer for infinite scroll
+  useEffect(() => {
+    const trigger = loadMoreTriggerRef.current;
+    if (!trigger) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const [entry] = entries;
+        if (entry.isIntersecting && displayData.hasMore) {
+          setDisplayCount(prev => prev + ACTIVITIES_INCREMENT);
+        }
+      },
+      {
+        root: null,
+        rootMargin: '100px',
+        threshold: 0.1,
+      }
+    );
+
+    observer.observe(trigger);
+
+    return () => {
+      if (trigger) {
+        observer.unobserve(trigger);
+      }
+    };
+  }, [displayData.hasMore]);
 
   // Format time in seconds to hours:minutes
   const formatTime = (seconds) => {
@@ -524,10 +550,10 @@ function Dashboard() {
             )
           )}
           
-          {!activitiesState.loading && !activitiesState.error && paginationData.totalFiltered > 0 && (
+          {!activitiesState.loading && !activitiesState.error && displayData.totalFiltered > 0 && (
             <>
               <div className="space-y-4">
-                {paginationData.paginatedActivities.map((activity) => {
+                {displayData.visibleActivities.map((activity) => {
                 const distanceMiles = (activity.distance / METERS_TO_MILES).toFixed(2);
                 const durationMinutes = Math.floor(activity.elapsed_time / 60);
                 const durationSeconds = activity.elapsed_time % 60;
@@ -612,42 +638,19 @@ function Dashboard() {
               })}
             </div>
             
-            {/* Pagination Controls */}
-            {paginationData.totalPages > 1 && (
-              <div className="mt-6 flex items-center justify-between border-t border-gray-200 pt-4">
-                <div className="text-sm text-gray-600">
-                  Showing {paginationData.startIndex + 1} to {paginationData.startIndex + paginationData.paginatedActivities.length} of {paginationData.totalFiltered} activities
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => {
-                      setCurrentPage(prev => Math.max(1, prev - 1));
-                      window.scrollTo({ top: 0, behavior: 'smooth' });
-                    }}
-                    disabled={currentPage === 1}
-                    className={`px-4 py-2 rounded-lg text-sm font-medium focus:outline-none focus:ring-2 focus:ring-orange-500 ${
-                      currentPage === 1
-                        ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                        : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
-                    }`}
-                  >
-                    Previous
-                  </button>
-                  <button
-                    onClick={() => {
-                      setCurrentPage(prev => Math.min(paginationData.totalPages, prev + 1));
-                      window.scrollTo({ top: 0, behavior: 'smooth' });
-                    }}
-                    disabled={currentPage === paginationData.totalPages}
-                    className={`px-4 py-2 rounded-lg text-sm font-medium focus:outline-none focus:ring-2 focus:ring-orange-500 ${
-                      currentPage === paginationData.totalPages
-                        ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                        : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
-                    }`}
-                  >
-                    Next
-                  </button>
-                </div>
+            {/* Infinite scroll trigger and status */}
+            {displayData.hasMore && (
+              <div ref={loadMoreTriggerRef} className="mt-6 text-center py-4">
+                <div className="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-orange-600"></div>
+                <p className="text-sm text-gray-500 mt-2">Loading more activities...</p>
+              </div>
+            )}
+            
+            {!displayData.hasMore && displayData.totalFiltered > INITIAL_ACTIVITIES_TO_SHOW && (
+              <div className="mt-6 text-center py-4">
+                <p className="text-sm text-gray-500">
+                  You've reached the end. Showing all {displayData.totalFiltered} activities.
+                </p>
               </div>
             )}
           </>
