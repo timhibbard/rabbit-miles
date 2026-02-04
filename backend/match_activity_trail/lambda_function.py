@@ -250,10 +250,10 @@ def calculate_trail_intersection(activity_coords, trail_segments, tolerance_mete
         return 0.0, 0.0
     
     # OPTIMIZATION 2: Sample-based quick check
-    # Check a sample of activity points to see if any are near the trail
-    # This helps quickly identify activities that are nowhere near the trail
-    sample_size = min(10, len(activity_coords))
-    sample_indices = [i * len(activity_coords) // sample_size for i in range(sample_size)]
+    # Check a sample of activity points to see if any are near the trail.
+    # Use a larger sample and a more forgiving tolerance to avoid false negatives.
+    sample_size = min(20, len(activity_coords))
+    sample_indices = [i * (len(activity_coords) - 1) // max(1, sample_size - 1) for i in range(sample_size)]
     found_nearby = False
     
     for idx in sample_indices:
@@ -261,12 +261,12 @@ def calculate_trail_intersection(activity_coords, trail_segments, tolerance_mete
             continue
         lat, lon = activity_coords[idx]
         
-        # Check against trail segments (sample every 3rd segment)
-        for seg_idx in range(0, len(trail_segments), max(1, len(trail_segments) // 10)):
+        # Check against trail segments (sample more segments for better coverage)
+        for seg_idx in range(0, len(trail_segments), max(1, len(trail_segments) // 20)):
             segment = trail_segments[seg_idx]
             
             # Check a sample of points in this segment
-            for j in range(0, len(segment) - 1, max(1, len(segment) // 5)):
+            for j in range(0, len(segment) - 1, max(1, len(segment) // 10)):
                 trail_lat1, trail_lon1 = segment[j]
                 trail_lat2, trail_lon2 = segment[j + 1] if j + 1 < len(segment) else segment[j]
                 
@@ -276,7 +276,7 @@ def calculate_trail_intersection(activity_coords, trail_segments, tolerance_mete
                     trail_lon2, trail_lat2
                 )
                 
-                if distance_to_trail <= tolerance_meters * 3:  # Use 3x tolerance for sampling
+                if distance_to_trail <= tolerance_meters * 5:  # Use 5x tolerance for sampling
                     found_nearby = True
                     break
             
@@ -288,7 +288,7 @@ def calculate_trail_intersection(activity_coords, trail_segments, tolerance_mete
     
     # If no sample points are even remotely near the trail, return 0
     if not found_nearby:
-        print(f"Quick rejection: No sample points within 3x tolerance of trail")
+        print(f"Quick rejection: No sample points within 5x tolerance of trail")
         return 0.0, 0.0
     
     # OPTIMIZATION 3: Process segments with early termination
