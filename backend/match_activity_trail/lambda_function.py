@@ -333,29 +333,44 @@ def match_activity(activity_id):
     activity_coords = decode_polyline(polyline)
     print(f"Decoded {len(activity_coords)} coordinates")
     
-    # Load trail data from S3
-    trail_coords = load_trail_data_from_s3()
-    
-    # Calculate intersection
-    distance_on_trail, time_ratio = calculate_trail_intersection(
-        activity_coords, trail_coords, TRAIL_TOLERANCE_METERS
-    )
-    
-    # Calculate time on trail based on moving_time
-    moving_time = activity.get("moving_time", 0)
-    time_on_trail = int(moving_time * time_ratio)
-    
-    # Update database
-    update_activity_trail_metrics(activity_id, distance_on_trail, time_on_trail)
-    
-    print(f"Activity {activity_id} matched: {distance_on_trail:.2f}m, {time_on_trail}s on trail")
-    
-    return {
-        "activity_id": activity_id,
-        "distance_on_trail": distance_on_trail,
-        "time_on_trail": time_on_trail,
-        "message": "Successfully matched"
-    }
+    # Try to match against trail data
+    # If any error occurs (trail data unavailable, calculation fails, etc.),
+    # still update the database with 0 values to indicate we attempted matching
+    try:
+        # Load trail data from S3
+        trail_coords = load_trail_data_from_s3()
+        
+        # Calculate intersection
+        distance_on_trail, time_ratio = calculate_trail_intersection(
+            activity_coords, trail_coords, TRAIL_TOLERANCE_METERS
+        )
+        
+        # Calculate time on trail based on moving_time
+        moving_time = activity.get("moving_time", 0)
+        time_on_trail = int(moving_time * time_ratio)
+        
+        # Update database
+        update_activity_trail_metrics(activity_id, distance_on_trail, time_on_trail)
+        
+        print(f"Activity {activity_id} matched: {distance_on_trail:.2f}m, {time_on_trail}s on trail")
+        
+        return {
+            "activity_id": activity_id,
+            "distance_on_trail": distance_on_trail,
+            "time_on_trail": time_on_trail,
+            "message": "Successfully matched"
+        }
+    except Exception as e:
+        # If matching fails for any reason, still update last_matched with 0 values
+        print(f"Failed to match activity {activity_id} against trail: {e}")
+        print("Setting distance_on_trail=0, time_on_trail=0, and updating last_matched")
+        update_activity_trail_metrics(activity_id, 0.0, 0)
+        return {
+            "activity_id": activity_id,
+            "distance_on_trail": 0.0,
+            "time_on_trail": 0,
+            "message": f"Matching failed: {str(e)}"
+        }
 
 
 def handler(event, context):

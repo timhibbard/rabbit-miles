@@ -270,6 +270,73 @@ def test_handler_activity_id_extraction():
     print("✓ All activity_id extraction tests passed")
 
 
+def test_no_match_updates_database():
+    """Test that when matching fails, database is still updated with 0 values"""
+    print("\nTesting no-match database update...")
+    
+    # Add lambda function directory to path
+    lambda_dir = os.path.dirname(__file__)
+    if lambda_dir not in sys.path:
+        sys.path.insert(0, lambda_dir)
+    
+    # Set required environment variables
+    os.environ['DB_CLUSTER_ARN'] = 'test-cluster-arn'
+    os.environ['DB_SECRET_ARN'] = 'test-secret-arn'
+    os.environ['DB_NAME'] = 'postgres'
+    os.environ['TRAIL_DATA_BUCKET'] = 'test-bucket'
+    
+    # Import lambda_function with mocked boto3
+    with patch('boto3.client'):
+        if 'lambda_function' in sys.modules:
+            del sys.modules['lambda_function']
+        import lambda_function
+        
+        # Mock get_activity_from_db to return an activity with polyline
+        mock_activity = {
+            "activity_id": 123,
+            "athlete_id": 456,
+            "strava_activity_id": 789,
+            "polyline": "_p~iF~ps|U_ulLnnqC_mqNvxq`@",  # Valid polyline
+            "moving_time": 3600,
+            "distance": 10000.0
+        }
+        
+        # Mock load_trail_data_from_s3 to raise an exception
+        with patch.object(lambda_function, 'get_activity_from_db', return_value=mock_activity):
+            with patch.object(lambda_function, 'load_trail_data_from_s3', side_effect=RuntimeError("No trail data")):
+                with patch.object(lambda_function, 'update_activity_trail_metrics') as mock_update:
+                    
+                    print("  Test 1: Trail data loading fails...")
+                    result = lambda_function.match_activity(123)
+                    
+                    # Verify that update was called with 0 values
+                    mock_update.assert_called_once_with(123, 0.0, 0)
+                    
+                    # Verify result contains 0 values
+                    assert result['distance_on_trail'] == 0.0, "Expected distance_on_trail=0.0"
+                    assert result['time_on_trail'] == 0, "Expected time_on_trail=0"
+                    assert 'Matching failed' in result['message'], "Expected failure message"
+                    print("  ✓ Database updated with 0 values when trail data unavailable")
+        
+        # Test 2: Calculate intersection raises an exception
+        with patch.object(lambda_function, 'get_activity_from_db', return_value=mock_activity):
+            with patch.object(lambda_function, 'load_trail_data_from_s3', return_value=[(34.85, -82.39)]):
+                with patch.object(lambda_function, 'calculate_trail_intersection', side_effect=ValueError("Invalid coords")):
+                    with patch.object(lambda_function, 'update_activity_trail_metrics') as mock_update:
+                        
+                        print("  Test 2: Trail intersection calculation fails...")
+                        result = lambda_function.match_activity(123)
+                        
+                        # Verify that update was called with 0 values
+                        mock_update.assert_called_once_with(123, 0.0, 0)
+                        
+                        # Verify result contains 0 values
+                        assert result['distance_on_trail'] == 0.0, "Expected distance_on_trail=0.0"
+                        assert result['time_on_trail'] == 0, "Expected time_on_trail=0"
+                        print("  ✓ Database updated with 0 values when calculation fails")
+    
+    print("✓ All no-match database update tests passed")
+
 
 if __name__ == '__main__':
     print("Running match_activity_trail tests...\n")
@@ -281,6 +348,7 @@ if __name__ == '__main__':
         test_point_to_segment_distance()
         test_trail_tolerance()
         test_handler_activity_id_extraction()
+        test_no_match_updates_database()
         
         print("\n" + "=" * 60)
         print("✅ All tests passed!")
