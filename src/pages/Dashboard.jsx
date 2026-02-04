@@ -573,13 +573,24 @@ function Dashboard() {
                   : null;
                 
                 // Calculate pace with proper zero handling
-                // Pace = elapsed_time (minutes) / distance (miles)
-                let paceMin = 0;
-                let paceSec = 0;
-                if (activity.distance > 0 && activity.elapsed_time > 0) {
-                  const pace = (activity.elapsed_time / 60) / (activity.distance / METERS_TO_MILES);
-                  paceMin = Math.floor(pace);
-                  paceSec = Math.floor((pace - paceMin) * 60);
+                // Pace = moving_time (minutes) / distance (miles) for Run
+                // Speed = distance (miles) / moving_time (hours) for Ride and Walk
+                let paceDisplay = 'N/A';
+                if (activity.distance > 0 && activity.moving_time > 0) {
+                  const distanceMi = activity.distance / METERS_TO_MILES;
+                  const timeHours = activity.moving_time / 3600;
+                  
+                  if (activity.type === 'Ride' || activity.type === 'Walk') {
+                    // Use mph for bike and walk
+                    const mph = distanceMi / timeHours;
+                    paceDisplay = `${mph.toFixed(1)} mph`;
+                  } else {
+                    // Use min/mi for running
+                    const pace = (activity.moving_time / 60) / distanceMi;
+                    const paceMin = Math.floor(pace);
+                    const paceSec = Math.floor((pace - paceMin) * 60);
+                    paceDisplay = `${paceMin}:${paceSec.toString().padStart(2, '0')}/mi`;
+                  }
                 }
                 
                 // Format date
@@ -630,13 +641,8 @@ function Dashboard() {
                         )}
                       </div>
                       <div>
-                        <p className="text-gray-500">Pace</p>
-                        <p className="font-semibold text-gray-900">
-                          {activity.distance > 0 && activity.elapsed_time > 0 
-                            ? `${paceMin}:${paceSec.toString().padStart(2, '0')}/mi`
-                            : 'N/A'
-                          }
-                        </p>
+                        <p className="text-gray-500">{activity.type === 'Ride' || activity.type === 'Walk' ? 'Speed' : 'Pace'}</p>
+                        <p className="font-semibold text-gray-900">{paceDisplay}</p>
                       </div>
                     </div>
                   </Link>
