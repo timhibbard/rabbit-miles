@@ -9,7 +9,7 @@ const TRAIL_TOLERANCE_METERS = 50; // 50 meters on each side of trail (matches b
  * Calculate the great circle distance in meters between two points
  * on the earth (specified in decimal degrees).
  */
-function haversineDistance(lat1, lon1, lat2, lon2) {
+export function haversineDistance(lat1, lon1, lat2, lon2) {
   const toRadians = (degrees) => degrees * (Math.PI / 180);
   
   const dLat = toRadians(lat2 - lat1);

@@ -180,7 +180,7 @@ def handler(event, context):
         SELECT 
             id, strava_activity_id, name, distance, moving_time, elapsed_time,
             total_elevation_gain, type, start_date, start_date_local, timezone,
-            time_on_trail, distance_on_trail, polyline, athlete_id
+            time_on_trail, distance_on_trail, polyline, athlete_id, last_matched
         FROM activities
         WHERE id = :id
         """
@@ -205,7 +205,7 @@ def handler(event, context):
         # Column indices correspond to SELECT statement above:
         # 0=id, 1=strava_activity_id, 2=name, 3=distance, 4=moving_time, 5=elapsed_time,
         # 6=total_elevation_gain, 7=type, 8=start_date, 9=start_date_local, 10=timezone,
-        # 11=time_on_trail, 12=distance_on_trail, 13=polyline, 14=athlete_id
+        # 11=time_on_trail, 12=distance_on_trail, 13=polyline, 14=athlete_id, 15=last_matched
         activity_athlete_id = int(record[14].get("longValue", 0))
         if activity_athlete_id != aid:
             return {
@@ -247,6 +247,11 @@ def handler(event, context):
         if not record[13].get("isNull"):
             polyline = record[13].get("stringValue", "")
         
+        # Get last_matched
+        last_matched = None
+        if not record[15].get("isNull"):
+            last_matched = record[15].get("stringValue", "")
+        
         activity = {
             "id": int(record[0].get("longValue", 0)),
             "strava_activity_id": int(record[1].get("longValue", 0)),
@@ -262,6 +267,7 @@ def handler(event, context):
             "time_on_trail": time_on_trail,
             "distance_on_trail": distance_on_trail,
             "polyline": polyline,
+            "last_matched": last_matched,
         }
         
         return {

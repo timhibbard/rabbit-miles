@@ -1,14 +1,26 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom';
-import { MapContainer, TileLayer, Polyline, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Polyline, Marker, useMap } from 'react-leaflet';
 import { fetchActivityDetail, resetActivityTrailMatching } from '../utils/api';
 import { decodePolyline } from '../utils/polyline';
-import { loadTrailData, calculateTrailSegments } from '../utils/trailMatching';
+import { loadTrailData, calculateTrailSegments, haversineDistance } from '../utils/trailMatching';
 import Footer from '../components/Footer';
+import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
 const METERS_TO_MILES = 1609.34;
 const POINTS_PER_PAGE = 200;
+const POLLING_INTERVAL_MS = 3000; // Poll every 3 seconds
+
+// Custom icon for hover marker
+const hoverIcon = L.icon({
+  iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+  shadowSize: [41, 41]
+});
 
 // Component to fit map bounds to polyline
 function FitBounds({ bounds }) {
@@ -36,6 +48,9 @@ function ActivityDetail() {
   const [debugInfo, setDebugInfo] = useState(null);
   const [currentPage, setCurrentPage] = useState(0);
   const [resettingMatching, setResettingMatching] = useState(false);
+  const [hoveredPointIndex, setHoveredPointIndex] = useState(null);
+  const [lastMatchedTimestamp, setLastMatchedTimestamp] = useState(null);
+  const [showRefreshNotification, setShowRefreshNotification] = useState(false);
 
   useEffect(() => {
     const loadActivity = async () => {
@@ -46,6 +61,9 @@ function ActivityDetail() {
 
       if (result.success) {
         setActivity(result.data);
+        
+        // Track last_matched timestamp for polling
+        setLastMatchedTimestamp(result.data.last_matched);
         
         // Decode polyline if available
         if (result.data.polyline) {
@@ -78,7 +96,66 @@ function ActivityDetail() {
     };
 
     loadActivity();
-  }, [id, navigate]);
+  }, [id, navigate, debugMode]);
+
+  // Polling effect to check for updated last_matched timestamp
+  // This enables auto-refresh when database is updated
+  useEffect(() => {
+    if (!debugMode || loading || error) {
+      return;
+    }
+
+    const pollForUpdates = async () => {
+      try {
+        const result = await fetchActivityDetail(id);
+        if (result.success) {
+          const newLastMatched = result.data.last_matched;
+          
+          // If last_matched changed from NULL to a value, or changed to a different value
+          // then reload the page to show updated data
+          if (newLastMatched && newLastMatched !== lastMatchedTimestamp) {
+            console.log('Activity data updated, reloading...', {
+              old: lastMatchedTimestamp,
+              new: newLastMatched
+            });
+            setShowRefreshNotification(true);
+            
+            // Show notification for 2 seconds before reloading
+            setTimeout(() => {
+              window.location.reload();
+            }, 2000);
+          }
+        }
+      } catch (err) {
+        console.error('Error polling for updates:', err);
+      }
+    };
+
+    // Set up polling interval
+    const intervalId = setInterval(pollForUpdates, POLLING_INTERVAL_MS);
+
+    // Clean up on unmount
+    return () => clearInterval(intervalId);
+  }, [id, debugMode, loading, error, lastMatchedTimestamp]);
+
+  // Calculate distance in miles for points on trail
+  const onTrailDistanceMiles = useMemo(() => {
+    if (!debugInfo || !coordinates || coordinates.length < 2) {
+      return 0;
+    }
+    
+    let distance = 0;
+    for (let i = 0; i < coordinates.length - 1; i++) {
+      // Check if both current and next point are on trail
+      if (debugInfo.points[i]?.isOnTrail && debugInfo.points[i + 1]?.isOnTrail) {
+        const [lat1, lon1] = coordinates[i];
+        const [lat2, lon2] = coordinates[i + 1];
+        distance += haversineDistance(lat1, lon1, lat2, lon2);
+      }
+    }
+    
+    return (distance / METERS_TO_MILES).toFixed(2);
+  }, [debugInfo, coordinates]);
 
   const formatTime = (seconds) => {
     if (!seconds || seconds === 0) return '0:00';
@@ -211,6 +288,16 @@ function ActivityDetail() {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      {/* Refresh notification */}
+      {showRefreshNotification && (
+        <div className="fixed top-4 right-4 z-50 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg flex items-center gap-3 animate-pulse">
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          </svg>
+          <span className="font-medium">Activity updated! Refreshing...</span>
+        </div>
+      )}
+      
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Back button */}
         <div className="mb-6">
@@ -335,6 +422,13 @@ function ActivityDetail() {
                     opacity={0.8}
                   />
                 )}
+                {/* Hover marker for point-by-point analysis */}
+                {debugMode && hoveredPointIndex !== null && coordinates[hoveredPointIndex] && (
+                  <Marker 
+                    position={coordinates[hoveredPointIndex]} 
+                    icon={hoverIcon}
+                  />
+                )}
                 <FitBounds bounds={coordinates} />
               </MapContainer>
             </div>
@@ -364,7 +458,7 @@ function ActivityDetail() {
                 <div className="space-y-1 text-gray-700">
                   <p><strong>Activity ID:</strong> {activity.id}</p>
                   <p><strong>Total Points:</strong> {debugInfo.totalPoints}</p>
-                  <p><strong>Points On Trail:</strong> {debugInfo.pointsOnTrail} ({((debugInfo.pointsOnTrail / debugInfo.totalPoints) * 100).toFixed(1)}%)</p>
+                  <p><strong>Points On Trail:</strong> {debugInfo.pointsOnTrail} ({((debugInfo.pointsOnTrail / debugInfo.totalPoints) * 100).toFixed(1)}%) - {onTrailDistanceMiles} mi</p>
                   <p><strong>Points Off Trail:</strong> {debugInfo.pointsOffTrail} ({((debugInfo.pointsOffTrail / debugInfo.totalPoints) * 100).toFixed(1)}%)</p>
                   <p><strong>Trail Segments Loaded:</strong> {debugInfo.numTrailSegments}</p>
                   <p><strong>Tolerance:</strong> {debugInfo.tolerance} meters</p>
@@ -398,8 +492,13 @@ function ActivityDetail() {
                         </tr>
                       </thead>
                       <tbody>
-                        {debugInfo.points.slice(currentPage * POINTS_PER_PAGE, (currentPage + 1) * POINTS_PER_PAGE).map((point, idx) => (
-                          <tr key={point.pointIndex} className={point.isOnTrail ? 'bg-green-50' : 'bg-blue-50'}>
+                        {debugInfo.points.slice(currentPage * POINTS_PER_PAGE, (currentPage + 1) * POINTS_PER_PAGE).map((point) => (
+                          <tr 
+                            key={point.pointIndex} 
+                            className={`${point.isOnTrail ? 'bg-green-50' : 'bg-blue-50'} hover:bg-orange-100 cursor-pointer transition-colors`}
+                            onMouseEnter={() => setHoveredPointIndex(point.pointIndex)}
+                            onMouseLeave={() => setHoveredPointIndex(null)}
+                          >
                             <td className="px-2 py-1">{point.pointIndex}</td>
                             <td className="px-2 py-1">{point.lat.toFixed(6)}</td>
                             <td className="px-2 py-1">{point.lon.toFixed(6)}</td>
