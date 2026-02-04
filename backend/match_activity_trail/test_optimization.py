@@ -15,6 +15,20 @@ lambda_dir = os.path.dirname(__file__)
 if lambda_dir not in sys.path:
     sys.path.insert(0, lambda_dir)
 
+# Test data: Polyline from issue #116 (PFO hill repeats activity)
+# This represents a real activity with 407 coordinate points
+TEST_POLYLINE_NO_MATCH = (
+    "ubrsEx~ouNOs@]w@QAm@XM@WEOQm@eBu@oC@[FKbB}@tGyCf@_@n@k@x@GjAe@xAu@z@i@f@c@j@Ct@W|KcFrB{@ZIJ@LLBLNRLFT?^"
+    "`@^TZr@h@Zv@~@Vb@^\\LXz@h@BTK?QQu@[UU_@e@Oc@GKk@Sk@s@eAiA]k@Kq@KGEPNNPJZDx@r@^t@d@Vx@`A\\h@p@v@r@d@@LAFKAc@[e@Ss@u@Ss@e@"
+    "MOKq@}@}@aAO]Qw@EGECID?R\\Th@Jl@h@b@x@b@Vd@d@d@v@`@\\Xd@p@b@DFAPMAUUs@[s@u@K_@ISc@KMIi@w@aAgAa@kAIMGEKFBJJJr@Rx@r@d@x@`@Xj@j@`@"
+    "n@VT`@l@h@XJNAHK?QMw@_@w@w@Qo@GGk@OwBmCIOWaAGCKJDJTPh@HLLj@l@Xl@b@Zl@j@d@t@`@\\\\d@d@XHL@HEDGCSSu@[w@u@Kg@IMk@O_CwCM[Kq@KAKJDLLHh@"
+    "Nz@t@JHVj@r@f@d@f@Vf@x@`Al@\\NVCJMCQUw@[i@i@MSSm@q@W{AiBYi@_@iAKCKJDJTPj@Lt@n@`@r@f@\\^`@n@bAx@z@n@d@BZ}@`Ak@`@eB~@aA`@g@\\y@XaC"
+    "fA}BjAEFAH`@pADrAIhAQbAMXOPo@Zq@Q_B_GIMc@Bi@ISDc@v@k@PONEV@JJVJFRCfBiALOBOAWKWQI]DOPO`@GFk@PIFKT?JJZPLLArBwAFWAWEMOMc@@MNQb@"
+    "GFg@NMHIJC\\HVJHT?fBiALOBi@IWKGa@BOJQb@KJk@PKJGTBVFNPHLAlBkAFKDYCYEMQK_@DOLSh@KHa@HOLIT@JJXJHR?rBuAD]AOGUQKY@SNQd@KJe@LQLEL?XL"
+    "VRFRIdBkAFM@SGa@IIKCW@QJWp@SJa@JGFIVDXHLHDTAlBqAHYA[EMQM[BQJQf@KJk@NKJEHANDXFJJDRAjBoAHUAg@MOc@CURWj@m@PMLE\\BNLPTD|@g@r@i@DGD"
+    "W?QGUKK_@?UNOd@IFu@ZKT?NHVHFTBjBqAJS@MA[CIUKYBONUj@o@ROLGTDXLPLBHChBmALU@SAMMWUE[Ja@r@KFe@L[^c@L[T_KrE[@IEs@eB"
+)
+
 
 def test_quick_rejection_bounding_box():
     """Test that activities completely outside trail bounding box are quickly rejected"""
@@ -179,9 +193,8 @@ def test_realistic_no_match_scenario():
             del sys.modules['lambda_function']
         import lambda_function
         
-        # Decode the actual polyline from the issue
-        polyline = "ubrsEx~ouNOs@]w@QAm@XM@WEOQm@eBu@oC@[FKbB}@tGyCf@_@n@k@x@GjAe@xAu@z@i@f@c@j@Ct@W|KcFrB{@ZIJ@LLBLNRLFT?^`@^TZr@h@Zv@~@Vb@^\\LXz@h@BTK?QQu@[UU_@e@Oc@GKk@Sk@s@eAiA]k@Kq@KGEPNNPJZDx@r@^t@d@Vx@`A\\h@p@v@r@d@@LAFKAc@[e@Ss@u@Ss@e@MOKq@}@}@aAO]Qw@EGECID?R\\Th@Jl@h@b@x@b@Vd@d@d@v@`@\\Xd@p@b@DFAPMAUUs@[s@u@K_@ISc@KMIi@w@aAgAa@kAIMGEKFBJJJr@Rx@r@d@x@`@Xj@j@`@n@VT`@l@h@XJNAHK?QMw@_@w@w@Qo@GGk@OwBmCIOWaAGCKJDJTPh@HLLj@l@Xl@b@Zl@j@d@t@`@\\\\d@d@XHL@HEDGCSSu@[w@u@Kg@IMk@O_CwCM[Kq@KAKJDLLHh@Nz@t@JHVj@r@f@d@f@Vf@x@`Al@\\NVCJMCQUw@[i@i@MSSm@q@W{AiBYi@_@iAKCKJDJTPj@Lt@n@`@r@f@\\^`@n@bAx@z@n@d@BZ}@`Ak@`@eB~@aA`@g@\\y@XaCfA}BjAEFAH`@pADrAIhAQbAMXOPo@Zq@Q_B_GIMc@Bi@ISDc@v@k@PONEV@JJVJFRCfBiALOBOAWKWQI]DOPO`@GFk@PIFKT?JJZPLLArBwAFWAWEMOMc@@MNQb@GFg@NMHIJC\\HVJHT?fBiALOBi@IWKGa@BOJQb@KJk@PKJGTBVFNPHLAlBkAFKDYCYEMQK_@DOLSh@KHa@HOLIT@JJXJHR?rBuAD]AOGUQKY@SNQd@KJe@LQLEL?XLVRFRIdBkAFM@SGa@IIKCW@QJWp@SJa@JGFIVDXHLHDTAlBqAHYA[EMQM[BQJQf@KJk@NKJEHANDXFJJDRAjBoAHUAg@MOc@CURWj@m@PMLE\\BNLPTD|@g@r@i@DGDW?QGUKK_@?UNOd@IFu@ZKT?NHVHFTBjBqAJS@MA[CIUKYBONUj@o@ROLGTDXLPLBHChBmALU@SAMMWUE[Ja@r@KFe@L[^c@L[T_KrE[@IEs@eB"
-        activity_coords = lambda_function.decode_polyline(polyline)
+        # Decode the actual polyline from the issue (defined as constant at top of file)
+        activity_coords = lambda_function.decode_polyline(TEST_POLYLINE_NO_MATCH)
         
         # Create trail coordinates in Greenville SC area (different from the activity)
         # This simulates the Rabbit Trail

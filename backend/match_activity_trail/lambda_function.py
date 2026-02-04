@@ -272,7 +272,11 @@ def calculate_trail_intersection(activity_coords, trail_coords, tolerance_meters
     on_trail_segments = []
     total_distance = 0.0
     consecutive_off_trail = 0
-    MAX_CONSECUTIVE_OFF_TRAIL = 50  # Exit early if 50 consecutive segments off trail
+    # Exit early if 50 consecutive segments off trail. This threshold balances:
+    # - Avoiding false negatives (activity might return to trail)
+    # - Preventing timeouts (typical Strava activities have 5-15m between points,
+    #   so 50 segments = ~250-750m of continuous distance off trail)
+    MAX_CONSECUTIVE_OFF_TRAIL = 50
     
     # Check each segment of the activity path
     for i in range(len(activity_coords) - 1):
