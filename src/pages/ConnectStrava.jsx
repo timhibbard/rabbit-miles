@@ -25,8 +25,10 @@ function ConnectStrava() {
     const sessionToken = urlParams.get('session');
     
     // If we have a session token in the URL (Mobile Safari fallback), store it
+    // and immediately clean up the URL to prevent token exposure in browser history
     if (sessionToken) {
       sessionStorage.setItem('rm_session', sessionToken);
+      window.history.replaceState({}, '', window.location.pathname);
     }
     
     // Check if user is already connected
@@ -42,8 +44,8 @@ function ConnectStrava() {
           user: result.user,
         });
         
-        // Clean up the URL if we just connected (remove session token from URL for security)
-        if (justConnected) {
+        // Clean up the URL if we just connected (for non-Mobile Safari case)
+        if (justConnected && !sessionToken) {
           window.history.replaceState({}, '', window.location.pathname);
         }
       } else {
