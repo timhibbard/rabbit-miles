@@ -6,42 +6,49 @@ Fixed an issue where mobile Safari users could not authenticate after connecting
 
 ## Root Cause
 
-The backend was using `SameSite=None` for cookies, which has compatibility issues with mobile Safari during redirect chains. After the OAuth callback redirected to the frontend, mobile Safari would not properly handle the session cookie.
+Mobile Safari's Intelligent Tracking Prevention (ITP) was blocking cookies set by the API Gateway domain, treating them as third-party tracking cookies. The issue was compounded by:
+
+1. **Duplicate Set-Cookie headers**: Both `headers["Set-Cookie"]` and `cookies` array were being used, which could cause conflicts in API Gateway HTTP API v2
+2. **Missing Partitioned attribute**: Cookies lacked the `Partitioned` attribute needed for CHIPS (Cookies Having Independent Partitioned State)
 
 ## Solution
 
-Changed cookie `SameSite` attribute from `None` to `Lax` in all authentication Lambda functions. This provides better compatibility with mobile Safari while maintaining security.
+Made two key changes to improve cookie compatibility with mobile Safari:
 
-### Why SameSite=Lax Works
+1. **Removed duplicate Set-Cookie headers**: API Gateway HTTP API v2 uses the `cookies` array format. Having both the header and array can cause conflicts.
+2. **Added Partitioned attribute**: This tells browsers that cookies are intentionally cross-site and should be partitioned by top-level site, improving compatibility with Safari's ITP.
 
-`SameSite=Lax` allows cookies to be sent:
-- ✅ On same-site requests (frontend to backend API calls)
-- ✅ On top-level navigation GET requests (OAuth redirects)
-- ✅ Perfect for our OAuth flow where the callback redirects back to frontend
+### Why Partitioned Cookies Work
 
-`SameSite=None` was more permissive than needed and caused issues with:
-- Mobile Safari's stricter cookie policies
-- Cross-site tracking protection
-- ITP (Intelligent Tracking Prevention) in WebKit browsers
+The `Partitioned` attribute is part of CHIPS and provides:
+- ✅ Better compatibility with Safari's ITP
+- ✅ Explicit signal that cookies are intentionally cross-site
+- ✅ Cookies are partitioned per top-level site (better privacy)
+- ✅ Works with `SameSite=None` for cross-origin requests
+
+### Why SameSite=None is Required
+
+For this architecture (GitHub Pages frontend + API Gateway backend), `SameSite=None` is required because:
+- Frontend and backend are on different domains (cross-origin)
+- Frontend makes fetch/XHR requests to backend API
+- `SameSite=Lax` would block cookies on cross-origin fetch requests
+- See SAMESITE_NONE_REQUIRED.md for detailed explanation
 
 ## Changes Made
 
 ### Backend Lambda Functions
 
 1. **backend/auth_callback/lambda_function.py**
-   - Session cookie: `SameSite=None` → `SameSite=Lax`
-   - State cookie clear: `SameSite=None` → `SameSite=Lax`
+   - Removed duplicate `Set-Cookie` header from headers object
+   - Added `Partitioned` attribute to session cookie
+   - Added `Partitioned` attribute to state cookie clear
 
 2. **backend/auth_start/lambda_function.py**
-   - State cookie: `SameSite=None` → `SameSite=Lax`
+   - Removed duplicate `Set-Cookie` header from headers object
+   - Added `Partitioned` attribute to state cookie
 
 3. **backend/auth_disconnect/lambda_function.py**
-   - All cookie clearing: `SameSite=None` → `SameSite=Lax`
-
-### Documentation
-
-4. **COOKIE_FIX_DEPLOYMENT.md**
-   - Updated references to reflect `SameSite=Lax`
+   - Added `Partitioned` attribute to all cookie clearing operations
 
 ## Testing Recommendations
 
@@ -124,17 +131,18 @@ Follow the mobile Safari testing steps above to verify the fix.
 ✅ **CodeQL scan**: No vulnerabilities detected
 ✅ **Authentication mechanism**: Unchanged
 ✅ **Token signing**: Unchanged
-✅ **Cookie security**: Maintained (HttpOnly, Secure)
+✅ **Cookie security**: Maintained (HttpOnly, Secure, SameSite=None)
 
 ### Security Impact
-- **Improved**: Reduced cross-site cookie exposure
+- **Improved**: Better compatibility with modern browsers
 - **Maintained**: All existing security properties
-- **Enhanced**: Better compatibility without compromising security
+- **Enhanced**: Partitioned cookies provide better privacy isolation
 
-`SameSite=Lax` is actually more secure than `SameSite=None` as it:
-- Prevents CSRF attacks in most scenarios
-- Reduces cross-site tracking
-- Still allows legitimate same-site and top-level navigation
+The `Partitioned` attribute:
+- Does not reduce security
+- Improves privacy by partitioning cookies per top-level site
+- Works with Safari's ITP without compromising the authentication flow
+- Is compatible with all modern browsers
 
 ## Rollback Plan
 
@@ -151,7 +159,8 @@ No database changes were made, so rollback is instantaneous.
 
 ## Technical References
 
-- [MDN: SameSite cookies](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Set-Cookie/SameSite)
+- [MDN: Set-Cookie](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Set-Cookie)
+- [CHIPS: Cookies Having Independent Partitioned State](https://developers.google.com/privacy-sandbox/3pcd/chips)
 - [WebKit ITP](https://webkit.org/blog/10218/full-third-party-cookie-blocking-and-more/)
 - [Chrome SameSite changes](https://www.chromium.org/updates/same-site)
 
