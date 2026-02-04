@@ -111,7 +111,9 @@ def handler(event, context):
     """
     Lambda handler for resetting last_matched field
     
-    Expected: POST request to /activities/reset-matching
+    Expected: 
+    - POST request to /activities/reset-matching (resets all user's activities)
+    - POST request to /activities/{id}/reset-matching (resets single activity)
     Returns: JSON with count of reset activities
     """
     print("Event received:", json.dumps(event))
@@ -166,33 +168,83 @@ def handler(event, context):
                 "body": json.dumps({"error": "invalid session"})
             }
         
-        # Reset last_matched for all activities belonging to authenticated user
-        # Note: We don't check IS NOT NULL as it's a no-op to set NULL to NULL
-        # and the athlete_id index will efficiently filter the results
-        sql = """
-        UPDATE activities 
-        SET last_matched = NULL 
-        WHERE athlete_id = :aid
-        """
+        # Check if this is a single activity reset or all activities reset
+        # Path will be either /activities/reset-matching or /activities/{id}/reset-matching
+        raw_path = event.get("rawPath", "")
+        path_params = event.get("pathParameters", {})
+        activity_id = path_params.get("id")
         
-        params = [
-            {"name": "aid", "value": {"longValue": aid}},
-        ]
-        
-        response = _exec_sql(sql, params)
-        affected_rows = response.get("numberOfRecordsUpdated", 0)
-        
-        print(f"Successfully reset last_matched for {affected_rows} activities for athlete {aid}")
-        
-        return {
-            "statusCode": 200,
-            "headers": cors_headers,
-            "body": json.dumps({
-                "success": True,
-                "activities_reset": affected_rows,
-                "message": f"Successfully reset {affected_rows} activities for trail matching"
-            })
-        }
+        if activity_id:
+            # Reset single activity
+            # First verify the activity belongs to the authenticated user
+            verify_sql = """
+            SELECT id FROM activities 
+            WHERE id = :activity_id AND athlete_id = :aid
+            """
+            verify_params = [
+                {"name": "activity_id", "value": {"longValue": int(activity_id)}},
+                {"name": "aid", "value": {"longValue": aid}},
+            ]
+            verify_result = _exec_sql(verify_sql, verify_params)
+            
+            if not verify_result.get("records"):
+                return {
+                    "statusCode": 404,
+                    "headers": cors_headers,
+                    "body": json.dumps({"error": "activity not found or access denied"})
+                }
+            
+            # Reset last_matched for the specific activity
+            sql = """
+            UPDATE activities 
+            SET last_matched = NULL 
+            WHERE id = :activity_id AND athlete_id = :aid
+            """
+            params = [
+                {"name": "activity_id", "value": {"longValue": int(activity_id)}},
+                {"name": "aid", "value": {"longValue": aid}},
+            ]
+            
+            response = _exec_sql(sql, params)
+            affected_rows = response.get("numberOfRecordsUpdated", 0)
+            
+            print(f"Successfully reset last_matched for activity {activity_id} (athlete {aid})")
+            
+            return {
+                "statusCode": 200,
+                "headers": cors_headers,
+                "body": json.dumps({
+                    "success": True,
+                    "activities_reset": affected_rows,
+                    "message": f"Successfully reset activity {activity_id} for trail matching"
+                })
+            }
+        else:
+            # Reset all activities for the authenticated user
+            sql = """
+            UPDATE activities 
+            SET last_matched = NULL 
+            WHERE athlete_id = :aid
+            """
+            
+            params = [
+                {"name": "aid", "value": {"longValue": aid}},
+            ]
+            
+            response = _exec_sql(sql, params)
+            affected_rows = response.get("numberOfRecordsUpdated", 0)
+            
+            print(f"Successfully reset last_matched for {affected_rows} activities for athlete {aid}")
+            
+            return {
+                "statusCode": 200,
+                "headers": cors_headers,
+                "body": json.dumps({
+                    "success": True,
+                    "activities_reset": affected_rows,
+                    "message": f"Successfully reset {affected_rows} activities for trail matching"
+                })
+            }
         
     except Exception as e:
         print(f"ERROR: Failed to reset last_matched: {e}")

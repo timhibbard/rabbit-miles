@@ -157,6 +157,26 @@ export const resetTrailMatching = async () => {
   }
 };
 
+// Reset trail matching for a single activity
+export const resetActivityTrailMatching = async (activityId) => {
+  try {
+    debug.log(`Calling /activities/${activityId}/reset-matching endpoint...`);
+    const response = await api.post(`/activities/${activityId}/reset-matching`);
+    debug.log(`/activities/${activityId}/reset-matching response:`, response.data);
+    return { success: true, data: response.data };
+  } catch (error) {
+    console.error(`/activities/${activityId}/reset-matching endpoint error:`, error.message);
+    if (error.response?.status === 401) {
+      debug.log('User not authenticated (401)');
+      return { success: false, notConnected: true };
+    }
+    if (error.response?.status === 404) {
+      return { success: false, error: 'Activity not found or access denied' };
+    }
+    return { success: false, error: error.message };
+  }
+};
+
 // Fetch a single activity detail with polyline
 export const fetchActivityDetail = async (activityId) => {
   try {
