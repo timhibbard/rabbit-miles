@@ -56,7 +56,7 @@ def handler(event, context):
         return {
             "statusCode": 500,
             "headers": {"Content-Type": "application/json"},
-            "body": '{"error": "Database configuration error. Please contact support."}'
+            "body": '{"error": "Database configuration error. Please contact support at tim@rabbitmiles.com."}'
         }
     
     redirect_uri = f"{API_BASE}/auth/callback"
