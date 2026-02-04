@@ -11,6 +11,18 @@ import 'leaflet/dist/leaflet.css';
 const METERS_TO_MILES = 1609.34;
 const POINTS_PER_PAGE = 200;
 const POLLING_INTERVAL_MS = 3000; // Poll every 3 seconds
+const RELOAD_DELAY_MS = 1500; // Delay before reload to show success message
+
+// Helper function to determine status message color
+const getStatusClassName = (status) => {
+  if (status.startsWith('Failed') || status.startsWith('Error')) {
+    return 'text-red-600';
+  }
+  if (status.includes('successfully')) {
+    return 'text-green-600';
+  }
+  return 'text-blue-600';
+};
 
 // Custom icon for hover marker
 const hoverIcon = L.icon({
@@ -48,6 +60,7 @@ function ActivityDetail() {
   const [debugInfo, setDebugInfo] = useState(null);
   const [currentPage, setCurrentPage] = useState(0);
   const [resettingMatching, setResettingMatching] = useState(false);
+  const [resetStatus, setResetStatus] = useState(null);
   const [hoveredPointIndex, setHoveredPointIndex] = useState(null);
   const [lastMatchedTimestamp, setLastMatchedTimestamp] = useState(null);
   const [showRefreshNotification, setShowRefreshNotification] = useState(false);
@@ -182,23 +195,23 @@ function ActivityDetail() {
   };
 
   const handleResetMatching = async () => {
-    if (!window.confirm('Reset trail matching for this activity? This will clear the last_matched timestamp and allow it to be reprocessed.')) {
-      return;
-    }
-    
     setResettingMatching(true);
+    setResetStatus('Resetting trail matching...');
+    
     try {
       const result = await resetActivityTrailMatching(id);
       if (result.success) {
-        alert('Trail matching reset successfully. The activity will be reprocessed.');
-        // Reload the activity to show updated state
-        window.location.reload();
+        setResetStatus('Trail matching reset successfully. Reloading...');
+        // Reload the activity to show updated state after a brief delay
+        setTimeout(() => {
+          window.location.reload();
+        }, RELOAD_DELAY_MS);
       } else {
-        alert(`Failed to reset trail matching: ${result.error || 'Unknown error'}`);
+        setResetStatus(`Failed to reset trail matching: ${result.error || 'Unknown error'}`);
+        setResettingMatching(false);
       }
     } catch (err) {
-      alert(`Error: ${err.message}`);
-    } finally {
+      setResetStatus(`Error: ${err.message}`);
       setResettingMatching(false);
     }
   };
@@ -472,9 +485,15 @@ function ActivityDetail() {
                   >
                     {resettingMatching ? 'Resetting...' : 'Reset last_matched to NULL'}
                   </button>
-                  <p className="text-xs text-gray-600 mt-1">
-                    This will clear the last_matched timestamp so the activity can be reprocessed
-                  </p>
+                  {resetStatus ? (
+                    <p className={`text-sm mt-2 ${getStatusClassName(resetStatus)}`}>
+                      {resetStatus}
+                    </p>
+                  ) : (
+                    <p className="text-xs text-gray-600 mt-1">
+                      This will clear the last_matched timestamp so the activity can be reprocessed
+                    </p>
+                  )}
                 </div>
                 <details className="mt-3">
                   <summary className="cursor-pointer text-orange-600 hover:text-orange-700 font-medium">
