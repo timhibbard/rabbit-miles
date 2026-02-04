@@ -63,7 +63,7 @@ def handler(event, context):
             "headers": {
                 **cors_headers,
                 "Access-Control-Allow-Methods": "GET, OPTIONS",
-                "Access-Control-Allow-Headers": "Content-Type, Cookie",
+                "Access-Control-Allow-Headers": "Content-Type, Cookie, Authorization",
                 "Access-Control-Max-Age": "86400"
             },
             "body": ""
@@ -87,61 +87,74 @@ def handler(event, context):
                 "body": json.dumps({"error": "server configuration error"})
             }
         
-        # API Gateway HTTP API v2 provides cookies in event['cookies'] array, not in headers
-        # Format: ['cookie1=value1', 'cookie2=value2']
-        cookies_array = event.get("cookies") or []
+        # Try to get session token from multiple sources:
+        # 1. Authorization header (for Mobile Safari compatibility)
+        # 2. Cookies array (API Gateway HTTP API v2 format)
+        # 3. Cookie header (backwards compatibility)
         
-        # Also check headers for backwards compatibility (v1 format or testing)
-        cookie_header = (event.get("headers") or {}).get("cookie") or (event.get("headers") or {}).get("Cookie")
+        headers = event.get("headers") or {}
+        auth_header = headers.get("authorization") or headers.get("Authorization")
         
-        print(f"Cookies array: {cookies_array}")
-        print(f"Cookie header: {cookie_header}")
-        
-        # Parse cookies from both sources
-        # Note: Cookie parsing logic is intentionally inlined here for performance and clarity
-        # in this security-critical authentication path, rather than using a helper function
         tok = None
         
-        # First, try the cookies array (API Gateway HTTP API v2 format)
-        for cookie_str in cookies_array:
-            if not cookie_str or "=" not in cookie_str:
-                continue
-            # Handle cookie strings that might have multiple cookies separated by semicolons
-            for part in cookie_str.split(";"):
-                part = part.strip()
-                if not part or "=" not in part:
-                    continue
-                k, v = part.split("=", 1)
-                if k == "rm_session":
-                    tok = v
-                    break
-            if tok:
-                break
+        # First, try Authorization header (Mobile Safari fallback)
+        if auth_header:
+            # Format: "Bearer <token>"
+            if auth_header.startswith("Bearer "):
+                tok = auth_header[7:]  # Remove "Bearer " prefix
+                print("Found session token in Authorization header")
         
-        # Fallback to cookie header if not found in cookies array
-        if not tok and cookie_header:
-            for part in cookie_header.split(";"):
-                part = part.strip()
-                if not part or "=" not in part:
+        # If not in Authorization header, try cookies
+        if not tok:
+            # API Gateway HTTP API v2 provides cookies in event['cookies'] array
+            cookies_array = event.get("cookies") or []
+            cookie_header = headers.get("cookie") or headers.get("Cookie")
+            
+            print(f"Cookies array: {cookies_array}")
+            print(f"Cookie header: {cookie_header}")
+            
+            # Parse cookies from both sources
+            # First, try the cookies array (API Gateway HTTP API v2 format)
+            for cookie_str in cookies_array:
+                if not cookie_str or "=" not in cookie_str:
                     continue
-                k, v = part.split("=", 1)
-                if k == "rm_session":
-                    tok = v
+                # Handle cookie strings that might have multiple cookies separated by semicolons
+                for part in cookie_str.split(";"):
+                    part = part.strip()
+                    if not part or "=" not in part:
+                        continue
+                    k, v = part.split("=", 1)
+                    if k == "rm_session":
+                        tok = v
+                        break
+                if tok:
                     break
+            
+            # Fallback to cookie header if not found in cookies array
+            if not tok and cookie_header:
+                for part in cookie_header.split(";"):
+                    part = part.strip()
+                    if not part or "=" not in part:
+                        continue
+                    k, v = part.split("=", 1)
+                    if k == "rm_session":
+                        tok = v
+                        break
+            
+            if tok:
+                print("Found rm_session cookie")
         
         if not tok:
-            print(f"No rm_session cookie found in cookies array ({len(cookies_array)} items) or cookie header")
+            print(f"No session token found in Authorization header or cookies")
             return {
                 "statusCode": 401,
                 "headers": cors_headers,
                 "body": json.dumps({"error": "not authenticated"})
             }
         
-        print(f"Found rm_session cookie: {tok[:20]}...")
-        
         aid = verify_session_token(tok)
         if not aid:
-            print(f"Session token verification failed for token: {tok[:20]}...")
+            print("Session token verification failed")
             return {
                 "statusCode": 401,
                 "headers": cors_headers,

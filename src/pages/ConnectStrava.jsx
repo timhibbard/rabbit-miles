@@ -22,7 +22,34 @@ function ConnectStrava() {
     // Check if we just returned from OAuth callback
     const urlParams = new URLSearchParams(window.location.search);
     const justConnected = urlParams.get('connected') === '1';
-    console.log('ConnectStrava: Just connected?', justConnected);
+    
+    // Extract session token from URL fragment (not query param for security)
+    // The backend passes the token in the fragment (#session=...) to prevent it from:
+    // - Being sent to the server
+    // - Appearing in server logs or analytics
+    // - Being included in Referer headers
+    const hash = window.location.hash.substring(1); // Remove leading #
+    const hashParams = new URLSearchParams(hash);
+    const sessionToken = hashParams.get('session');
+    
+    // If we have a session token in the URL (Mobile Safari fallback), validate and store it
+    if (sessionToken) {
+      // Validate token format: should be base64url.hex_signature (JWT-like structure)
+      // Base64url: alphanumeric, dash, underscore (no padding)
+      // Hex signature: 64 hex chars (SHA256)
+      const tokenPattern = /^[A-Za-z0-9_-]+\.[a-f0-9]{64}$/;
+      if (tokenPattern.test(sessionToken)) {
+        sessionStorage.setItem('rm_session', sessionToken);
+      } else {
+        console.warn('Invalid session token format detected');
+      }
+    }
+    
+    // Clean up URL immediately to prevent token exposure
+    // This clears both query params and fragment
+    if (justConnected || sessionToken) {
+      window.history.replaceState({}, '', window.location.pathname);
+    }
     
     // Check if user is already connected
     const checkAuth = async () => {
@@ -36,11 +63,6 @@ function ConnectStrava() {
           connected: true,
           user: result.user,
         });
-        
-        // Clean up the URL if we just connected
-        if (justConnected) {
-          window.history.replaceState({}, '', window.location.pathname);
-        }
       } else {
         console.log('ConnectStrava: User not connected');
         setAuthState({
@@ -63,6 +85,9 @@ function ConnectStrava() {
   };
 
   const handleDisconnect = () => {
+    // Clear session token from sessionStorage
+    sessionStorage.removeItem('rm_session');
+    
     // Redirect to backend disconnect endpoint
     const disconnectUrl = `${API_BASE_URL}/auth/disconnect`;
     window.location.href = disconnectUrl;
