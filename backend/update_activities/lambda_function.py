@@ -28,6 +28,10 @@ STRAVA_TOKEN_URL = "https://www.strava.com/oauth/token"
 STRAVA_ACTIVITY_URL = "https://www.strava.com/api/v3/activities"
 STRAVA_ACTIVITIES_URL = "https://www.strava.com/api/v3/athlete/activities"
 
+# Filter activities starting from Jan 1, 2026 00:00:00 UTC
+# Unix timestamp: 1767225600
+ACTIVITIES_START_DATE = 1767225600
+
 # Token refresh buffer - refresh tokens 5 minutes before expiry
 TOKEN_REFRESH_BUFFER_SECONDS = 300
 
@@ -173,7 +177,7 @@ def fetch_activity_details(access_token, activity_id):
 
 def fetch_strava_activities(access_token, per_page=30, page=1):
     """Fetch activities from Strava API"""
-    url = f"{STRAVA_ACTIVITIES_URL}?per_page={per_page}&page={page}"
+    url = f"{STRAVA_ACTIVITIES_URL}?per_page={per_page}&page={page}&after={ACTIVITIES_START_DATE}"
     req = Request(url, headers={"Authorization": f"Bearer {access_token}"})
     
     try:
