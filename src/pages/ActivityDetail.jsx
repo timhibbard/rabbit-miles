@@ -8,6 +8,7 @@ import Footer from '../components/Footer';
 import 'leaflet/dist/leaflet.css';
 
 const METERS_TO_MILES = 1609.34;
+const POINTS_PER_PAGE = 200;
 
 // Component to fit map bounds to polyline
 function FitBounds({ bounds }) {
@@ -383,7 +384,7 @@ function ActivityDetail() {
                 </div>
                 <details className="mt-3">
                   <summary className="cursor-pointer text-orange-600 hover:text-orange-700 font-medium">
-                    View point-by-point analysis (200 points per page)
+                    View point-by-point analysis ({POINTS_PER_PAGE} points per page)
                   </summary>
                   <div className="mt-2 max-h-96 overflow-y-auto">
                     <table className="min-w-full text-xs">
@@ -397,8 +398,8 @@ function ActivityDetail() {
                         </tr>
                       </thead>
                       <tbody>
-                        {debugInfo.points.slice(currentPage * 200, (currentPage + 1) * 200).map((point, idx) => (
-                          <tr key={idx} className={point.isOnTrail ? 'bg-green-50' : 'bg-blue-50'}>
+                        {debugInfo.points.slice(currentPage * POINTS_PER_PAGE, (currentPage + 1) * POINTS_PER_PAGE).map((point, idx) => (
+                          <tr key={point.pointIndex} className={point.isOnTrail ? 'bg-green-50' : 'bg-blue-50'}>
                             <td className="px-2 py-1">{point.pointIndex}</td>
                             <td className="px-2 py-1">{point.lat.toFixed(6)}</td>
                             <td className="px-2 py-1">{point.lon.toFixed(6)}</td>
@@ -408,7 +409,7 @@ function ActivityDetail() {
                         ))}
                       </tbody>
                     </table>
-                    {debugInfo.points.length > 200 && (
+                    {debugInfo.points.length > POINTS_PER_PAGE && (
                       <div className="mt-3 flex items-center justify-between border-t border-gray-200 pt-3">
                         <button
                           onClick={() => setCurrentPage(Math.max(0, currentPage - 1))}
@@ -418,12 +419,12 @@ function ActivityDetail() {
                           Previous
                         </button>
                         <span className="text-sm text-gray-600">
-                          Page {currentPage + 1} of {Math.ceil(debugInfo.points.length / 200)} 
-                          {' '}(showing {currentPage * 200 + 1} - {Math.min((currentPage + 1) * 200, debugInfo.points.length)} of {debugInfo.points.length} points)
+                          Page {currentPage + 1} of {Math.ceil(debugInfo.points.length / POINTS_PER_PAGE)} 
+                          {' '}(showing {currentPage * POINTS_PER_PAGE + 1} - {Math.min((currentPage + 1) * POINTS_PER_PAGE, debugInfo.points.length)} of {debugInfo.points.length} points)
                         </span>
                         <button
-                          onClick={() => setCurrentPage(Math.min(Math.ceil(debugInfo.points.length / 200) - 1, currentPage + 1))}
-                          disabled={currentPage >= Math.ceil(debugInfo.points.length / 200) - 1}
+                          onClick={() => setCurrentPage(Math.min(Math.ceil(debugInfo.points.length / POINTS_PER_PAGE) - 1, currentPage + 1))}
+                          disabled={currentPage >= Math.ceil(debugInfo.points.length / POINTS_PER_PAGE) - 1}
                           className="px-3 py-1 text-sm bg-orange-600 text-white rounded disabled:bg-gray-300 disabled:cursor-not-allowed hover:bg-orange-700"
                         >
                           Next
