@@ -238,7 +238,7 @@ def handler(event, context):
 
     # Redirect back to SPA
     # Cookie-based authentication - the session cookie will be sent automatically on subsequent requests
-    redirect_to = f"{FRONTEND}/connect?connected=1#session={session_token}"
+    redirect_to = f"{FRONTEND}/connect?connected=1"
 
     return {
         "statusCode": 302,

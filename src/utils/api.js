@@ -2,7 +2,6 @@ import axios from 'axios';
 import debug from './debug';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
-const SESSION_TOKEN_KEY = 'rm_session_token';
 
 // Validate API_BASE_URL at module load time
 if (!API_BASE_URL) {
@@ -23,11 +22,6 @@ const api = axios.create({
 // Add request interceptor for debugging
 api.interceptors.request.use(
   (config) => {
-    const sessionToken = sessionStorage.getItem(SESSION_TOKEN_KEY);
-    if (sessionToken) {
-      config.headers = config.headers ?? {};
-      config.headers.Authorization = `Bearer ${sessionToken}`;
-    }
     // Log full request details in debug mode
     if (debug.enabled()) {
       debug.group('API Request');
@@ -37,7 +31,6 @@ api.interceptors.request.use(
       debug.log('Full URL:', `${config.baseURL}${config.url}`);
       // Filter sensitive headers before logging
       const safeHeaders = { ...config.headers };
-      if (safeHeaders.Authorization) safeHeaders.Authorization = '[REDACTED]';
       if (safeHeaders.Cookie) safeHeaders.Cookie = '[REDACTED]';
       debug.log('Headers:', safeHeaders);
       debug.log('With Credentials:', config.withCredentials);

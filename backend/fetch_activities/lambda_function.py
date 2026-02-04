@@ -71,15 +71,6 @@ def verify_session_token(tok):
         return None
 
 
-def parse_authorization_header(headers):
-    auth_header = headers.get("authorization") or headers.get("Authorization")
-    if not auth_header:
-        return None
-    if auth_header.lower().startswith("bearer "):
-        return auth_header.split(" ", 1)[1].strip()
-    return None
-
-
 def parse_session_cookie(event):
     """Parse rm_session cookie from API Gateway event"""
     headers = event.get("headers") or {}
@@ -111,14 +102,6 @@ def parse_session_cookie(event):
                 return v
     
     return None
-
-
-def parse_session_token(event):
-    headers = event.get("headers") or {}
-    bearer_token = parse_authorization_header(headers)
-    if bearer_token:
-        return bearer_token
-    return parse_session_cookie(event)
 
 
 def _get_strava_creds():
@@ -371,7 +354,7 @@ def handler(event, context):
             "headers": {
                 **cors_headers,
                 "Access-Control-Allow-Methods": "POST, OPTIONS",
-                "Access-Control-Allow-Headers": "Content-Type, Cookie, Authorization",
+                "Access-Control-Allow-Headers": "Content-Type",
                 "Access-Control-Max-Age": "86400"
             },
             "body": ""
@@ -396,7 +379,7 @@ def handler(event, context):
             }
         
         # Parse cookies to get session token
-        tok = parse_session_token(event)
+        tok = parse_session_cookie(event)
         
         if not tok:
             print("ERROR: No session cookie found")
