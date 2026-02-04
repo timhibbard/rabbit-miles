@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { fetchMe, fetchActivities, refreshActivities } from '../utils/api';
 
@@ -6,12 +6,17 @@ import { fetchMe, fetchActivities, refreshActivities } from '../utils/api';
 const METERS_TO_MILES = 1609.34;
 const ACTIVITY_POLL_INTERVAL = 30000; // Poll every 30 seconds
 
+// Activity type filters
+const ACTIVITY_TYPES = {
+  BIKE: 'Ride',
+  FOOT: 'Run,Walk',
+};
+
 function Dashboard() {
-  const [stats] = useState({
-    totalMiles: 0,
-    thisWeek: 0,
-    thisMonth: 0,
-  });
+  // Activity type filter state - can select bike, foot, or both
+  const [selectedTypes, setSelectedTypes] = useState(['Ride', 'Run', 'Walk']);
+  
+  // Remove the stats state since we'll calculate it with useMemo
   const [authState, setAuthState] = useState({
     loading: true,
     user: null,
@@ -32,6 +37,85 @@ function Dashboard() {
   const isLoadingRef = useRef(false);
   const navigate = useNavigate();
 
+  // Calculate statistics from activities based on selected types using useMemo
+  const stats = useMemo(() => {
+    const activities = activitiesState.activities;
+    
+    if (!activities || activities.length === 0) {
+      return {
+        totalMiles: 0,
+        totalTime: 0,
+        thisWeek: 0,
+        thisWeekTime: 0,
+        thisMonth: 0,
+        thisMonthTime: 0,
+        thisYear: 0,
+        thisYearTime: 0,
+      };
+    }
+
+    const now = new Date();
+    const startOfWeek = new Date(now);
+    startOfWeek.setDate(now.getDate() - now.getDay()); // Start of week (Sunday)
+    startOfWeek.setHours(0, 0, 0, 0);
+
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const startOfYear = new Date(now.getFullYear(), 0, 1);
+
+    let totalMiles = 0;
+    let totalTime = 0;
+    let thisWeek = 0;
+    let thisWeekTime = 0;
+    let thisMonth = 0;
+    let thisMonthTime = 0;
+    let thisYear = 0;
+    let thisYearTime = 0;
+
+    activities.forEach((activity) => {
+      // Filter by selected activity types
+      if (!selectedTypes.includes(activity.type)) {
+        return;
+      }
+
+      const activityDate = new Date(activity.start_date_local);
+      const miles = activity.distance / METERS_TO_MILES;
+      const time = activity.moving_time;
+
+      // Total (all time)
+      totalMiles += miles;
+      totalTime += time;
+
+      // This year
+      if (activityDate >= startOfYear) {
+        thisYear += miles;
+        thisYearTime += time;
+      }
+
+      // This month
+      if (activityDate >= startOfMonth) {
+        thisMonth += miles;
+        thisMonthTime += time;
+      }
+
+      // This week
+      if (activityDate >= startOfWeek) {
+        thisWeek += miles;
+        thisWeekTime += time;
+      }
+    });
+
+    return {
+      totalMiles,
+      totalTime,
+      thisWeek,
+      thisWeekTime,
+      thisMonth,
+      thisMonthTime,
+      thisYear,
+      thisYearTime,
+    };
+  }, [activitiesState.activities, selectedTypes]);
+
   // Load activities for the authenticated user
   const loadActivities = useCallback(async (silent = false) => {
     // Prevent overlapping requests
@@ -49,16 +133,19 @@ function Dashboard() {
       setActivitiesState({ loading: true, activities: [], error: null });
     }
     
-    const result = await fetchActivities(10, 0);
+    // Fetch all activities (increase limit to get all for stats calculation)
+    const result = await fetchActivities(1000, 0);
     
     isLoadingRef.current = false;
     
     if (result.success) {
+      const activities = result.data.activities || [];
       setActivitiesState({
         loading: false,
-        activities: result.data.activities || [],
+        activities,
         error: null,
       });
+      // Stats will be calculated automatically via useMemo
     } else {
       // For silent refresh, don't update error state to avoid disrupting UI
       if (!silent) {
@@ -73,6 +160,27 @@ function Dashboard() {
       }
     }
   }, []);
+
+  // Toggle activity type filter (Bike or Foot)
+  const toggleActivityType = (type) => {
+    if (type === 'Bike') {
+      if (selectedTypes.includes('Ride')) {
+        // Remove bike
+        setSelectedTypes(prev => prev.filter(t => t !== 'Ride'));
+      } else {
+        // Add bike
+        setSelectedTypes(prev => [...prev, 'Ride']);
+      }
+    } else if (type === 'Foot') {
+      if (selectedTypes.includes('Run') || selectedTypes.includes('Walk')) {
+        // Remove foot activities
+        setSelectedTypes(prev => prev.filter(t => t !== 'Run' && t !== 'Walk'));
+      } else {
+        // Add foot activities
+        setSelectedTypes(prev => [...prev, 'Run', 'Walk']);
+      }
+    }
+  };
 
   // Refresh activities from Strava
   const handleRefreshActivities = async () => {
@@ -175,6 +283,14 @@ function Dashboard() {
     };
   }, [navigate, loadActivities, startPolling, stopPolling]);
 
+  // Format time in seconds to hours:minutes
+  const formatTime = (seconds) => {
+    if (!seconds || seconds === 0) return '0:00';
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    return `${hours}:${minutes.toString().padStart(2, '0')}`;
+  };
+
   // Loading state
   if (authState.loading) {
     return (
@@ -249,15 +365,45 @@ function Dashboard() {
               )}
             </div>
           </div>
+          
+          {/* Activity Type Filter */}
+          <div className="mt-6 flex items-center gap-4">
+            <span className="text-sm font-medium text-gray-700">Activity Type:</span>
+            <div className="inline-flex rounded-lg border border-gray-300 bg-white">
+              <button
+                onClick={() => toggleActivityType('Bike')}
+                className={`px-4 py-2 text-sm font-medium rounded-l-lg transition-colors ${
+                  selectedTypes.includes('Ride')
+                    ? 'bg-orange-600 text-white'
+                    : 'bg-white text-gray-700 hover:bg-gray-50'
+                }`}
+              >
+                Bike
+              </button>
+              <button
+                onClick={() => toggleActivityType('Foot')}
+                className={`px-4 py-2 text-sm font-medium rounded-r-lg border-l transition-colors ${
+                  selectedTypes.includes('Run') || selectedTypes.includes('Walk')
+                    ? 'bg-orange-600 text-white border-orange-600'
+                    : 'bg-white text-gray-700 hover:bg-gray-50 border-gray-300'
+                }`}
+              >
+                Foot
+              </button>
+            </div>
+          </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
           <div className="bg-white rounded-lg shadow p-6">
             <h3 className="text-sm font-medium text-gray-500 mb-2">
               Total Miles
             </h3>
             <p className="text-3xl font-bold text-gray-900">
               {stats.totalMiles.toFixed(1)}
+            </p>
+            <p className="text-xs text-gray-500 mt-1">
+              {formatTime(stats.totalTime)}
             </p>
           </div>
 
@@ -268,6 +414,9 @@ function Dashboard() {
             <p className="text-3xl font-bold text-gray-900">
               {stats.thisWeek.toFixed(1)}
             </p>
+            <p className="text-xs text-gray-500 mt-1">
+              {formatTime(stats.thisWeekTime)}
+            </p>
           </div>
 
           <div className="bg-white rounded-lg shadow p-6">
@@ -276,6 +425,21 @@ function Dashboard() {
             </h3>
             <p className="text-3xl font-bold text-gray-900">
               {stats.thisMonth.toFixed(1)}
+            </p>
+            <p className="text-xs text-gray-500 mt-1">
+              {formatTime(stats.thisMonthTime)}
+            </p>
+          </div>
+
+          <div className="bg-white rounded-lg shadow p-6">
+            <h3 className="text-sm font-medium text-gray-500 mb-2">
+              This Year
+            </h3>
+            <p className="text-3xl font-bold text-gray-900">
+              {stats.thisYear.toFixed(1)}
+            </p>
+            <p className="text-xs text-gray-500 mt-1">
+              {formatTime(stats.thisYearTime)}
             </p>
           </div>
         </div>
@@ -312,15 +476,26 @@ function Dashboard() {
             </div>
           )}
           
-          {!activitiesState.loading && !activitiesState.error && activitiesState.activities.length === 0 && (
-            <p className="text-gray-500">
-              No activities yet. Your Strava activities will appear here once they are synced.
-            </p>
+          {!activitiesState.loading && !activitiesState.error && (
+            activitiesState.activities.length === 0 ? (
+              <p className="text-gray-500">
+                No activities yet. Your Strava activities will appear here once they are synced.
+              </p>
+            ) : (
+              activitiesState.activities.filter(activity => selectedTypes.includes(activity.type)).length === 0 ? (
+                <p className="text-gray-500">
+                  No activities match the selected filter. Try selecting a different activity type.
+                </p>
+              ) : null
+            )
           )}
           
           {!activitiesState.loading && !activitiesState.error && activitiesState.activities.length > 0 && (
             <div className="space-y-4">
-              {activitiesState.activities.map((activity) => {
+              {activitiesState.activities
+                .filter(activity => selectedTypes.includes(activity.type))
+                .slice(0, 10) // Show only the 10 most recent filtered activities
+                .map((activity) => {
                 const distanceMiles = (activity.distance / METERS_TO_MILES).toFixed(2);
                 const durationMinutes = Math.floor(activity.elapsed_time / 60);
                 const durationSeconds = activity.elapsed_time % 60;
