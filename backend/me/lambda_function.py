@@ -48,21 +48,11 @@ def verify_session_token(tok):
         return None
 
 def parse_authorization_header(headers):
-    """
-    Extract bearer token from Authorization header.
-    
-    Returns the token string if valid, or None if:
-    - Authorization header is missing
-    - Header doesn't start with 'Bearer '
-    - Token is empty or whitespace-only after extraction
-    """
     auth_header = headers.get("authorization") or headers.get("Authorization")
     if not auth_header:
         return None
     if auth_header.lower().startswith("bearer "):
-        token = auth_header.split(" ", 1)[1].strip()
-        # Validate token is non-empty after stripping whitespace
-        return token if token else None
+        return auth_header.split(" ", 1)[1].strip()
     return None
 
 def parse_session_token(event):
@@ -115,7 +105,7 @@ def handler(event, context):
             "headers": {
                 **cors_headers,
                 "Access-Control-Allow-Methods": "GET, OPTIONS",
-                "Access-Control-Allow-Headers": "Content-Type, Authorization, Cookie",
+                "Access-Control-Allow-Headers": "Content-Type, Cookie",
                 "Access-Control-Max-Age": "86400"
             },
             "body": ""
@@ -139,7 +129,7 @@ def handler(event, context):
                 "body": json.dumps({"error": "server configuration error"})
             }
         
-        tok = parse_session_token(event)
+        tok = parse_session_cookie(event)
         if tok:
             print("Found session token")
         
