@@ -7,6 +7,7 @@ This Lambda function finds activities in the database where `last_matched IS NUL
 - Identifies activities that haven't been matched against trail data
 - Triggers the `match_activity_trail` Lambda for each unmatched activity
 - Processes activities in batches to avoid overwhelming the system
+- **Defaults to processing 75 activities per invocation** (configurable via event payload)
 
 ## Use Cases
 
@@ -16,11 +17,28 @@ This Lambda function finds activities in the database where `last_matched IS NUL
 
 ## Invocation
 
-### Manual Invocation
+### Manual Invocation (Default: 75 activities)
 ```bash
 aws lambda invoke \
   --function-name match_unmatched_activities \
   --invocation-type Event \
+  output.json
+```
+
+### Manual Invocation with Custom Limit
+```bash
+# Process 150 activities
+aws lambda invoke \
+  --function-name match_unmatched_activities \
+  --invocation-type Event \
+  --payload '{"limit": 150}' \
+  output.json
+
+# Process 25 activities
+aws lambda invoke \
+  --function-name match_unmatched_activities \
+  --invocation-type Event \
+  --payload '{"limit": 25}' \
   output.json
 ```
 
@@ -42,7 +60,8 @@ Required:
 
 ## Batch Processing
 
-- Processes **10 activities per invocation** by default
+- Processes **75 activities per invocation** by default
+- Can be customized by passing a `limit` parameter in the event payload
 - Uses async Lambda invocation to trigger matching
 - Each activity is matched independently
 - Can be invoked multiple times for large backlogs
@@ -64,7 +83,7 @@ Required:
 
 1. Query database for activities where `last_matched IS NULL`
 2. Order by `start_date DESC` (newest first)
-3. Limit to batch size (10)
+3. Limit to specified batch size (default: 75, configurable via event payload)
 4. For each activity:
    - Invoke `match_activity_trail` Lambda asynchronously
    - Track success/failure count
@@ -138,11 +157,26 @@ Check CloudWatch Logs for:
 
 ## Batch Size Tuning
 
-To process more activities per invocation, modify `BATCH_SIZE` in the code:
+The default batch size is 75 activities per invocation. You can customize this in two ways:
+
+### Option 1: Event Payload (Recommended)
+Pass a `limit` parameter when invoking the Lambda:
+
+```bash
+# Process 200 activities
+aws lambda invoke \
+  --function-name match_unmatched_activities \
+  --invocation-type Event \
+  --payload '{"limit": 200}' \
+  output.json
+```
+
+### Option 2: Code Modification
+To permanently change the default, modify `DEFAULT_BATCH_SIZE` in the code:
 
 ```python
-# Increase batch size for faster backfilling
-BATCH_SIZE = 50  # Default is 10
+# Increase default batch size for faster backfilling
+DEFAULT_BATCH_SIZE = 100  # Default is 75
 ```
 
 Consider Lambda timeout and concurrent execution limits when increasing batch size.
@@ -152,7 +186,14 @@ Consider Lambda timeout and concurrent execution limits when increasing batch si
 If you have thousands of unmatched activities:
 
 1. Increase Lambda timeout (max 15 minutes)
-2. Increase batch size to 50-100
+2. Pass a custom limit to process more activities per invocation:
+   ```bash
+   aws lambda invoke \
+     --function-name match_unmatched_activities \
+     --invocation-type Event \
+     --payload '{"limit": 200}' \
+     output.json
+   ```
 3. Invoke multiple times in parallel
 4. Use Step Functions for orchestration
 
@@ -194,9 +235,11 @@ Example Step Functions workflow:
 
 ## Scheduling Recommendations
 
-- **Initial deployment**: Invoke manually with high batch size
-- **Ongoing**: Schedule once daily to catch missed activities
-- **After webhook issues**: Invoke manually to recover
+- **Initial deployment**: Invoke manually with high limit (e.g., 200+) for backfilling
+  - Note: Test with incrementally larger limits (100, 200, 300) to ensure Lambda doesn't timeout
+  - Consider Lambda timeout (default: 3 seconds, max: 15 minutes) when choosing limit
+- **Ongoing**: Schedule once daily with default limit (75) to catch missed activities
+- **After webhook issues**: Invoke manually with custom limit to recover
 
 ## Error Handling
 

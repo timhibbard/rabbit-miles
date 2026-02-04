@@ -33,6 +33,21 @@ def reload_lambda_function():
         return lambda_function
 
 
+def extract_limit_from_mock_call(mock_sql):
+    """
+    Helper function to extract the limit parameter from a mocked SQL call.
+    
+    Args:
+        mock_sql: The mocked _exec_sql function
+        
+    Returns:
+        int: The limit value used in the SQL call
+    """
+    call_args = mock_sql.call_args
+    params = call_args[0][1] if len(call_args[0]) > 1 else call_args[1].get('parameters')
+    return params[0]['value']['longValue']
+
+
 def test_handler_missing_env_vars():
     """Test that handler fails gracefully when environment variables are missing"""
     print("Testing handler with missing environment variables...")
@@ -89,7 +104,12 @@ def test_handler_no_unmatched_activities():
         body = json.loads(result['body'])
         assert body['message'] == "No unmatched activities found", "Expected no unmatched activities message"
         assert body['processed'] == 0, "Expected processed count to be 0"
+        
+        # Verify the default limit of 75 was used
+        assert extract_limit_from_mock_call(mock_sql) == 75, "Expected default limit of 75"
+        
         print("✓ Handler correctly handles no unmatched activities")
+        print("✓ Handler uses default limit of 75")
 
 
 def test_handler_successful_queueing():
@@ -219,6 +239,54 @@ def test_response_structure_changed():
         print("✓ Response structure correctly uses 'queued' instead of 'success'")
 
 
+def test_handler_custom_limit():
+    """Test that handler accepts and uses custom limit parameter"""
+    print("\nTesting handler with custom limit parameter...")
+    
+    os.environ['DB_CLUSTER_ARN'] = 'test-cluster-arn'
+    os.environ['DB_SECRET_ARN'] = 'test-secret-arn'
+    os.environ['DB_NAME'] = 'postgres'
+    os.environ['MATCH_ACTIVITY_LAMBDA_ARN'] = 'test-lambda-arn'
+    
+    lambda_function = reload_lambda_function()
+    
+    with patch.object(lambda_function, '_exec_sql') as mock_sql, \
+         patch.object(lambda_function, 'lambda_client') as mock_lambda:
+        
+        # Mock database to return 5 activities
+        mock_sql.return_value = {
+            "records": [
+                [{"longValue": i}, {"longValue": i*100}, {"stringValue": f"Activity {i}"}]
+                for i in range(1, 6)
+            ]
+        }
+        
+        mock_lambda.invoke.return_value = {"StatusCode": 202}
+        
+        # Test with custom limit of 150
+        result = lambda_function.handler({"limit": 150}, None)
+        
+        assert result['statusCode'] == 200, f"Expected status 200, got {result['statusCode']}"
+        
+        # Verify the custom limit was used in SQL call
+        assert extract_limit_from_mock_call(mock_sql) == 150, "Expected custom limit of 150"
+        
+        body = json.loads(result['body'])
+        assert body['total_found'] == 5, f"Expected 5 activities found, got {body['total_found']}"
+        assert body['queued'] == 5, f"Expected 5 queued, got {body['queued']}"
+        
+        print("✓ Handler correctly uses custom limit parameter (150)")
+        
+        # Test with custom limit of 25
+        mock_sql.reset_mock()
+        result = lambda_function.handler({"limit": 25}, None)
+        
+        # Verify the custom limit was used
+        assert extract_limit_from_mock_call(mock_sql) == 25, "Expected custom limit of 25"
+        
+        print("✓ Handler correctly uses custom limit parameter (25)")
+
+
 if __name__ == '__main__':
     print("Running match_unmatched_activities Lambda tests...\n")
     print("=" * 60)
@@ -229,6 +297,7 @@ if __name__ == '__main__':
         test_handler_successful_queueing()
         test_handler_partial_queueing_failure()
         test_response_structure_changed()
+        test_handler_custom_limit()
         
         print("\n" + "=" * 60)
         print("✅ All tests passed!")
