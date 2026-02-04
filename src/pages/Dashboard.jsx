@@ -122,6 +122,25 @@ function Dashboard() {
     };
   }, [activitiesState.activities, selectedTypes]);
 
+  // Calculate pagination details using useMemo
+  const paginationData = useMemo(() => {
+    const filteredActivities = activitiesState.activities.filter(activity => selectedTypes.includes(activity.type));
+    const totalFiltered = filteredActivities.length;
+    const totalPages = Math.ceil(totalFiltered / ACTIVITIES_PER_PAGE);
+    const startIndex = (currentPage - 1) * ACTIVITIES_PER_PAGE;
+    const endIndex = startIndex + ACTIVITIES_PER_PAGE;
+    const paginatedActivities = filteredActivities.slice(startIndex, endIndex);
+    
+    return {
+      filteredActivities,
+      totalFiltered,
+      totalPages,
+      startIndex,
+      endIndex,
+      paginatedActivities,
+    };
+  }, [activitiesState.activities, selectedTypes, currentPage]);
+
   // Load activities for the authenticated user
   const loadActivities = useCallback(async (silent = false) => {
     // Prevent overlapping requests
@@ -168,10 +187,7 @@ function Dashboard() {
   }, []);
 
   // Toggle activity type filter (Bike or Foot)
-  const toggleActivityType = (type) => {
-    // Reset to page 1 when filter changes
-    setCurrentPage(1);
-    
+  const toggleActivityType = useCallback((type) => {
     if (type === 'Bike') {
       if (selectedTypes.includes('Ride')) {
         // Remove bike
@@ -189,7 +205,10 @@ function Dashboard() {
         setSelectedTypes(prev => [...prev, 'Run', 'Walk']);
       }
     }
-  };
+    
+    // Reset to page 1 after filter changes
+    setCurrentPage(1);
+  }, [selectedTypes]);
 
   // Refresh activities from Strava
   const handleRefreshActivities = async () => {
@@ -505,19 +524,10 @@ function Dashboard() {
             )
           )}
           
-          {!activitiesState.loading && !activitiesState.error && activitiesState.activities.length > 0 && (() => {
-            // Filter activities by selected types
-            const filteredActivities = activitiesState.activities.filter(activity => selectedTypes.includes(activity.type));
-            const totalFiltered = filteredActivities.length;
-            const totalPages = Math.ceil(totalFiltered / ACTIVITIES_PER_PAGE);
-            const startIndex = (currentPage - 1) * ACTIVITIES_PER_PAGE;
-            const endIndex = startIndex + ACTIVITIES_PER_PAGE;
-            const paginatedActivities = filteredActivities.slice(startIndex, endIndex);
-            
-            return (
-              <>
-                <div className="space-y-4">
-                  {paginatedActivities.map((activity) => {
+          {!activitiesState.loading && !activitiesState.error && activitiesState.activities.length > 0 && paginationData.totalFiltered > 0 && (
+            <>
+              <div className="space-y-4">
+                {paginationData.paginatedActivities.map((activity) => {
                 const distanceMiles = (activity.distance / METERS_TO_MILES).toFixed(2);
                 const durationMinutes = Math.floor(activity.elapsed_time / 60);
                 const durationSeconds = activity.elapsed_time % 60;
@@ -602,10 +612,10 @@ function Dashboard() {
             </div>
             
             {/* Pagination Controls */}
-            {totalPages > 1 && (
+            {paginationData.totalPages > 1 && (
               <div className="mt-6 flex items-center justify-between border-t border-gray-200 pt-4">
                 <div className="text-sm text-gray-600">
-                  Showing {startIndex + 1} to {Math.min(endIndex, totalFiltered)} of {totalFiltered} activities
+                  Showing {paginationData.startIndex + 1} to {Math.min(paginationData.endIndex, paginationData.totalFiltered)} of {paginationData.totalFiltered} activities
                 </div>
                 <div className="flex gap-2">
                   <button
@@ -624,12 +634,12 @@ function Dashboard() {
                   </button>
                   <button
                     onClick={() => {
-                      setCurrentPage(prev => Math.min(totalPages, prev + 1));
+                      setCurrentPage(prev => Math.min(paginationData.totalPages, prev + 1));
                       window.scrollTo({ top: 0, behavior: 'smooth' });
                     }}
-                    disabled={currentPage === totalPages}
+                    disabled={currentPage === paginationData.totalPages}
                     className={`px-4 py-2 rounded-lg text-sm font-medium focus:outline-none focus:ring-2 focus:ring-orange-500 ${
-                      currentPage === totalPages
+                      currentPage === paginationData.totalPages
                         ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
                         : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
                     }`}
@@ -640,8 +650,7 @@ function Dashboard() {
               </div>
             )}
           </>
-            );
-          })()}
+          )}
           
           {/* Controls at bottom */}
           <div className="mt-6 pt-6 border-t border-gray-200 flex justify-between items-center" aria-label="Activity controls">
