@@ -34,15 +34,20 @@ function ConnectStrava() {
     
     // If we have a session token in the URL (Mobile Safari fallback), validate and store it
     if (sessionToken) {
+      console.log('Found session token in URL fragment:', sessionToken.substring(0, 20) + '...');
       // Validate token format: should be base64url.hex_signature (JWT-like structure)
       // Base64url: alphanumeric, dash, underscore (no padding)
       // Hex signature: 64 hex chars (SHA256)
       const tokenPattern = /^[A-Za-z0-9_-]+\.[a-f0-9]{64}$/;
       if (tokenPattern.test(sessionToken)) {
+        console.log('Token format valid, storing in sessionStorage');
         sessionStorage.setItem('rm_session', sessionToken);
+        console.log('Token stored successfully');
       } else {
-        console.warn('Invalid session token format detected');
+        console.warn('Invalid session token format detected. Token:', sessionToken);
       }
+    } else {
+      console.log('No session token found in URL fragment');
     }
     
     // Clean up URL immediately to prevent token exposure

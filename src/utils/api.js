@@ -2,6 +2,13 @@ import axios from 'axios';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
+// Validate API_BASE_URL at module load time
+if (!API_BASE_URL) {
+  console.error('VITE_API_BASE_URL environment variable is not set!');
+} else {
+  console.log('API_BASE_URL configured as:', API_BASE_URL);
+}
+
 // Create axios instance with base configuration
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -21,11 +28,15 @@ api.interceptors.request.use(
     // Check if we have a session token in sessionStorage (Mobile Safari fallback)
     const sessionToken = sessionStorage.getItem('rm_session');
     if (sessionToken) {
+      console.log('Adding Authorization header with session token:', sessionToken.substring(0, 20) + '...');
       config.headers.Authorization = `Bearer ${sessionToken}`;
+    } else {
+      console.log('No session token found in sessionStorage for this request');
     }
     return config;
   },
   (error) => {
+    console.error('Request interceptor error:', error);
     return Promise.reject(error);
   }
 );
@@ -34,11 +45,19 @@ api.interceptors.request.use(
 export const fetchMe = async () => {
   try {
     console.log('Calling /me endpoint...');
+    console.log('API_BASE_URL:', API_BASE_URL);
+    console.log('Session token in storage:', sessionStorage.getItem('rm_session') ? 'present' : 'missing');
     const response = await api.get('/me');
     console.log('/me response:', response.data);
+    console.log('/me response status:', response.status);
     return { success: true, user: response.data };
   } catch (error) {
     console.error('/me endpoint error:', error);
+    if (error.response) {
+      console.error('/me response status:', error.response.status);
+      console.error('/me response data:', error.response.data);
+      console.error('/me response headers:', error.response.headers);
+    }
     if (error.response?.status === 401) {
       console.log('User not authenticated (401)');
       return { success: false, notConnected: true };
