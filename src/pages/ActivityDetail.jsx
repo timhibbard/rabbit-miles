@@ -362,7 +362,6 @@ function ActivityDetail() {
                 </details>
               </div>
             )}
-            </div>
           </div>
         ) : (
           <div className="bg-white rounded-lg shadow p-6 mb-6">
