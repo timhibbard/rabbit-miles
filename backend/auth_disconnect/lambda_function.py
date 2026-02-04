@@ -100,7 +100,7 @@ def handler(event, context):
     session = cookies.get("rm_session")
     if not session:
         # still clear cookie and redirect
-        clear = f"rm_session=; HttpOnly; Secure; SameSite=None; Path={COOKIE_PATH}; Max-Age=0; Partitioned"
+        clear = f"rm_session=; HttpOnly; Secure; SameSite=None; Path={COOKIE_PATH}; Max-Age=0"
         return {
             "statusCode": 302,
             "headers": {"Location": f"{FRONTEND}/?connected=0"},
@@ -111,7 +111,7 @@ def handler(event, context):
     aid = _verify_session_token(session)
     if not aid:
         # invalid session: clear cookie
-        clear = f"rm_session=; HttpOnly; Secure; SameSite=None; Path={COOKIE_PATH}; Max-Age=0; Partitioned"
+        clear = f"rm_session=; HttpOnly; Secure; SameSite=None; Path={COOKIE_PATH}; Max-Age=0"
         return {
             "statusCode": 302,
             "headers": {"Location": f"{FRONTEND}/?connected=0"},
@@ -133,7 +133,7 @@ def handler(event, context):
         _exec_sql(sql, params)
     except Exception as e:
         # best-effort: clear cookie and redirect even on DB failures, but surface minimal error
-        clear = f"rm_session=; HttpOnly; Secure; SameSite=None; Path={COOKIE_PATH}; Max-Age=0; Partitioned"
+        clear = f"rm_session=; HttpOnly; Secure; SameSite=None; Path={COOKIE_PATH}; Max-Age=0"
         return {
             "statusCode": 302,
             "headers": {"Location": f"{FRONTEND}/?connected=0&error=disconnect_failed"},
@@ -142,9 +142,9 @@ def handler(event, context):
         }
 
     # Clear session cookie and redirect to frontend
-    clear_session = f"rm_session=; HttpOnly; Secure; SameSite=None; Path={COOKIE_PATH}; Max-Age=0; Partitioned"
+    clear_session = f"rm_session=; HttpOnly; Secure; SameSite=None; Path={COOKIE_PATH}; Max-Age=0"
     # also clear any leftover rm_state just in case
-    clear_state = f"rm_state=; HttpOnly; Secure; SameSite=None; Path={COOKIE_PATH}; Max-Age=0; Partitioned"
+    clear_state = f"rm_state=; HttpOnly; Secure; SameSite=None; Path={COOKIE_PATH}; Max-Age=0"
 
     return {
         "statusCode": 302,
