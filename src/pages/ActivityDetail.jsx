@@ -492,7 +492,7 @@ function ActivityDetail() {
                         </tr>
                       </thead>
                       <tbody>
-                        {debugInfo.points.slice(currentPage * POINTS_PER_PAGE, (currentPage + 1) * POINTS_PER_PAGE).map((point, idx) => (
+                        {debugInfo.points.slice(currentPage * POINTS_PER_PAGE, (currentPage + 1) * POINTS_PER_PAGE).map((point) => (
                           <tr 
                             key={point.pointIndex} 
                             className={`${point.isOnTrail ? 'bg-green-50' : 'bg-blue-50'} hover:bg-orange-100 cursor-pointer transition-colors`}
