@@ -144,7 +144,7 @@ def load_trail_data_from_s3():
     """Load trail GeoJSON data from S3 bucket"""
     print(f"Loading trail data from S3 bucket: {TRAIL_DATA_BUCKET}")
     
-    trail_coordinates = []
+    trail_segments = []
     
     # Load main trail
     try:
@@ -152,17 +152,22 @@ def load_trail_data_from_s3():
         main_geojson = json.loads(response['Body'].read().decode('utf-8'))
         
         # Extract coordinates from GeoJSON features
+        # Keep each feature's coordinates as a separate segment to avoid spurious connections
         for feature in main_geojson.get('features', []):
             geometry = feature.get('geometry', {})
             if geometry.get('type') == 'LineString':
                 coords = geometry.get('coordinates', [])
                 # GeoJSON uses [lon, lat] format, convert to [lat, lon]
-                trail_coordinates.extend([(lat, lon) for lon, lat in coords])
+                segment = [(lat, lon) for lon, lat in coords]
+                if len(segment) >= 2:  # Only add segments with at least 2 points
+                    trail_segments.append(segment)
             elif geometry.get('type') == 'MultiLineString':
                 for line in geometry.get('coordinates', []):
-                    trail_coordinates.extend([(lat, lon) for lon, lat in line])
+                    segment = [(lat, lon) for lon, lat in line]
+                    if len(segment) >= 2:
+                        trail_segments.append(segment)
         
-        print(f"Loaded {len(trail_coordinates)} points from main trail")
+        print(f"Loaded {len(trail_segments)} trail segments from main trail")
     except Exception as e:
         print(f"Error loading main trail: {e}")
     
@@ -171,46 +176,58 @@ def load_trail_data_from_s3():
         response = s3.get_object(Bucket=TRAIL_DATA_BUCKET, Key="trails/spurs.geojson")
         spurs_geojson = json.loads(response['Body'].read().decode('utf-8'))
         
-        spur_count = 0
+        spur_segments = 0
         for feature in spurs_geojson.get('features', []):
             geometry = feature.get('geometry', {})
             if geometry.get('type') == 'LineString':
                 coords = geometry.get('coordinates', [])
-                trail_coordinates.extend([(lat, lon) for lon, lat in coords])
-                spur_count += len(coords)
+                segment = [(lat, lon) for lon, lat in coords]
+                if len(segment) >= 2:
+                    trail_segments.append(segment)
+                    spur_segments += 1
             elif geometry.get('type') == 'MultiLineString':
                 for line in geometry.get('coordinates', []):
-                    trail_coordinates.extend([(lat, lon) for lon, lat in line])
-                    spur_count += len(line)
+                    segment = [(lat, lon) for lon, lat in line]
+                    if len(segment) >= 2:
+                        trail_segments.append(segment)
+                        spur_segments += 1
         
-        print(f"Loaded {spur_count} points from spurs trail")
+        print(f"Loaded {spur_segments} trail segments from spurs trail")
     except Exception as e:
         print(f"Error loading spurs trail: {e}")
     
-    if not trail_coordinates:
+    if not trail_segments:
         raise RuntimeError("No trail data loaded from S3")
     
-    return trail_coordinates
+    return trail_segments
 
 
-def calculate_trail_intersection(activity_coords, trail_coords, tolerance_meters):
+def calculate_trail_intersection(activity_coords, trail_segments, tolerance_meters):
     """
     Calculate how much of the activity was on the trail.
+    
+    Args:
+        activity_coords: List of (lat, lon) tuples for activity
+        trail_segments: List of trail segments, where each segment is a list of (lat, lon) tuples
+        tolerance_meters: Distance tolerance in meters
     
     Returns:
         tuple: (distance_on_trail_meters, time_ratio)
     """
-    if not activity_coords or not trail_coords:
+    if not activity_coords or not trail_segments:
         return 0.0, 0.0
     
-    print(f"Calculating intersection: {len(activity_coords)} activity points vs {len(trail_coords)} trail points")
+    # Flatten trail segments to calculate bounding box
+    all_trail_points = [point for segment in trail_segments for point in segment]
+    
+    print(f"Calculating intersection: {len(activity_coords)} activity points vs {len(trail_segments)} trail segments")
     
     # OPTIMIZATION 1: Quick rejection test using bounding boxes
     # Calculate bounding boxes for both activity and trail
     activity_lats = [lat for lat, lon in activity_coords]
     activity_lons = [lon for lat, lon in activity_coords]
-    trail_lats = [lat for lat, lon in trail_coords]
-    trail_lons = [lon for lat, lon in trail_coords]
+    trail_lats = [lat for lat, lon in all_trail_points]
+    trail_lons = [lon for lat, lon in all_trail_points]
     
     activity_bbox = {
         'min_lat': min(activity_lats), 'max_lat': max(activity_lats),
@@ -234,7 +251,6 @@ def calculate_trail_intersection(activity_coords, trail_coords, tolerance_meters
     
     # OPTIMIZATION 2: Sample-based quick check
     # Check a sample of activity points to see if any are near the trail
-    # This helps quickly identify activities that are nowhere near the trail
     sample_size = min(10, len(activity_coords))
     sample_indices = [i * len(activity_coords) // sample_size for i in range(sample_size)]
     found_nearby = False
@@ -244,19 +260,26 @@ def calculate_trail_intersection(activity_coords, trail_coords, tolerance_meters
             continue
         lat, lon = activity_coords[idx]
         
-        # Check against a sample of trail points (every 10th point)
-        for j in range(0, len(trail_coords) - 1, 10):
-            trail_lat1, trail_lon1 = trail_coords[j]
-            trail_lat2, trail_lon2 = trail_coords[j + 1] if j + 1 < len(trail_coords) else trail_coords[j]
+        # Check against trail segments (sample every 3rd segment)
+        for seg_idx in range(0, len(trail_segments), max(1, len(trail_segments) // 10)):
+            segment = trail_segments[seg_idx]
             
-            distance_to_trail = point_to_segment_distance(
-                lon, lat,
-                trail_lon1, trail_lat1,
-                trail_lon2, trail_lat2
-            )
+            # Check a sample of points in this segment
+            for j in range(0, len(segment) - 1, max(1, len(segment) // 5)):
+                trail_lat1, trail_lon1 = segment[j]
+                trail_lat2, trail_lon2 = segment[j + 1] if j + 1 < len(segment) else segment[j]
+                
+                distance_to_trail = point_to_segment_distance(
+                    lon, lat,
+                    trail_lon1, trail_lat1,
+                    trail_lon2, trail_lat2
+                )
+                
+                if distance_to_trail <= tolerance_meters * 3:  # Use 3x tolerance for sampling
+                    found_nearby = True
+                    break
             
-            if distance_to_trail <= tolerance_meters * 3:  # Use 3x tolerance for sampling
-                found_nearby = True
+            if found_nearby:
                 break
         
         if found_nearby:
@@ -293,33 +316,37 @@ def calculate_trail_intersection(activity_coords, trail_coords, tolerance_meters
         
         is_on_trail = False
         
-        # OPTIMIZATION 4: Spatial filtering before checking each trail segment
-        # Only check trail segments within a reasonable bounding box
-        for j in range(len(trail_coords) - 1):
-            trail_lat1, trail_lon1 = trail_coords[j]
-            trail_lat2, trail_lon2 = trail_coords[j + 1]
-            
-            # Quick bounding box check before expensive distance calculation
-            trail_seg_min_lat = min(trail_lat1, trail_lat2) - tolerance_degrees
-            trail_seg_max_lat = max(trail_lat1, trail_lat2) + tolerance_degrees
-            trail_seg_min_lon = min(trail_lon1, trail_lon2) - tolerance_degrees
-            trail_seg_max_lon = max(trail_lon1, trail_lon2) + tolerance_degrees
-            
-            # Skip if activity point is clearly outside this trail segment's bounding box
-            if (mid_lat < trail_seg_min_lat or mid_lat > trail_seg_max_lat or
-                mid_lon < trail_seg_min_lon or mid_lon > trail_seg_max_lon):
-                continue
-            
-            # Calculate distance from activity segment midpoint to trail segment
-            distance_to_trail = point_to_segment_distance(
-                mid_lon, mid_lat,
-                trail_lon1, trail_lat1,
-                trail_lon2, trail_lat2
-            )
-            
-            if distance_to_trail <= tolerance_meters:
-                is_on_trail = True
+        # OPTIMIZATION 4: Check each trail segment separately (avoids spurious connections)
+        for segment in trail_segments:
+            if is_on_trail:
                 break
+                
+            # Check each line segment within this trail segment
+            for j in range(len(segment) - 1):
+                trail_lat1, trail_lon1 = segment[j]
+                trail_lat2, trail_lon2 = segment[j + 1]
+                
+                # Quick bounding box check before expensive distance calculation
+                trail_seg_min_lat = min(trail_lat1, trail_lat2) - tolerance_degrees
+                trail_seg_max_lat = max(trail_lat1, trail_lat2) + tolerance_degrees
+                trail_seg_min_lon = min(trail_lon1, trail_lon2) - tolerance_degrees
+                trail_seg_max_lon = max(trail_lon1, trail_lon2) + tolerance_degrees
+                
+                # Skip if activity point is clearly outside this trail segment's bounding box
+                if (mid_lat < trail_seg_min_lat or mid_lat > trail_seg_max_lat or
+                    mid_lon < trail_seg_min_lon or mid_lon > trail_seg_max_lon):
+                    continue
+                
+                # Calculate distance from activity segment midpoint to trail segment
+                distance_to_trail = point_to_segment_distance(
+                    mid_lon, mid_lat,
+                    trail_lon1, trail_lat1,
+                    trail_lon2, trail_lat2
+                )
+                
+                if distance_to_trail <= tolerance_meters:
+                    is_on_trail = True
+                    break
         
         on_trail_segments.append((is_on_trail, segment_distance))
         
@@ -437,11 +464,11 @@ def match_activity(activity_id):
     # still update the database with 0 values to indicate we attempted matching
     try:
         # Load trail data from S3
-        trail_coords = load_trail_data_from_s3()
+        trail_segments = load_trail_data_from_s3()
         
         # Calculate intersection
         distance_on_trail, time_ratio = calculate_trail_intersection(
-            activity_coords, trail_coords, TRAIL_TOLERANCE_METERS
+            activity_coords, trail_segments, TRAIL_TOLERANCE_METERS
         )
         
         # Calculate time on trail based on moving_time

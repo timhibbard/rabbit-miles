@@ -60,6 +60,7 @@ function pointToSegmentDistance(px, py, x1, y1, x2, y2) {
 
 /**
  * Load trail data from GeoJSON files
+ * Returns an array of trail segments, where each segment is an array of [lat, lon] coordinates
  */
 export async function loadTrailData() {
   try {
@@ -75,17 +76,17 @@ export async function loadTrailData() {
     const mainData = await mainResponse.json();
     const spursData = await spursResponse.json();
     
-    // Extract coordinates from GeoJSON
-    const allCoords = [];
+    // Extract trail segments from GeoJSON
+    // Each segment is kept separate to avoid creating spurious connections
+    const trailSegments = [];
     
     // Process main trail
     if (mainData.features) {
       mainData.features.forEach(feature => {
         if (feature.geometry && feature.geometry.type === 'LineString') {
           // GeoJSON uses [lon, lat] format, convert to [lat, lon]
-          feature.geometry.coordinates.forEach(coord => {
-            allCoords.push([coord[1], coord[0]]);
-          });
+          const segment = feature.geometry.coordinates.map(coord => [coord[1], coord[0]]);
+          trailSegments.push(segment);
         }
       });
     }
@@ -95,14 +96,13 @@ export async function loadTrailData() {
       spursData.features.forEach(feature => {
         if (feature.geometry && feature.geometry.type === 'LineString') {
           // GeoJSON uses [lon, lat] format, convert to [lat, lon]
-          feature.geometry.coordinates.forEach(coord => {
-            allCoords.push([coord[1], coord[0]]);
-          });
+          const segment = feature.geometry.coordinates.map(coord => [coord[1], coord[0]]);
+          trailSegments.push(segment);
         }
       });
     }
     
-    return allCoords;
+    return trailSegments;
   } catch (error) {
     console.error('Error loading trail data:', error);
     return [];
@@ -112,45 +112,77 @@ export async function loadTrailData() {
 /**
  * Calculate which segments of an activity are on the trail
  * Returns an array of segments, each with {coordinates, isOnTrail}
+ * @param {Array<[number, number]>} activityCoords - Array of [lat, lon] coordinates
+ * @param {Array<Array<[number, number]>>} trailSegments - Array of trail segments
+ * @param {boolean} includeDebugInfo - Whether to include debug information
  */
-export function calculateTrailSegments(activityCoords, trailCoords) {
+export function calculateTrailSegments(activityCoords, trailSegments, includeDebugInfo = false) {
   if (!activityCoords || activityCoords.length < 2) {
-    return [];
+    return includeDebugInfo ? { segments: [], debugInfo: null } : [];
   }
   
-  if (!trailCoords || trailCoords.length < 2) {
+  if (!trailSegments || trailSegments.length === 0) {
     // No trail data, mark all as off-trail
-    return [{
+    const segments = [{
       coordinates: activityCoords,
       isOnTrail: false
     }];
+    return includeDebugInfo ? { segments, debugInfo: null } : segments;
   }
   
   // Calculate which points are on the trail
   const pointsOnTrail = [];
+  const debugData = includeDebugInfo ? [] : null;
   
   for (let i = 0; i < activityCoords.length; i++) {
     const [lat, lon] = activityCoords[i];
     let isOnTrail = false;
+    let minDistance = Infinity;
+    let closestTrailSegmentIdx = -1;
     
     // Check if this point is within tolerance of any trail segment
-    for (let j = 0; j < trailCoords.length - 1; j++) {
-      const [trailLat1, trailLon1] = trailCoords[j];
-      const [trailLat2, trailLon2] = trailCoords[j + 1];
+    // Now we iterate over separate trail segments to avoid spurious connections
+    for (let segmentIdx = 0; segmentIdx < trailSegments.length; segmentIdx++) {
+      const segment = trailSegments[segmentIdx];
       
-      const distance = pointToSegmentDistance(
-        lon, lat,
-        trailLon1, trailLat1,
-        trailLon2, trailLat2
-      );
-      
-      if (distance <= TRAIL_TOLERANCE_METERS) {
-        isOnTrail = true;
-        break;
+      // Check each line segment within this trail segment
+      for (let j = 0; j < segment.length - 1; j++) {
+        const [trailLat1, trailLon1] = segment[j];
+        const [trailLat2, trailLon2] = segment[j + 1];
+        
+        const distance = pointToSegmentDistance(
+          lon, lat,
+          trailLon1, trailLat1,
+          trailLon2, trailLat2
+        );
+        
+        if (distance < minDistance) {
+          minDistance = distance;
+          closestTrailSegmentIdx = segmentIdx;
+        }
+        
+        if (distance <= TRAIL_TOLERANCE_METERS) {
+          isOnTrail = true;
+          break;
+        }
       }
+      
+      if (isOnTrail) break;
     }
     
     pointsOnTrail.push(isOnTrail);
+    
+    if (includeDebugInfo) {
+      debugData.push({
+        pointIndex: i,
+        lat,
+        lon,
+        isOnTrail,
+        minDistance: Math.round(minDistance),
+        closestTrailSegmentIdx,
+        tolerance: TRAIL_TOLERANCE_METERS
+      });
+    }
   }
   
   // Group consecutive points with the same on/off trail status into segments
@@ -180,6 +212,18 @@ export function calculateTrailSegments(activityCoords, trailCoords) {
   // Add the last segment
   if (currentSegment.coordinates.length > 0) {
     segments.push(currentSegment);
+  }
+  
+  if (includeDebugInfo) {
+    const debugInfo = {
+      totalPoints: activityCoords.length,
+      pointsOnTrail: pointsOnTrail.filter(x => x).length,
+      pointsOffTrail: pointsOnTrail.filter(x => !x).length,
+      numTrailSegments: trailSegments.length,
+      tolerance: TRAIL_TOLERANCE_METERS,
+      points: debugData
+    };
+    return { segments, debugInfo };
   }
   
   return segments;
