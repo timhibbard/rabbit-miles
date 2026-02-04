@@ -71,6 +71,25 @@ def verify_session_token(tok):
         return None
 
 
+def parse_authorization_header(headers):
+    """Extract bearer token from Authorization header"""
+    auth_header = headers.get("authorization") or headers.get("Authorization")
+    if not auth_header:
+        return None
+    if auth_header.lower().startswith("bearer "):
+        return auth_header.split(" ", 1)[1].strip()
+    return None
+
+
+def parse_session_token(event):
+    """Parse session token from Authorization header (Mobile Safari) or cookies"""
+    headers = event.get("headers") or {}
+    bearer_token = parse_authorization_header(headers)
+    if bearer_token:
+        return bearer_token
+    return parse_session_cookie(event)
+
+
 def parse_session_cookie(event):
     """Parse rm_session cookie from API Gateway event"""
     headers = event.get("headers") or {}
@@ -354,7 +373,7 @@ def handler(event, context):
             "headers": {
                 **cors_headers,
                 "Access-Control-Allow-Methods": "POST, OPTIONS",
-                "Access-Control-Allow-Headers": "Content-Type, Cookie",
+                "Access-Control-Allow-Headers": "Content-Type, Authorization, Cookie",
                 "Access-Control-Max-Age": "86400"
             },
             "body": ""
@@ -378,8 +397,8 @@ def handler(event, context):
                 "body": json.dumps({"error": "server configuration error"})
             }
         
-        # Parse cookies to get session token
-        tok = parse_session_cookie(event)
+        # Parse session token from Authorization header or cookies
+        tok = parse_session_token(event)
         
         if not tok:
             print("ERROR: No session cookie found")

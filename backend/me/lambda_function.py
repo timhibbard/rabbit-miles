@@ -105,7 +105,7 @@ def handler(event, context):
             "headers": {
                 **cors_headers,
                 "Access-Control-Allow-Methods": "GET, OPTIONS",
-                "Access-Control-Allow-Headers": "Content-Type, Cookie",
+                "Access-Control-Allow-Headers": "Content-Type, Authorization, Cookie",
                 "Access-Control-Max-Age": "86400"
             },
             "body": ""
@@ -129,7 +129,7 @@ def handler(event, context):
                 "body": json.dumps({"error": "server configuration error"})
             }
         
-        tok = parse_session_cookie(event)
+        tok = parse_session_token(event)
         if tok:
             print("Found session token")
         

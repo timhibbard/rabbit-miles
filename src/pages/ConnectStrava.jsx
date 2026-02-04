@@ -25,6 +25,27 @@ function ConnectStrava() {
       showDebugInfo({ page: 'ConnectStrava', mounted: new Date().toISOString() });
     }
     
+    // Extract session token from URL fragment (Mobile Safari ITP workaround)
+    const fragment = window.location.hash.substring(1);
+    if (fragment) {
+      const params = new URLSearchParams(fragment);
+      const sessionToken = params.get('session');
+      
+      if (sessionToken) {
+        // Validate token format: base64url.hex_signature
+        const tokenPattern = /^[A-Za-z0-9_-]+\.[a-f0-9]{64}$/;
+        if (tokenPattern.test(sessionToken)) {
+          debug.log('Valid session token found in URL fragment');
+          sessionStorage.setItem('rm_session', sessionToken);
+        } else {
+          console.warn('Invalid session token format in URL fragment');
+        }
+        
+        // Clear fragment immediately to prevent token exposure
+        window.history.replaceState({}, '', window.location.pathname + window.location.search);
+      }
+    }
+    
     // Check if we just returned from OAuth callback
     const urlParams = new URLSearchParams(window.location.search);
     const justConnected = urlParams.get('connected') === '1';
@@ -79,6 +100,9 @@ function ConnectStrava() {
   };
 
   const handleDisconnect = () => {
+    // Clear sessionStorage token (Mobile Safari ITP workaround)
+    sessionStorage.removeItem('rm_session');
+    
     // Redirect to backend disconnect endpoint
     // The backend will clear the session cookie
     const disconnectUrl = `${API_BASE_URL}/auth/disconnect`;
