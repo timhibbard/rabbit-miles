@@ -2,6 +2,10 @@
 
 A React SPA for tracking running miles with Strava integration.
 
+## Production URL
+
+The application is deployed at: **https://rabbitmiles.com**
+
 ## Features
 
 - 📊 Dashboard for viewing running statistics
@@ -121,8 +125,8 @@ src/
 The app includes a comprehensive debug logging system that can be enabled by adding `?debug=1` to any URL:
 
 ```
-https://timhibbard.github.io/rabbit-miles/?debug=1
-https://timhibbard.github.io/rabbit-miles/connect?debug=1
+https://rabbitmiles.com/?debug=1
+https://rabbitmiles.com/connect?debug=1
 ```
 
 When debug mode is enabled:
@@ -145,7 +149,7 @@ When debug mode is enabled:
 **Example Debugging Session:**
 ```bash
 # Enable debug mode
-1. Navigate to: https://timhibbard.github.io/rabbit-miles/connect?debug=1
+1. Navigate to: https://rabbitmiles.com/connect?debug=1
 2. Click "Connect with Strava"
 3. Complete OAuth flow
 4. Check browser console for detailed authentication logs
