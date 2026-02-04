@@ -83,4 +83,24 @@ export const resetTrailMatching = async () => {
   }
 };
 
+// Fetch a single activity detail with polyline
+export const fetchActivityDetail = async (activityId) => {
+  try {
+    console.log(`Calling /activities/${activityId} endpoint...`);
+    const response = await api.get(`/activities/${activityId}`);
+    console.log(`/activities/${activityId} response:`, response.data);
+    return { success: true, data: response.data };
+  } catch (error) {
+    console.error(`/activities/${activityId} endpoint error:`, error);
+    if (error.response?.status === 401) {
+      console.log('User not authenticated (401)');
+      return { success: false, notConnected: true };
+    }
+    if (error.response?.status === 404) {
+      return { success: false, error: 'Activity not found' };
+    }
+    return { success: false, error: error.message };
+  }
+};
+
 export default api;
