@@ -291,16 +291,10 @@ def calculate_trail_intersection(activity_coords, trail_segments, tolerance_mete
         print(f"Quick rejection: No sample points within 5x tolerance of trail")
         return 0.0, 0.0
     
-    # OPTIMIZATION 3: Process segments with early termination
+    # Process activity segments to determine which portions are on the trail
     # Track which activity segments are on the trail
     on_trail_segments = []
     total_distance = 0.0
-    consecutive_off_trail = 0
-    # Exit early if 50 consecutive segments off trail. This threshold balances:
-    # - Avoiding false negatives (activity might return to trail)
-    # - Preventing timeouts (typical Strava activities have 5-15m between points,
-    #   so 50 segments = ~250-750m of continuous distance off trail)
-    MAX_CONSECUTIVE_OFF_TRAIL = 50
     
     # Check each segment of the activity path
     for i in range(len(activity_coords) - 1):
@@ -350,24 +344,6 @@ def calculate_trail_intersection(activity_coords, trail_segments, tolerance_mete
                     break
         
         on_trail_segments.append((is_on_trail, segment_distance))
-        
-        # Early termination: if we've processed many segments without finding trail, likely won't find any
-        if is_on_trail:
-            consecutive_off_trail = 0
-        else:
-            consecutive_off_trail += 1
-            
-        # If we've found some on-trail segments but then have many consecutive off-trail, we might be done
-        if consecutive_off_trail >= MAX_CONSECUTIVE_OFF_TRAIL and any(on for on, _ in on_trail_segments):
-            print(f"Early termination: {consecutive_off_trail} consecutive segments off trail after finding some on trail")
-            # Process remaining segments as off-trail to get accurate total distance
-            for k in range(i + 1, len(activity_coords) - 1):
-                lat1, lon1 = activity_coords[k]
-                lat2, lon2 = activity_coords[k + 1]
-                segment_distance = haversine_distance(lat1, lon1, lat2, lon2)
-                total_distance += segment_distance
-                on_trail_segments.append((False, segment_distance))
-            break
     
     # Calculate distance on trail
     distance_on_trail = sum(dist for on_trail, dist in on_trail_segments if on_trail)
