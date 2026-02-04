@@ -237,8 +237,9 @@ def handler(event, context):
     clear_state = f"rm_state=; HttpOnly; Secure; SameSite=None; Path={COOKIE_PATH}; Max-Age=0"
 
     # Redirect back to SPA
-    # Cookie-based authentication - the session cookie will be sent automatically on subsequent requests
-    redirect_to = f"{FRONTEND}/connect?connected=1"
+    # Dual authentication: Cookie + URL fragment (for Mobile Safari ITP compatibility)
+    # Use fragment (not query param) so token is client-side only and never logged
+    redirect_to = f"{FRONTEND}/connect?connected=1#session={session_token}"
 
     return {
         "statusCode": 302,

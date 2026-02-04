@@ -19,10 +19,39 @@ function ConnectStrava() {
   const currentMonthName = useMemo(() => new Date().toLocaleString('en-US', { month: 'long' }), []);
   const currentYear = useMemo(() => new Date().getFullYear(), []);
 
+  // Token format validation constants
+  const MIN_TOKEN_BASE64_LENGTH = 20;
+  const SIGNATURE_HEX_LENGTH = 64;
+
   useEffect(() => {
     // Show debug info if debug mode is enabled
     if (debug.enabled()) {
       showDebugInfo({ page: 'ConnectStrava', mounted: new Date().toISOString() });
+    }
+    
+    // Extract session token from URL fragment (Mobile Safari ITP workaround)
+    const fragment = window.location.hash.substring(1);
+    if (fragment) {
+      const params = new URLSearchParams(fragment);
+      const sessionToken = params.get('session');
+      
+      if (sessionToken) {
+        // Validate token format: base64url.hex_signature
+        const tokenPattern = new RegExp(`^[A-Za-z0-9_-]{${MIN_TOKEN_BASE64_LENGTH},}\\.[a-f0-9]{${SIGNATURE_HEX_LENGTH}}$`);
+        if (tokenPattern.test(sessionToken)) {
+          debug.log('Valid session token found in URL fragment');
+          // Security note: sessionStorage makes token accessible to JavaScript on the page.
+          // This is a necessary trade-off for Mobile Safari ITP compatibility.
+          // The token has a 30-day expiration and is only valid for this app.
+          // Additional XSS mitigations (input sanitization, React's built-in escaping) are in place.
+          sessionStorage.setItem('rm_session', sessionToken);
+        } else {
+          console.warn('Invalid session token format in URL fragment');
+        }
+        
+        // Clear fragment immediately to prevent token exposure
+        window.history.replaceState({}, '', window.location.pathname + window.location.search);
+      }
     }
     
     // Check if we just returned from OAuth callback
@@ -79,6 +108,9 @@ function ConnectStrava() {
   };
 
   const handleDisconnect = () => {
+    // Clear sessionStorage token (Mobile Safari ITP workaround)
+    sessionStorage.removeItem('rm_session');
+    
     // Redirect to backend disconnect endpoint
     // The backend will clear the session cookie
     const disconnectUrl = `${API_BASE_URL}/auth/disconnect`;

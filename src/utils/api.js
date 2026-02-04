@@ -19,9 +19,16 @@ const api = axios.create({
   withCredentials: true, // Include cookies in all requests
 });
 
-// Add request interceptor for debugging
+// Add request interceptor for debugging and Authorization header
 api.interceptors.request.use(
   (config) => {
+    // Add Authorization header if session token exists in sessionStorage
+    // This is the Mobile Safari ITP workaround - token sent via Authorization header
+    const sessionToken = sessionStorage.getItem('rm_session');
+    if (sessionToken) {
+      config.headers.Authorization = `Bearer ${sessionToken}`;
+    }
+    
     // Log full request details in debug mode
     if (debug.enabled()) {
       debug.group('API Request');
@@ -32,6 +39,7 @@ api.interceptors.request.use(
       // Filter sensitive headers before logging
       const safeHeaders = { ...config.headers };
       if (safeHeaders.Cookie) safeHeaders.Cookie = '[REDACTED]';
+      if (safeHeaders.Authorization) safeHeaders.Authorization = '[REDACTED]';
       debug.log('Headers:', safeHeaders);
       debug.log('With Credentials:', config.withCredentials);
       if (config.params) debug.log('Params:', config.params);
