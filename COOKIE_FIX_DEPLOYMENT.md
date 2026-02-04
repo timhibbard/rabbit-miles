@@ -178,7 +178,7 @@ In browser DevTools → Network tab:
 
 **Check:**
 - Verify auth_callback is setting cookie with correct Path (should match API Gateway stage)
-- Verify cookie has `SameSite=None` and `Secure` attributes
+- Verify cookie has `SameSite=Lax` and `Secure` attributes
 - Check browser console for cookie warnings
 
 ### Issue: Session token verification failed
@@ -250,7 +250,7 @@ If issues occur:
 
 - No changes to authentication mechanism
 - No changes to token signing/verification
-- No changes to cookie attributes (HttpOnly, Secure, SameSite)
+- No changes to cookie attributes except SameSite (HttpOnly, Secure, SameSite=Lax)
 - Cookie parsing is more robust and handles both formats
 - No sensitive data logged (tokens are truncated in logs)
 
