@@ -18,7 +18,13 @@ sys.path.insert(0, lambda_dir)
 
 
 def reload_lambda_function():
-    """Reload lambda_function to pick up environment changes"""
+    """
+    Reload lambda_function module to pick up environment variable changes.
+    
+    Also mocks boto3.client to prevent actual AWS API calls during testing.
+    This is necessary because the lambda_function module creates boto3 clients
+    at the module level during import.
+    """
     if 'lambda_function' in sys.modules:
         del sys.modules['lambda_function']
     
