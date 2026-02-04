@@ -316,7 +316,7 @@ def test_no_match_updates_database():
                     assert result['distance_on_trail'] == 0.0, "Expected distance_on_trail=0.0"
                     assert result['time_on_trail'] == 0, "Expected time_on_trail=0"
                     assert 'Matching failed' in result['message'], "Expected failure message"
-                    print(f"  ✓ Database updated with 0 values when trail data unavailable")
+                    print("  ✓ Database updated with 0 values when trail data unavailable")
         
         # Test 2: Calculate intersection raises an exception
         with patch.object(lambda_function, 'get_activity_from_db', return_value=mock_activity):
@@ -333,7 +333,7 @@ def test_no_match_updates_database():
                         # Verify result contains 0 values
                         assert result['distance_on_trail'] == 0.0, "Expected distance_on_trail=0.0"
                         assert result['time_on_trail'] == 0, "Expected time_on_trail=0"
-                        print(f"  ✓ Database updated with 0 values when calculation fails")
+                        print("  ✓ Database updated with 0 values when calculation fails")
     
     print("✓ All no-match database update tests passed")
 
