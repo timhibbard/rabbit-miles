@@ -99,7 +99,8 @@ AWS Lambda functions automatically deploy when changes are pushed to the `backen
 For setup instructions, see:
 - [LAMBDA_DEPLOYMENT.md](LAMBDA_DEPLOYMENT.md) - General Lambda deployment
 - [WEBHOOK_SETUP.md](WEBHOOK_SETUP.md) - Strava webhook configuration
-- [API_MIGRATION_TO_CUSTOM_DOMAIN.md](API_MIGRATION_TO_CUSTOM_DOMAIN.md) - Custom API domain setup
+- [API_MIGRATION_QUICK_START.md](API_MIGRATION_QUICK_START.md) - Quick guide for custom API domain
+- [API_MIGRATION_TO_CUSTOM_DOMAIN.md](API_MIGRATION_TO_CUSTOM_DOMAIN.md) - Complete API custom domain guide
 
 ## Environment Variables
 
