@@ -104,9 +104,14 @@ function Privacy() {
             <section className="mb-8">
               <h2 className="text-2xl font-semibold text-gray-900 mb-4">Contact Us</h2>
               <p className="mb-4">
-                If you have questions about this privacy policy or your data, please contact us at{' '}
-                <a href="mailto:support@rabbitmiles.com" className="text-orange-600 hover:text-orange-700 underline">
-                  support@rabbitmiles.com
+                If you have questions about this privacy policy or your data, please reach out via{' '}
+                <a 
+                  href="https://www.strava.com/athletes/3519964" 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="text-orange-600 hover:text-orange-700 underline"
+                >
+                  Strava
                 </a>.
               </p>
             </section>

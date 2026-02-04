@@ -25,7 +25,7 @@ function Settings() {
     if (window.confirm('Are you sure you want to disconnect your Strava account?')) {
       // TODO: Call disconnect API endpoint when it becomes available
       // For now, just show a message
-      alert('Disconnect functionality will be available soon. Please contact support to disconnect your account.');
+      alert('Disconnect functionality will be available soon. Please use the footer contact link to request account disconnection.');
     }
   };
 

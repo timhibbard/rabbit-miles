@@ -461,10 +461,12 @@ function ConnectStrava() {
               <ul className="space-y-2 text-sm">
                 <li>
                   <a 
-                    href="mailto:support@rabbitmiles.com" 
+                    href="https://www.strava.com/athletes/3519964" 
+                    target="_blank" 
+                    rel="noopener noreferrer"
                     className="hover:text-white focus:outline-none focus:underline"
                   >
-                    support@rabbitmiles.com
+                    Strava Profile
                   </a>
                 </li>
                 <li>
