@@ -26,8 +26,14 @@ function ConnectStrava() {
     
     // If we have a session token in the URL (Mobile Safari fallback), store it
     // and immediately clean up the URL to prevent token exposure in browser history
+    let urlNeedsCleaning = false;
     if (sessionToken) {
       sessionStorage.setItem('rm_session', sessionToken);
+      urlNeedsCleaning = true;
+    }
+    
+    // Clean up URL parameters immediately if we have sensitive data
+    if (urlNeedsCleaning || justConnected) {
       window.history.replaceState({}, '', window.location.pathname);
     }
     
@@ -43,11 +49,6 @@ function ConnectStrava() {
           connected: true,
           user: result.user,
         });
-        
-        // Clean up the URL if we just connected (for non-Mobile Safari case)
-        if (justConnected && !sessionToken) {
-          window.history.replaceState({}, '', window.location.pathname);
-        }
       } else {
         console.log('ConnectStrava: User not connected');
         setAuthState({
