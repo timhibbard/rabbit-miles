@@ -1,11 +1,12 @@
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { fetchMe, fetchActivities, refreshActivities } from '../utils/api';
+import Footer from '../components/Footer';
 
 // Constants
 const METERS_TO_MILES = 1609.34;
 const ACTIVITY_POLL_INTERVAL = 30000; // Poll every 30 seconds
-const MAX_DISPLAYED_ACTIVITIES = 10; // Number of activities to display in the list
+const ACTIVITIES_PER_PAGE = 15; // Number of activities to display per page
 const MAX_ACTIVITIES_FOR_STATS = 1000; // Maximum activities to fetch for stats calculation
 
 function Dashboard() {
@@ -29,6 +30,7 @@ function Dashboard() {
     error: null,
   });
   const [isPolling, setIsPolling] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
   const pollingIntervalRef = useRef(null);
   const isLoadingRef = useRef(false);
   const navigate = useNavigate();
@@ -167,6 +169,9 @@ function Dashboard() {
 
   // Toggle activity type filter (Bike or Foot)
   const toggleActivityType = (type) => {
+    // Reset to page 1 when filter changes
+    setCurrentPage(1);
+    
     if (type === 'Bike') {
       if (selectedTypes.includes('Ride')) {
         // Remove bike
@@ -494,12 +499,19 @@ function Dashboard() {
             )
           )}
           
-          {!activitiesState.loading && !activitiesState.error && activitiesState.activities.length > 0 && (
-            <div className="space-y-4">
-              {activitiesState.activities
-                .filter(activity => selectedTypes.includes(activity.type))
-                .slice(0, MAX_DISPLAYED_ACTIVITIES) // Show only the most recent filtered activities
-                .map((activity) => {
+          {!activitiesState.loading && !activitiesState.error && activitiesState.activities.length > 0 && (() => {
+            // Filter activities by selected types
+            const filteredActivities = activitiesState.activities.filter(activity => selectedTypes.includes(activity.type));
+            const totalFiltered = filteredActivities.length;
+            const totalPages = Math.ceil(totalFiltered / ACTIVITIES_PER_PAGE);
+            const startIndex = (currentPage - 1) * ACTIVITIES_PER_PAGE;
+            const endIndex = startIndex + ACTIVITIES_PER_PAGE;
+            const paginatedActivities = filteredActivities.slice(startIndex, endIndex);
+            
+            return (
+              <>
+                <div className="space-y-4">
+                  {paginatedActivities.map((activity) => {
                 const distanceMiles = (activity.distance / METERS_TO_MILES).toFixed(2);
                 const durationMinutes = Math.floor(activity.elapsed_time / 60);
                 const durationSeconds = activity.elapsed_time % 60;
@@ -582,7 +594,48 @@ function Dashboard() {
                 );
               })}
             </div>
-          )}
+            
+            {/* Pagination Controls */}
+            {totalPages > 1 && (
+              <div className="mt-6 flex items-center justify-between border-t border-gray-200 pt-4">
+                <div className="text-sm text-gray-600">
+                  Showing {startIndex + 1} to {Math.min(endIndex, totalFiltered)} of {totalFiltered} activities
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => {
+                      setCurrentPage(prev => Math.max(1, prev - 1));
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }}
+                    disabled={currentPage === 1}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium focus:outline-none focus:ring-2 focus:ring-orange-500 ${
+                      currentPage === 1
+                        ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                        : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+                    }`}
+                  >
+                    Previous
+                  </button>
+                  <button
+                    onClick={() => {
+                      setCurrentPage(prev => Math.min(totalPages, prev + 1));
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }}
+                    disabled={currentPage === totalPages}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium focus:outline-none focus:ring-2 focus:ring-orange-500 ${
+                      currentPage === totalPages
+                        ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                        : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+                    }`}
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            )}
+          </>
+            );
+          })()}
           
           {/* Controls at bottom */}
           <div className="mt-6 pt-6 border-t border-gray-200 flex justify-between items-center" aria-label="Activity controls">
@@ -630,6 +683,9 @@ function Dashboard() {
           </div>
         </div>
       </div>
+      
+      {/* Footer */}
+      <Footer />
     </div>
   );
 }
