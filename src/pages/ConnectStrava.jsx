@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { fetchMe } from '../utils/api';
+import debug, { showDebugInfo } from '../utils/debug';
 import Footer from '../components/Footer';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
@@ -19,15 +20,20 @@ function ConnectStrava() {
   const currentYear = useMemo(() => new Date().getFullYear(), []);
 
   useEffect(() => {
+    // Show debug info if debug mode is enabled
+    if (debug.enabled()) {
+      showDebugInfo({ page: 'ConnectStrava', mounted: new Date().toISOString() });
+    }
+    
     // Check if we just returned from OAuth callback
     const urlParams = new URLSearchParams(window.location.search);
     const justConnected = urlParams.get('connected') === '1';
     
-    console.log('ConnectStrava mounted');
-    console.log('URL:', window.location.href);
-    console.log('Search params:', window.location.search);
-    console.log('Hash:', window.location.hash);
-    console.log('justConnected:', justConnected);
+    debug.log('ConnectStrava mounted');
+    debug.log('URL:', window.location.href);
+    debug.log('Search params:', window.location.search);
+    debug.log('Hash:', window.location.hash);
+    debug.log('justConnected:', justConnected);
     
     // Extract session token from URL fragment (not query param for security)
     // The backend passes the token in the fragment (#session=...) to prevent it from:
@@ -35,37 +41,37 @@ function ConnectStrava() {
     // - Appearing in server logs or analytics
     // - Being included in Referer headers
     const hash = window.location.hash.substring(1); // Remove leading #
-    console.log('Hash after removing #:', hash);
+    debug.log('Hash after removing #:', hash);
     
     const hashParams = new URLSearchParams(hash);
     const sessionToken = hashParams.get('session');
     
     // If we have a session token in the URL (Mobile Safari fallback), validate and store it
     if (sessionToken) {
-      console.log('Found session token in URL fragment');
-      console.log('Token preview:', sessionToken.substring(0, 30) + '...' + sessionToken.substring(sessionToken.length - 10));
-      console.log('Token length:', sessionToken.length);
+      debug.log('Found session token in URL fragment');
+      debug.log('Token preview:', sessionToken.substring(0, 30) + '...' + sessionToken.substring(sessionToken.length - 10));
+      debug.log('Token length:', sessionToken.length);
       
       // Validate token format: should be base64url.hex_signature (JWT-like structure)
       // Base64url: alphanumeric, dash, underscore (no padding)
       // Hex signature: 64 hex chars (SHA256)
       const tokenPattern = /^[A-Za-z0-9_-]+\.[a-f0-9]{64}$/;
       const isValid = tokenPattern.test(sessionToken);
-      console.log('Token format valid:', isValid);
+      debug.log('Token format valid:', isValid);
       
       if (isValid) {
-        console.log('Token format valid, storing in sessionStorage');
+        debug.log('Token format valid, storing in sessionStorage');
         sessionStorage.setItem('rm_session', sessionToken);
-        console.log('Token stored successfully');
-        console.log('Verifying storage - token in sessionStorage:', sessionStorage.getItem('rm_session') ? 'present' : 'missing');
+        debug.log('Token stored successfully');
+        debug.log('Verifying storage - token in sessionStorage:', sessionStorage.getItem('rm_session') ? 'present' : 'missing');
       } else {
         console.warn('Invalid session token format detected');
-        console.warn('Expected format: base64url.hex64');
-        console.warn('Token:', sessionToken);
+        debug.warn('Expected format: base64url.hex64');
+        debug.warn('Token:', sessionToken);
         // Show parts for debugging
         if (sessionToken.includes('.')) {
           const parts = sessionToken.split('.');
-          console.warn('Token parts:', {
+          debug.warn('Token parts:', {
             payload: parts[0].substring(0, 20) + '...',
             signature: parts[1],
             signatureLength: parts[1] ? parts[1].length : 0,
@@ -74,39 +80,39 @@ function ConnectStrava() {
         }
       }
     } else {
-      console.log('No session token found in URL fragment');
+      debug.log('No session token found in URL fragment');
       // Check if there's already a token in sessionStorage
       const existingToken = sessionStorage.getItem('rm_session');
       if (existingToken) {
-        console.log('Found existing token in sessionStorage');
+        debug.log('Found existing token in sessionStorage');
       } else {
-        console.log('No token in sessionStorage either');
+        debug.log('No token in sessionStorage either');
       }
     }
     
     // Clean up URL immediately to prevent token exposure
     // This clears both query params and fragment
     if (justConnected || sessionToken) {
-      console.log('Cleaning up URL');
+      debug.log('Cleaning up URL');
       window.history.replaceState({}, '', window.location.pathname);
     }
     
     // Check if user is already connected
     const checkAuth = async () => {
-      console.log('ConnectStrava: Checking authentication...');
+      debug.log('ConnectStrava: Checking authentication...');
       const result = await fetchMe();
-      console.log('ConnectStrava: fetchMe result:', result);
+      debug.log('ConnectStrava: fetchMe result:', result);
       if (result.success) {
-        console.log('ConnectStrava: User is connected:', result.user);
+        debug.log('ConnectStrava: User is connected:', result.user);
         setAuthState({
           loading: false,
           connected: true,
           user: result.user,
         });
       } else {
-        console.log('ConnectStrava: User not connected');
+        debug.log('ConnectStrava: User not connected');
         if (result.notConnected) {
-          console.log('ConnectStrava: Got 401 - user needs to authenticate');
+          debug.log('ConnectStrava: Got 401 - user needs to authenticate');
         } else if (result.error) {
           console.error('ConnectStrava: API error:', result.error);
         }
@@ -217,6 +223,13 @@ function ConnectStrava() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-white to-gray-50">
+      {/* Debug mode indicator */}
+      {debug.enabled() && (
+        <div className="fixed top-0 left-0 right-0 bg-yellow-400 text-black text-center py-1 text-xs font-mono z-50">
+          🐛 DEBUG MODE ENABLED - Check browser console for detailed logs
+        </div>
+      )}
+      
       {/* Hero Section - Above the Fold */}
       <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 pt-12 pb-16">
         {authState.loading ? (

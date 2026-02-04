@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { fetchMe, fetchActivities, refreshActivities } from '../utils/api';
+import debug from '../utils/debug';
 import Footer from '../components/Footer';
 
 // Constants
@@ -144,7 +145,7 @@ function Dashboard() {
     // Prevent overlapping requests
     if (isLoadingRef.current) {
       if (silent) {
-        console.log('Skipping silent refresh - request already in progress');
+        debug.log('Skipping silent refresh - request already in progress');
       }
       return;
     }
@@ -179,7 +180,7 @@ function Dashboard() {
         });
       } else {
         // For silent refresh, just log the error
-        console.warn('Silent activity refresh failed:', result.error);
+        debug.warn('Silent activity refresh failed:', result.error);
       }
     }
   }, []);
@@ -270,13 +271,13 @@ function Dashboard() {
   useEffect(() => {
     // Check authentication status via /me endpoint
     const checkAuth = async () => {
-      console.log('Dashboard: Checking authentication...');
+      debug.log('Dashboard: Checking authentication...');
       const result = await fetchMe();
-      console.log('Dashboard: fetchMe result:', result);
+      debug.log('Dashboard: fetchMe result:', result);
       
       if (result.success) {
         // User is authenticated
-        console.log('Dashboard: User authenticated:', result.user);
+        debug.log('Dashboard: User authenticated:', result.user);
         setAuthState({
           loading: false,
           user: result.user,
@@ -288,7 +289,7 @@ function Dashboard() {
         startPolling();
       } else if (result.notConnected) {
         // User is not connected (401 response)
-        console.log('Dashboard: User not connected, redirecting to /connect');
+        debug.log('Dashboard: User not connected, redirecting to /connect');
         navigate('/connect');
       } else {
         // API error or unreachable
@@ -400,6 +401,13 @@ function Dashboard() {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      {/* Debug mode indicator */}
+      {debug.enabled() && (
+        <div className="fixed top-0 left-0 right-0 bg-yellow-400 text-black text-center py-1 text-xs font-mono z-50">
+          🐛 DEBUG MODE ENABLED - Check browser console for detailed logs
+        </div>
+      )}
+      
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="mb-8">
           <div className="flex items-center gap-4">

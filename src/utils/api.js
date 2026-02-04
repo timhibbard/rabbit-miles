@@ -1,4 +1,5 @@
 import axios from 'axios';
+import debug from './debug';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
@@ -6,7 +7,7 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 if (!API_BASE_URL) {
   console.error('VITE_API_BASE_URL environment variable is not set!');
 } else {
-  console.log('API_BASE_URL configured as:', API_BASE_URL);
+  debug.log('API_BASE_URL configured as:', API_BASE_URL);
 }
 
 // Create axios instance with base configuration
@@ -28,15 +29,64 @@ api.interceptors.request.use(
     // Check if we have a session token in sessionStorage (Mobile Safari fallback)
     const sessionToken = sessionStorage.getItem('rm_session');
     if (sessionToken) {
-      console.log('Adding Authorization header with session token:', sessionToken.substring(0, 20) + '...');
+      debug.log('Adding Authorization header with session token:', sessionToken.substring(0, 20) + '...');
       config.headers.Authorization = `Bearer ${sessionToken}`;
     } else {
-      console.log('No session token found in sessionStorage for this request');
+      debug.log('No session token found in sessionStorage for this request');
     }
+    
+    // Log full request details in debug mode
+    if (debug.enabled()) {
+      debug.group('API Request');
+      debug.log('Method:', config.method?.toUpperCase());
+      debug.log('URL:', config.url);
+      debug.log('Base URL:', config.baseURL);
+      debug.log('Full URL:', `${config.baseURL}${config.url}`);
+      debug.log('Headers:', config.headers);
+      debug.log('With Credentials:', config.withCredentials);
+      if (config.params) debug.log('Params:', config.params);
+      if (config.data) debug.log('Data:', config.data);
+      debug.groupEnd();
+    }
+    
     return config;
   },
   (error) => {
-    console.error('Request interceptor error:', error);
+    debug.error('Request interceptor error:', error);
+    return Promise.reject(error);
+  }
+);
+
+// Add response interceptor for debugging
+api.interceptors.response.use(
+  (response) => {
+    if (debug.enabled()) {
+      debug.group('API Response');
+      debug.log('Status:', response.status);
+      debug.log('Status Text:', response.statusText);
+      debug.log('Headers:', response.headers);
+      debug.log('Data:', response.data);
+      debug.groupEnd();
+    }
+    return response;
+  },
+  (error) => {
+    if (debug.enabled()) {
+      debug.group('API Response Error');
+      if (error.response) {
+        debug.log('Status:', error.response.status);
+        debug.log('Status Text:', error.response.statusText);
+        debug.log('Headers:', error.response.headers);
+        debug.log('Data:', error.response.data);
+      } else if (error.request) {
+        debug.log('Request made but no response received');
+        debug.log('Request:', error.request);
+      } else {
+        debug.log('Error setting up request:', error.message);
+      }
+      debug.log('Error config:', error.config);
+      debug.groupEnd();
+    }
     return Promise.reject(error);
   }
 );
@@ -44,25 +94,23 @@ api.interceptors.request.use(
 // Fetch current user from /me endpoint
 export const fetchMe = async () => {
   try {
-    console.log('Calling /me endpoint...');
-    console.log('API_BASE_URL:', API_BASE_URL);
-    console.log('Session token in storage:', sessionStorage.getItem('rm_session') ? 'present' : 'missing');
+    debug.log('Calling /me endpoint...');
+    debug.log('Session token in storage:', sessionStorage.getItem('rm_session') ? 'present' : 'missing');
     const response = await api.get('/me');
-    console.log('/me response:', response.data);
-    console.log('/me response status:', response.status);
+    debug.log('/me response received successfully');
+    debug.log('/me user data:', response.data);
     return { success: true, user: response.data };
   } catch (error) {
-    console.error('/me endpoint error:', error);
+    console.error('/me endpoint error:', error.message);
     if (error.response) {
       console.error('/me response status:', error.response.status);
-      console.error('/me response data:', error.response.data);
-      console.error('/me response headers:', error.response.headers);
+      debug.error('/me response data:', error.response.data);
+      debug.error('/me response headers:', error.response.headers);
     }
     if (error.response?.status === 401) {
-      console.log('User not authenticated (401)');
+      debug.log('User not authenticated (401)');
       return { success: false, notConnected: true };
     }
-    console.error('Error calling /me:', error.message, error.response?.data);
     return { success: false, error: error.message };
   }
 };
@@ -70,19 +118,18 @@ export const fetchMe = async () => {
 // Fetch activities for the authenticated user
 export const fetchActivities = async (limit = 10, offset = 0) => {
   try {
-    console.log(`Calling /activities endpoint (limit=${limit}, offset=${offset})...`);
+    debug.log(`Calling /activities endpoint (limit=${limit}, offset=${offset})...`);
     const response = await api.get('/activities', {
       params: { limit, offset },
     });
-    console.log('/activities response:', response.data);
+    debug.log('/activities response received:', response.data);
     return { success: true, data: response.data };
   } catch (error) {
-    console.error('/activities endpoint error:', error);
+    console.error('/activities endpoint error:', error.message);
     if (error.response?.status === 401) {
-      console.log('User not authenticated (401)');
+      debug.log('User not authenticated (401)');
       return { success: false, notConnected: true };
     }
-    console.error('Error calling /activities:', error.message, error.response?.data);
     return { success: false, error: error.message };
   }
 };
@@ -90,14 +137,14 @@ export const fetchActivities = async (limit = 10, offset = 0) => {
 // Refresh activities from Strava
 export const refreshActivities = async () => {
   try {
-    console.log('Calling /activities/fetch endpoint...');
+    debug.log('Calling /activities/fetch endpoint...');
     const response = await api.post('/activities/fetch');
-    console.log('/activities/fetch response:', response.data);
+    debug.log('/activities/fetch response:', response.data);
     return { success: true, data: response.data };
   } catch (error) {
-    console.error('/activities/fetch endpoint error:', error);
+    console.error('/activities/fetch endpoint error:', error.message);
     if (error.response?.status === 401) {
-      console.log('User not authenticated (401)');
+      debug.log('User not authenticated (401)');
       return { success: false, notConnected: true };
     }
     return { success: false, error: error.message };
@@ -107,14 +154,14 @@ export const refreshActivities = async () => {
 // Reset trail matching for all activities
 export const resetTrailMatching = async () => {
   try {
-    console.log('Calling /activities/reset-matching endpoint...');
+    debug.log('Calling /activities/reset-matching endpoint...');
     const response = await api.post('/activities/reset-matching');
-    console.log('/activities/reset-matching response:', response.data);
+    debug.log('/activities/reset-matching response:', response.data);
     return { success: true, data: response.data };
   } catch (error) {
-    console.error('/activities/reset-matching endpoint error:', error);
+    console.error('/activities/reset-matching endpoint error:', error.message);
     if (error.response?.status === 401) {
-      console.log('User not authenticated (401)');
+      debug.log('User not authenticated (401)');
       return { success: false, notConnected: true };
     }
     return { success: false, error: error.message };
@@ -124,14 +171,14 @@ export const resetTrailMatching = async () => {
 // Fetch a single activity detail with polyline
 export const fetchActivityDetail = async (activityId) => {
   try {
-    console.log(`Calling /activities/${activityId} endpoint...`);
+    debug.log(`Calling /activities/${activityId} endpoint...`);
     const response = await api.get(`/activities/${activityId}`);
-    console.log(`/activities/${activityId} response:`, response.data);
+    debug.log(`/activities/${activityId} response received`);
     return { success: true, data: response.data };
   } catch (error) {
-    console.error(`/activities/${activityId} endpoint error:`, error);
+    console.error(`/activities/${activityId} endpoint error:`, error.message);
     if (error.response?.status === 401) {
-      console.log('User not authenticated (401)');
+      debug.log('User not authenticated (401)');
       return { success: false, notConnected: true };
     }
     if (error.response?.status === 404) {

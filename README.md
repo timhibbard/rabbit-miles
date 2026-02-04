@@ -110,9 +110,44 @@ src/
 │   ├── ConnectStrava.jsx
 │   └── Settings.jsx
 ├── utils/          # Utility functions
-│   └── api.js      # Axios configuration
+│   ├── api.js      # Axios configuration
+│   └── debug.js    # Debug logging utility
 ├── App.jsx         # Main app component with routing
 └── main.jsx        # Entry point
+```
+
+## Debug Mode
+
+The app includes a comprehensive debug logging system that can be enabled by adding `?debug=1` to any URL:
+
+```
+https://timhibbard.github.io/rabbit-miles/?debug=1
+https://timhibbard.github.io/rabbit-miles/connect?debug=1
+```
+
+When debug mode is enabled:
+- 🐛 A yellow banner appears at the top of the page
+- Detailed logs are written to the browser console including:
+  - URL parsing and session token extraction
+  - Token validation and storage operations
+  - API request/response details
+  - CORS headers and authentication status
+  - Error details with full stack traces
+
+**Usage Tips:**
+- Use debug mode to troubleshoot authentication issues
+- Check the browser console (F12) for detailed logs
+- Debug mode persists across page navigation in the same tab
+- To disable, remove `?debug=1` from the URL
+
+**Example Debugging Session:**
+```bash
+# Enable debug mode
+1. Navigate to: https://timhibbard.github.io/rabbit-miles/connect?debug=1
+2. Click "Connect with Strava"
+3. Complete OAuth flow
+4. Check browser console for detailed authentication logs
+5. Look for "[DEBUG]" prefixed messages
 ```
 
 ## OAuth Flow
