@@ -32,66 +32,10 @@ function ConnectStrava() {
     debug.log('ConnectStrava mounted');
     debug.log('URL:', window.location.href);
     debug.log('Search params:', window.location.search);
-    debug.log('Hash:', window.location.hash);
     debug.log('justConnected:', justConnected);
     
-    // Extract session token from URL fragment (not query param for security)
-    // The backend passes the token in the fragment (#session=...) to prevent it from:
-    // - Being sent to the server
-    // - Appearing in server logs or analytics
-    // - Being included in Referer headers
-    const hash = window.location.hash.substring(1); // Remove leading #
-    debug.log('Hash after removing #:', hash);
-    
-    const hashParams = new URLSearchParams(hash);
-    const sessionToken = hashParams.get('session');
-    
-    // If we have a session token in the URL (Mobile Safari fallback), validate and store it
-    if (sessionToken) {
-      debug.log('Found session token in URL fragment');
-      debug.log('Token length:', sessionToken.length);
-      
-      // Validate token format: should be base64url.hex_signature (JWT-like structure)
-      // Base64url: alphanumeric, dash, underscore (no padding)
-      // Hex signature: 64 hex chars (SHA256)
-      const tokenPattern = /^[A-Za-z0-9_-]+\.[a-f0-9]{64}$/;
-      const isValid = tokenPattern.test(sessionToken);
-      debug.log('Token format valid:', isValid);
-      
-      if (isValid) {
-        debug.log('Token format valid, storing in sessionStorage');
-        sessionStorage.setItem('rm_session', sessionToken);
-        debug.log('Token stored successfully');
-        const hasToken = sessionStorage.getItem('rm_session') !== null;
-        debug.log('Verifying storage - token in sessionStorage:', hasToken ? 'present' : 'missing');
-      } else {
-        console.warn('Invalid session token format detected');
-        debug.warn('Expected format: base64url.hex64');
-        // Show structural info for debugging without exposing token content
-        if (sessionToken.includes('.')) {
-          const parts = sessionToken.split('.');
-          debug.warn('Token structure:', {
-            hasTwoParts: parts.length === 2,
-            payloadLength: parts[0].length,
-            signatureLength: parts[1]?.length || 0,
-            expectedSignatureLength: 64
-          });
-        }
-      }
-    } else {
-      debug.log('No session token found in URL fragment');
-      // Check if there's already a token in sessionStorage
-      const existingToken = sessionStorage.getItem('rm_session');
-      if (existingToken) {
-        debug.log('Found existing token in sessionStorage');
-      } else {
-        debug.log('No token in sessionStorage either');
-      }
-    }
-    
-    // Clean up URL immediately to prevent token exposure
-    // This clears both query params and fragment
-    if (justConnected || sessionToken) {
+    // Clean up URL if needed (remove query params)
+    if (justConnected) {
       debug.log('Cleaning up URL');
       window.history.replaceState({}, '', window.location.pathname);
     }
@@ -135,10 +79,8 @@ function ConnectStrava() {
   };
 
   const handleDisconnect = () => {
-    // Clear session token from sessionStorage
-    sessionStorage.removeItem('rm_session');
-    
     // Redirect to backend disconnect endpoint
+    // The backend will clear the session cookie
     const disconnectUrl = `${API_BASE_URL}/auth/disconnect`;
     window.location.href = disconnectUrl;
   };

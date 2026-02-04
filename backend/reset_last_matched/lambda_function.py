@@ -59,19 +59,10 @@ def verify_session_token(tok):
 
 
 def parse_session_cookie(event):
-    """Parse rm_session cookie from API Gateway event or Authorization header"""
+    """Parse rm_session cookie from API Gateway event"""
     headers = event.get("headers") or {}
-    auth_header = headers.get("authorization") or headers.get("Authorization")
     
-    # First, try Authorization header (Mobile Safari fallback)
-    if auth_header:
-        # Format: "Bearer <token>"
-        if auth_header.startswith("Bearer "):
-            tok = auth_header[7:]  # Remove "Bearer " prefix
-            print("Found session token in Authorization header")
-            return tok
-    
-    # If not in Authorization header, try cookies
+    # API Gateway HTTP API v2 provides cookies in event['cookies'] array
     cookies_array = event.get("cookies") or []
     cookie_header = headers.get("cookie") or headers.get("Cookie")
     
@@ -134,7 +125,7 @@ def handler(event, context):
             "headers": {
                 **cors_headers,
                 "Access-Control-Allow-Methods": "POST, OPTIONS",
-                "Access-Control-Allow-Headers": "Content-Type, Cookie, Authorization",
+                "Access-Control-Allow-Headers": "Content-Type, Cookie",
                 "Access-Control-Max-Age": "86400"
             },
             "body": ""
