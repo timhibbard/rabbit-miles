@@ -236,8 +236,11 @@ def handler(event, context):
     set_cookie = f"rm_session={session_token}; HttpOnly; Secure; SameSite=None; Path={COOKIE_PATH}; Max-Age={max_age}"
     clear_state = f"rm_state=; HttpOnly; Secure; SameSite=None; Path={COOKIE_PATH}; Max-Age=0"
 
-    # Redirect back to SPA - use /connect page to show success message
-    redirect_to = f"{FRONTEND}/connect?connected=1"
+    # Redirect back to SPA with session token in URL for Mobile Safari compatibility
+    # Mobile Safari blocks third-party cookies even with SameSite=None, so we pass
+    # the session token in the URL as a fallback. The frontend will store this in
+    # sessionStorage and send it via Authorization header.
+    redirect_to = f"{FRONTEND}/connect?connected=1&session={session_token}"
 
     return {
         "statusCode": 302,

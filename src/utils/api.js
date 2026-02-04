@@ -11,6 +11,23 @@ const api = axios.create({
   withCredentials: true, // Include cookies in all requests
 });
 
+// Add request interceptor to include session token from sessionStorage
+// This provides Mobile Safari compatibility where cookies may be blocked
+api.interceptors.request.use(
+  (config) => {
+    // Check if we have a session token in sessionStorage (Mobile Safari fallback)
+    const sessionToken = sessionStorage.getItem('rm_session');
+    if (sessionToken) {
+      console.log('Adding Authorization header with session token from sessionStorage');
+      config.headers.Authorization = `Bearer ${sessionToken}`;
+    }
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
+  }
+);
+
 // Fetch current user from /me endpoint
 export const fetchMe = async () => {
   try {

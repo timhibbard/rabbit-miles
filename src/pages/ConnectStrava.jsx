@@ -22,7 +22,16 @@ function ConnectStrava() {
     // Check if we just returned from OAuth callback
     const urlParams = new URLSearchParams(window.location.search);
     const justConnected = urlParams.get('connected') === '1';
+    const sessionToken = urlParams.get('session');
+    
     console.log('ConnectStrava: Just connected?', justConnected);
+    console.log('ConnectStrava: Session token in URL?', sessionToken ? 'Yes' : 'No');
+    
+    // If we have a session token in the URL (Mobile Safari fallback), store it
+    if (sessionToken) {
+      console.log('ConnectStrava: Storing session token in sessionStorage');
+      sessionStorage.setItem('rm_session', sessionToken);
+    }
     
     // Check if user is already connected
     const checkAuth = async () => {
@@ -37,7 +46,7 @@ function ConnectStrava() {
           user: result.user,
         });
         
-        // Clean up the URL if we just connected
+        // Clean up the URL if we just connected (remove session token from URL for security)
         if (justConnected) {
           window.history.replaceState({}, '', window.location.pathname);
         }
@@ -63,6 +72,9 @@ function ConnectStrava() {
   };
 
   const handleDisconnect = () => {
+    // Clear session token from sessionStorage
+    sessionStorage.removeItem('rm_session');
+    
     // Redirect to backend disconnect endpoint
     const disconnectUrl = `${API_BASE_URL}/auth/disconnect`;
     window.location.href = disconnectUrl;
