@@ -347,11 +347,28 @@ aws lambda update-function-configuration \
   --region us-east-1
 
 # Update webhook (if using webhooks)
+# Note: Get all current environment variables and update only API_BASE_URL
+CURRENT_VARS=$(aws lambda get-function-configuration \
+  --function-name rabbitmiles-webhook \
+  --region us-east-1 \
+  --query 'Environment.Variables' \
+  --output json)
+
+# Update using a JSON merge approach (requires jq)
+echo $CURRENT_VARS | jq --arg url "$NEW_API_BASE_URL" '.API_BASE_URL = $url' | \
+  aws lambda update-function-configuration \
+    --function-name rabbitmiles-webhook \
+    --environment Variables=file:///dev/stdin \
+    --region us-east-1 \
+    --cli-input-json
+
+# Or manually specify all variables (recommended)
 aws lambda update-function-configuration \
   --function-name rabbitmiles-webhook \
   --environment "Variables={
     API_BASE_URL=$NEW_API_BASE_URL,
-    $(aws lambda get-function-configuration --function-name rabbitmiles-webhook --query 'Environment.Variables' --output text | grep -v API_BASE_URL)
+    WEBHOOK_VERIFY_TOKEN=$(aws lambda get-function-configuration --function-name rabbitmiles-webhook --query 'Environment.Variables.WEBHOOK_VERIFY_TOKEN' --output text --region us-east-1),
+    WEBHOOK_QUEUE_URL=$(aws lambda get-function-configuration --function-name rabbitmiles-webhook --query 'Environment.Variables.WEBHOOK_QUEUE_URL' --output text --region us-east-1)
   }" \
   --region us-east-1
 ```
@@ -574,10 +591,20 @@ If issues occur, you can quickly rollback:
 ```bash
 OLD_API_BASE_URL="https://9zke9jame0.execute-api.us-east-1.amazonaws.com/prod"
 
+# Update auth-start (include all existing environment variables)
 aws lambda update-function-configuration \
   --function-name rabbitmiles-auth-start \
-  --environment Variables="{API_BASE_URL=$OLD_API_BASE_URL,...}" \
+  --environment "Variables={
+    API_BASE_URL=$OLD_API_BASE_URL,
+    DB_CLUSTER_ARN=$(aws lambda get-function-configuration --function-name rabbitmiles-auth-start --query 'Environment.Variables.DB_CLUSTER_ARN' --output text --region us-east-1),
+    DB_SECRET_ARN=$(aws lambda get-function-configuration --function-name rabbitmiles-auth-start --query 'Environment.Variables.DB_SECRET_ARN' --output text --region us-east-1),
+    DB_NAME=postgres,
+    STRAVA_CLIENT_ID=$(aws lambda get-function-configuration --function-name rabbitmiles-auth-start --query 'Environment.Variables.STRAVA_CLIENT_ID' --output text --region us-east-1)
+  }" \
   --region us-east-1
+
+# Repeat for auth-callback and webhook functions
+# (Use the same pattern as Step 4.1, but with OLD_API_BASE_URL)
 ```
 
 ### Step 3: Keep Custom Domain for Future
