@@ -165,11 +165,23 @@ function ActivityDetail() {
   
   // Calculate pace using moving_time (excludes stopped time)
   let pace = 'N/A';
+  let paceLabel = 'Pace';
   if (activity.distance > 0 && activity.moving_time > 0) {
-    const paceValue = (activity.moving_time / 60) / (activity.distance / METERS_TO_MILES);
-    const paceMin = Math.floor(paceValue);
-    const paceSec = Math.floor((paceValue - paceMin) * 60);
-    pace = `${paceMin}:${paceSec.toString().padStart(2, '0')}/mi`;
+    const distanceMi = activity.distance / METERS_TO_MILES;
+    const timeHours = activity.moving_time / 3600;
+    
+    if (activity.type === 'Ride' || activity.type === 'Walk') {
+      // Use mph for bike and walk
+      const mph = distanceMi / timeHours;
+      pace = `${mph.toFixed(1)} mph`;
+      paceLabel = 'Speed';
+    } else {
+      // Use min/mi for running
+      const paceValue = (activity.moving_time / 60) / distanceMi;
+      const paceMin = Math.floor(paceValue);
+      const paceSec = Math.floor((paceValue - paceMin) * 60);
+      pace = `${paceMin}:${paceSec.toString().padStart(2, '0')}/mi`;
+    }
   }
 
   return (
@@ -252,7 +264,7 @@ function ActivityDetail() {
               )}
             </div>
             <div>
-              <p className="text-sm text-gray-500 mb-1">Pace</p>
+              <p className="text-sm text-gray-500 mb-1">{paceLabel}</p>
               <p className="text-2xl font-bold text-gray-900">{pace}</p>
             </div>
             <div>
