@@ -5,8 +5,6 @@ import debug, { showDebugInfo } from '../utils/debug';
 import Footer from '../components/Footer';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
-const SESSION_TOKEN_KEY = 'rm_session_token';
-const SESSION_TOKEN_PATTERN = /^[A-Za-z0-9_-]+\.[a-f0-9]{64}$/;
 
 function ConnectStrava() {
   const [isConnecting, setIsConnecting] = useState(false);
@@ -30,21 +28,14 @@ function ConnectStrava() {
     // Check if we just returned from OAuth callback
     const urlParams = new URLSearchParams(window.location.search);
     const justConnected = urlParams.get('connected') === '1';
-    const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
-    const sessionToken = hashParams.get('session');
     
     debug.log('ConnectStrava mounted');
     debug.log('URL:', window.location.href);
     debug.log('Search params:', window.location.search);
     debug.log('justConnected:', justConnected);
-    
-    if (sessionToken && SESSION_TOKEN_PATTERN.test(sessionToken)) {
-      sessionStorage.setItem(SESSION_TOKEN_KEY, sessionToken);
-      debug.log('Stored session token from OAuth callback');
-    }
 
-    // Clean up URL if needed (remove query params and hash)
-    if (justConnected || sessionToken) {
+    // Clean up URL if needed (remove query params)
+    if (justConnected) {
       debug.log('Cleaning up URL');
       window.history.replaceState({}, '', window.location.pathname);
     }
@@ -88,7 +79,6 @@ function ConnectStrava() {
   };
 
   const handleDisconnect = () => {
-    sessionStorage.removeItem(SESSION_TOKEN_KEY);
     // Redirect to backend disconnect endpoint
     // The backend will clear the session cookie
     const disconnectUrl = `${API_BASE_URL}/auth/disconnect`;

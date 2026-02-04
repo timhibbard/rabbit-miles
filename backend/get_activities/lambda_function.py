@@ -60,15 +60,6 @@ def verify_session_token(tok):
         return None
 
 
-def parse_authorization_header(headers):
-    auth_header = headers.get("authorization") or headers.get("Authorization")
-    if not auth_header:
-        return None
-    if auth_header.lower().startswith("bearer "):
-        return auth_header.split(" ", 1)[1].strip()
-    return None
-
-
 def parse_session_cookie(event):
     headers = event.get("headers") or {}
 
@@ -98,14 +89,6 @@ def parse_session_cookie(event):
     return None
 
 
-def parse_session_token(event):
-    headers = event.get("headers") or {}
-    bearer_token = parse_authorization_header(headers)
-    if bearer_token:
-        return bearer_token
-    return parse_session_cookie(event)
-
-
 def _exec_sql(sql, parameters=None):
     """Execute SQL statement using RDS Data API"""
     kwargs = {
@@ -130,7 +113,7 @@ def handler(event, context):
             "headers": {
                 **cors_headers,
                 "Access-Control-Allow-Methods": "GET, OPTIONS",
-                "Access-Control-Allow-Headers": "Content-Type, Cookie, Authorization",
+                "Access-Control-Allow-Headers": "Content-Type, Cookie",
                 "Access-Control-Max-Age": "86400"
             },
             "body": ""
@@ -154,7 +137,7 @@ def handler(event, context):
                 "body": json.dumps({"error": "server configuration error"})
             }
         
-        tok = parse_session_token(event)
+        tok = parse_session_cookie(event)
         
         if not tok:
             return {
