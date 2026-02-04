@@ -236,15 +236,9 @@ def handler(event, context):
     set_cookie = f"rm_session={session_token}; HttpOnly; Secure; SameSite=None; Path={COOKIE_PATH}; Max-Age={max_age}"
     clear_state = f"rm_state=; HttpOnly; Secure; SameSite=None; Path={COOKIE_PATH}; Max-Age=0"
 
-    # Redirect back to SPA with session token in URL fragment for Mobile Safari compatibility
-    # Mobile Safari blocks third-party cookies even with SameSite=None, so we pass
-    # the session token in the URL fragment (not query param) as a fallback.
-    # Using fragment (#) instead of query (?) prevents the token from:
-    # - Being sent to the server in HTTP requests
-    # - Appearing in server logs or analytics
-    # - Being included in Referer headers
-    # The frontend will extract this from window.location.hash and store it in sessionStorage.
-    redirect_to = f"{FRONTEND}/connect?connected=1#session={session_token}"
+    # Redirect back to SPA
+    # Cookie-based authentication - the session cookie will be sent automatically on subsequent requests
+    redirect_to = f"{FRONTEND}/connect?connected=1"
 
     return {
         "statusCode": 302,
