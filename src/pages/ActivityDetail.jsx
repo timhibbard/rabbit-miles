@@ -3,6 +3,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { MapContainer, TileLayer, Polyline, useMap } from 'react-leaflet';
 import { fetchActivityDetail } from '../utils/api';
 import { decodePolyline } from '../utils/polyline';
+import { loadTrailData, calculateTrailSegments } from '../utils/trailMatching';
 import Footer from '../components/Footer';
 import 'leaflet/dist/leaflet.css';
 
@@ -28,6 +29,7 @@ function ActivityDetail() {
   const [error, setError] = useState(null);
   const [activity, setActivity] = useState(null);
   const [coordinates, setCoordinates] = useState([]);
+  const [trailSegments, setTrailSegments] = useState([]);
 
   useEffect(() => {
     const loadActivity = async () => {
@@ -43,6 +45,15 @@ function ActivityDetail() {
         if (result.data.polyline) {
           const coords = decodePolyline(result.data.polyline);
           setCoordinates(coords);
+          
+          // Load trail data and calculate segments
+          if (result.data.distance_on_trail !== null && result.data.distance_on_trail > 0) {
+            const trailData = await loadTrailData();
+            if (trailData.length > 0) {
+              const segments = calculateTrailSegments(coords, trailData);
+              setTrailSegments(segments);
+            }
+          }
         }
       } else if (result.notConnected) {
         navigate('/connect');
@@ -257,12 +268,26 @@ function ActivityDetail() {
                   attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
                   url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                 />
-                <Polyline
-                  positions={coordinates}
-                  color={hasTrailData ? '#10b981' : '#3b82f6'}
-                  weight={4}
-                  opacity={0.8}
-                />
+                {trailSegments.length > 0 ? (
+                  // Render segments in different colors based on trail matching
+                  trailSegments.map((segment, idx) => (
+                    <Polyline
+                      key={idx}
+                      positions={segment.coordinates}
+                      color={segment.isOnTrail ? '#10b981' : '#3b82f6'}
+                      weight={4}
+                      opacity={0.8}
+                    />
+                  ))
+                ) : (
+                  // Show single blue polyline when no trail data
+                  <Polyline
+                    positions={coordinates}
+                    color="#3b82f6"
+                    weight={4}
+                    opacity={0.8}
+                  />
+                )}
                 <FitBounds bounds={coordinates} />
               </MapContainer>
             </div>
@@ -275,6 +300,11 @@ function ActivityDetail() {
                 <div className="w-8 h-1 bg-blue-500 rounded"></div>
                 <span className="text-gray-600">Off trail</span>
               </div>
+              {trailSegments.length === 0 && hasTrailData && (
+                <p className="text-gray-500 italic">
+                  (Loading trail segments...)
+                </p>
+              )}
               {!hasTrailData && (
                 <p className="text-gray-500 italic">
                   (Trail matching data not available for this activity)
