@@ -323,9 +323,10 @@ def handler(event, context):
     print(f"LOG - Session token created successfully")
     print(f"LOG -   Token length: {len(session_token)} characters")
 
-    # Partitioned attribute is required for cross-site cookies in Chrome and modern browsers
-    set_cookie = f"rm_session={session_token}; HttpOnly; Secure; SameSite=None; Partitioned; Path={COOKIE_PATH}; Max-Age={max_age}"
-    clear_state = f"rm_state=; HttpOnly; Secure; SameSite=None; Partitioned; Path={COOKIE_PATH}; Max-Age=0"
+    # SameSite=None is required for cross-site cookies (GitHub Pages + API Gateway)
+    # Partitioned attribute removed for better browser compatibility
+    set_cookie = f"rm_session={session_token}; HttpOnly; Secure; SameSite=None; Path={COOKIE_PATH}; Max-Age={max_age}"
+    clear_state = f"rm_state=; HttpOnly; Secure; SameSite=None; Path={COOKIE_PATH}; Max-Age=0"
     
     print(f"LOG - Cookie configuration:")
     print(f"LOG -   Name: rm_session")
@@ -333,7 +334,7 @@ def handler(event, context):
     print(f"LOG -   HttpOnly: Yes (JavaScript cannot access)")
     print(f"LOG -   Secure: Yes (HTTPS only)")
     print(f"LOG -   SameSite: None (cross-site allowed)")
-    print(f"LOG -   Partitioned: Yes (CHIPS enabled)")
+    print(f"LOG -   Partitioned: No (removed for compatibility)")
     print(f"LOG -   Path: {COOKIE_PATH}")
     print(f"LOG -   Max-Age: {max_age} seconds ({max_age // 86400} days)")
     print(f"LOG - Set-Cookie header length: {len(set_cookie)} chars")

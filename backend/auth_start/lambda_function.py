@@ -125,15 +125,16 @@ def handler(event, context):
     print(f"LOG - Strava OAuth URL length: {len(url)} chars")
     print(f"LOG - Strava OAuth URL: {url[:100]}...")
 
-    # Partitioned attribute is required for cross-site cookies in Chrome and modern browsers
-    cookie_val = f"rm_state={state}; HttpOnly; Secure; SameSite=None; Partitioned; Path={COOKIE_PATH}; Max-Age=600"
+    # SameSite=None is required for cross-site cookies (GitHub Pages + API Gateway)
+    # Partitioned attribute removed for better browser compatibility
+    cookie_val = f"rm_state={state}; HttpOnly; Secure; SameSite=None; Path={COOKIE_PATH}; Max-Age=600"
     print(f"LOG - Setting rm_state cookie:")
     print(f"LOG -   Name: rm_state")
     print(f"LOG -   Value: {state[:10]}...{state[-10:]}")
     print(f"LOG -   HttpOnly: Yes")
     print(f"LOG -   Secure: Yes")
     print(f"LOG -   SameSite: None")
-    print(f"LOG -   Partitioned: Yes")
+    print(f"LOG -   Partitioned: No")
     print(f"LOG -   Path: {COOKIE_PATH}")
     print(f"LOG -   Max-Age: 600 seconds (10 minutes)")
     print(f"LOG - Cookie string length: {len(cookie_val)} chars")

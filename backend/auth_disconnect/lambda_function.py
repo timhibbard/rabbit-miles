@@ -130,8 +130,9 @@ def handler(event, context):
     if not session:
         print(f"LOG - No session cookie found in request")
         # still clear cookie and redirect
-        # Partitioned attribute is required for cross-site cookies in Chrome and modern browsers
-        clear = f"rm_session=; HttpOnly; Secure; SameSite=None; Partitioned; Path={COOKIE_PATH}; Max-Age=0"
+        # SameSite=None is required for cross-site cookies (GitHub Pages + API Gateway)
+        # Partitioned attribute removed for better browser compatibility
+        clear = f"rm_session=; HttpOnly; Secure; SameSite=None; Path={COOKIE_PATH}; Max-Age=0"
         print("LOG - Clearing any existing session cookie and redirecting to frontend")
         
         redirect_to = f"{FRONTEND}/?connected=0"
@@ -171,8 +172,9 @@ def handler(event, context):
     if not aid:
         print(f"LOG - Session token present but verification FAILED")
         # invalid session: clear cookie
-        # Partitioned attribute is required for cross-site cookies in Chrome and modern browsers
-        clear = f"rm_session=; HttpOnly; Secure; SameSite=None; Partitioned; Path={COOKIE_PATH}; Max-Age=0"
+        # SameSite=None is required for cross-site cookies (GitHub Pages + API Gateway)
+        # Partitioned attribute removed for better browser compatibility
+        clear = f"rm_session=; HttpOnly; Secure; SameSite=None; Path={COOKIE_PATH}; Max-Age=0"
         print("LOG - Invalid session token, clearing and redirecting")
         
         redirect_to = f"{FRONTEND}/?connected=0"
@@ -228,8 +230,9 @@ def handler(event, context):
         # Log generic error to avoid exposing sensitive database details
         print(f"ERROR - Failed to clear tokens in database: {e}")
         print(f"LOG - Proceeding with cookie clear and redirect despite DB error")
-        # Partitioned attribute is required for cross-site cookies in Chrome and modern browsers
-        clear = f"rm_session=; HttpOnly; Secure; SameSite=None; Partitioned; Path={COOKIE_PATH}; Max-Age=0"
+        # SameSite=None is required for cross-site cookies (GitHub Pages + API Gateway)
+        # Partitioned attribute removed for better browser compatibility
+        clear = f"rm_session=; HttpOnly; Secure; SameSite=None; Path={COOKIE_PATH}; Max-Age=0"
         
         redirect_to = f"{FRONTEND}/?connected=0&error=disconnect_failed"
         import html
@@ -264,10 +267,11 @@ def handler(event, context):
         }
 
     # Clear session cookie and redirect to frontend
-    # Partitioned attribute is required for cross-site cookies in Chrome and modern browsers
-    clear_session = f"rm_session=; HttpOnly; Secure; SameSite=None; Partitioned; Path={COOKIE_PATH}; Max-Age=0"
+    # SameSite=None is required for cross-site cookies (GitHub Pages + API Gateway)
+    # Partitioned attribute removed for better browser compatibility
+    clear_session = f"rm_session=; HttpOnly; Secure; SameSite=None; Path={COOKIE_PATH}; Max-Age=0"
     # also clear any leftover rm_state just in case
-    clear_state = f"rm_state=; HttpOnly; Secure; SameSite=None; Partitioned; Path={COOKIE_PATH}; Max-Age=0"
+    clear_state = f"rm_state=; HttpOnly; Secure; SameSite=None; Path={COOKIE_PATH}; Max-Age=0"
     print(f"LOG - Clearing session cookies and redirecting to frontend for athlete_id: {aid}")
 
     redirect_to = f"{FRONTEND}/?connected=0"
