@@ -239,8 +239,10 @@ def handler(event, context):
     clear_state = f"rm_state=; HttpOnly; Secure; SameSite=None; Path={COOKIE_PATH}; Max-Age=0"
 
     # Redirect back to SPA
-    # Cookie-based authentication - the session cookie will be sent automatically on subsequent requests
-    redirect_to = f"{FRONTEND}/connect?connected=1"
+    # Include session token in URL fragment as fallback for browsers that block third-party cookies
+    # URL fragments are not sent to the server, so they're safe for including tokens
+    # The frontend will check for this token and store it in sessionStorage if cookies don't work
+    redirect_to = f"{FRONTEND}/connect?connected=1#session={session_token}"
 
     return {
         "statusCode": 302,
