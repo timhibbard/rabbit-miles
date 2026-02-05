@@ -46,7 +46,7 @@ cp .env.example .env
 
 4. Update the `.env` file with your backend API URL:
 ```env
-VITE_API_BASE_URL=https://9zke9jame0.execute-api.us-east-1.amazonaws.com/prod
+VITE_API_BASE_URL=https://api.rabbitmiles.com
 ```
 
 ### Development
@@ -168,10 +168,16 @@ When debug mode is enabled:
 - Debug mode persists across page navigation in the same tab
 - To disable, remove `?debug=1` from the URL
 
+## Domain
+
+The application is hosted at:
+- **Frontend:** https://rabbitmiles.com
+- **API:** https://api.rabbitmiles.com
+
 **Example Debugging Session:**
 ```bash
 # Enable debug mode
-1. Navigate to: https://timhibbard.github.io/rabbit-miles/connect?debug=1
+1. Navigate to: https://rabbitmiles.com/connect?debug=1
 2. Click "Connect with Strava"
 3. Complete OAuth flow
 4. Check browser console for detailed authentication logs
@@ -191,7 +197,7 @@ The app uses cookie-based authentication with Strava OAuth:
 7. App calls `/me` endpoint to verify authentication and get user info
 8. Dashboard displays user information
 
-**Important:** The Strava application's "Authorization Callback Domain" must be set to `9zke9jame0.execute-api.us-east-1.amazonaws.com` (the API Gateway domain).
+**Important:** The Strava application's "Authorization Callback Domain" must be set to `api.rabbitmiles.com`.
 
 ## Webhook Flow
 

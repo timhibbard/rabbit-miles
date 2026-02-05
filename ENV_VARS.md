@@ -7,7 +7,7 @@ This document provides a complete list of all environment variables required for
 ⚠️ **APP_SECRET MUST be the same across all Lambdas that use it** (auth_callback, me, auth_disconnect)
 ⚠️ **Do NOT commit secrets to GitHub** - use AWS Lambda environment variables or Secrets Manager
 ⚠️ **FRONTEND_URL must NOT have a trailing slash**
-⚠️ **API_BASE_URL must include the stage path** (e.g., `/prod`)
+⚠️ **API_BASE_URL should NOT include the stage path when using custom domain** (e.g., `https://api.rabbitmiles.com` not `https://api.rabbitmiles.com/prod`)
 
 ---
 
@@ -19,7 +19,7 @@ Location: Root `.env` file (for Vite build)
 
 | Variable | Example | Description |
 |----------|---------|-------------|
-| `VITE_API_BASE_URL` | `https://9zke9jame0.execute-api.us-east-1.amazonaws.com/prod` | Full URL to API Gateway including stage. Used by frontend to make API calls. |
+| `VITE_API_BASE_URL` | `https://api.rabbitmiles.com` | Full URL to API Gateway (custom domain) or AWS endpoint. Used by frontend to make API calls. |
 
 ### Validation
 ```bash
@@ -27,7 +27,7 @@ Location: Root `.env` file (for Vite build)
 grep VITE_API_BASE_URL .env
 
 # Should output something like:
-# VITE_API_BASE_URL=https://9zke9jame0.execute-api.us-east-1.amazonaws.com/prod
+# VITE_API_BASE_URL=https://api.rabbitmiles.com
 ```
 
 ---
@@ -46,8 +46,8 @@ All backend Lambdas require environment variables set in AWS Lambda console or v
 
 | Variable | Required | Example | Description |
 |----------|----------|---------|-------------|
-| `API_BASE_URL` | ✅ Yes | `https://9zke9jame0.execute-api.us-east-1.amazonaws.com/prod` | API Gateway URL with stage. Used to construct redirect URIs. |
-| `FRONTEND_URL` | ✅ Yes | `https://timhibbard.github.io/rabbit-miles` | Frontend URL (NO trailing slash). Used for OAuth redirect_uri. |
+| `API_BASE_URL` | ✅ Yes | `https://api.rabbitmiles.com` | API Gateway URL (custom domain). Used to construct redirect URIs. |
+| `FRONTEND_URL` | ✅ Yes | `https://rabbitmiles.com` | Frontend URL (NO trailing slash). Used for OAuth redirect_uri. |
 | `STRAVA_CLIENT_ID` | ✅ Yes | `123456` | Strava application client ID from Strava API settings. |
 | `DB_CLUSTER_ARN` | ✅ Yes | `arn:aws:rds:us-east-1:123456789012:cluster:rabbitmiles-db` | Aurora Serverless cluster ARN. Required for OAuth state storage. |
 | `DB_SECRET_ARN` | ✅ Yes | `arn:aws:secretsmanager:us-east-1:123456789012:secret:rabbitmiles-db-abc123` | Secrets Manager ARN containing DB credentials. |
@@ -72,8 +72,8 @@ All backend Lambdas require environment variables set in AWS Lambda console or v
 
 | Variable | Required | Example | Description |
 |----------|----------|---------|-------------|
-| `API_BASE_URL` | ✅ Yes | `https://9zke9jame0.execute-api.us-east-1.amazonaws.com/prod` | API Gateway URL with stage. |
-| `FRONTEND_URL` | ✅ Yes | `https://timhibbard.github.io/rabbit-miles` | Frontend URL (NO trailing slash). **Must exactly match auth_start**. |
+| `API_BASE_URL` | ✅ Yes | `https://api.rabbitmiles.com` | API Gateway URL. |
+| `FRONTEND_URL` | ✅ Yes | `https://rabbitmiles.com` | Frontend URL (NO trailing slash). **Must exactly match auth_start**. |
 | `APP_SECRET` | ✅ Yes | `<long-random-string>` | Secret key for signing session tokens. **Must be same as me Lambda**. Generate with: `openssl rand -base64 32` |
 | `STRAVA_CLIENT_ID` | ✅ Yes | `123456` | Strava application client ID. |
 | `STRAVA_CLIENT_SECRET` | ✅ Yes* | `<secret>` | Strava application client secret. *Can use STRAVA_SECRET_ARN instead. |
@@ -108,7 +108,7 @@ All backend Lambdas require environment variables set in AWS Lambda console or v
 | Variable | Required | Example | Description |
 |----------|----------|---------|-------------|
 | `APP_SECRET` | ✅ Yes | `<long-random-string>` | Secret key for verifying session tokens. **Must match auth_callback exactly**. |
-| `FRONTEND_URL` | ✅ Yes | `https://timhibbard.github.io/rabbit-miles` | Frontend URL for CORS headers. Must match origin of frontend requests. |
+| `FRONTEND_URL` | ✅ Yes | `https://rabbitmiles.com` | Frontend URL for CORS headers. Must match origin of frontend requests. |
 | `DB_CLUSTER_ARN` | ✅ Yes | `arn:aws:rds:us-east-1:123456789012:cluster:rabbitmiles-db` | Aurora Serverless cluster ARN. |
 | `DB_SECRET_ARN` | ✅ Yes | `arn:aws:secretsmanager:us-east-1:123456789012:secret:rabbitmiles-db-abc123` | Secrets Manager ARN containing DB credentials. |
 | `DB_NAME` | ⚠️ Optional | `postgres` | Database name. Defaults to `postgres` if not set. |
@@ -136,8 +136,8 @@ All backend Lambdas require environment variables set in AWS Lambda console or v
 
 | Variable | Required | Example | Description |
 |----------|----------|---------|-------------|
-| `API_BASE_URL` | ✅ Yes | `https://9zke9jame0.execute-api.us-east-1.amazonaws.com/prod` | API Gateway URL with stage. |
-| `FRONTEND_URL` | ✅ Yes | `https://timhibbard.github.io/rabbit-miles` | Frontend URL (NO trailing slash). |
+| `API_BASE_URL` | ✅ Yes | `https://api.rabbitmiles.com` | API Gateway URL. |
+| `FRONTEND_URL` | ✅ Yes | `https://rabbitmiles.com` | Frontend URL (NO trailing slash). |
 | `APP_SECRET` | ✅ Yes | `<long-random-string>` | Secret key for verifying session tokens. **Must match auth_callback and me**. |
 | `DB_CLUSTER_ARN` | ✅ Yes | `arn:aws:rds:us-east-1:123456789012:cluster:rabbitmiles-db` | Aurora Serverless cluster ARN. |
 | `DB_SECRET_ARN` | ✅ Yes | `arn:aws:secretsmanager:us-east-1:123456789012:secret:rabbitmiles-db-abc123` | Secrets Manager ARN containing DB credentials. |
@@ -181,8 +181,8 @@ For completeness, other Lambdas in the system (activities, trails, webhooks) req
 aws lambda update-function-configuration \
   --function-name rabbitmiles-auth-callback \
   --environment Variables="{
-    API_BASE_URL=https://9zke9jame0.execute-api.us-east-1.amazonaws.com/prod,
-    FRONTEND_URL=https://timhibbard.github.io/rabbit-miles,
+    API_BASE_URL=https://api.rabbitmiles.com,
+    FRONTEND_URL=https://rabbitmiles.com,
     APP_SECRET=your-secret-here,
     STRAVA_CLIENT_ID=123456,
     STRAVA_CLIENT_SECRET=your-secret,
@@ -199,8 +199,8 @@ resource "aws_lambda_function" "auth_callback" {
   
   environment {
     variables = {
-      API_BASE_URL        = "https://9zke9jame0.execute-api.us-east-1.amazonaws.com/prod"
-      FRONTEND_URL        = "https://timhibbard.github.io/rabbit-miles"
+      API_BASE_URL        = "https://api.rabbitmiles.com"
+      FRONTEND_URL        = "https://rabbitmiles.com"
       APP_SECRET          = var.app_secret
       STRAVA_CLIENT_ID    = var.strava_client_id
       STRAVA_CLIENT_SECRET = var.strava_client_secret
@@ -220,7 +220,7 @@ Use this checklist to verify all environment variables are set correctly:
 
 ### ✅ Frontend
 - [ ] `.env` file exists in project root
-- [ ] `VITE_API_BASE_URL` is set and includes `/prod` stage
+- [ ] `VITE_API_BASE_URL` is set to custom domain or AWS endpoint
 - [ ] URL points to correct API Gateway endpoint
 - [ ] After changing, rebuild frontend: `npm run build`
 
@@ -320,7 +320,7 @@ LOG -   DB_CLUSTER_ARN: arn:aws:rds:us-east-1:...
 LOG -   DB_SECRET_ARN: arn:aws:secretsmanager:...
 LOG -   DB_NAME: postgres
 LOG -   APP_SECRET length: 44 bytes
-LOG -   FRONTEND_URL: https://timhibbard.github.io/rabbit-miles
+LOG -   FRONTEND_URL: https://rabbitmiles.com
 ```
 
 If any required variable is missing, you'll see:
