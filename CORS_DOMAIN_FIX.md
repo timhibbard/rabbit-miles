@@ -94,7 +94,7 @@ curl -i -H "Origin: https://rabbitmiles.com" https://api.rabbitmiles.com/me
 # Access-Control-Allow-Credentials: true
 ```
 
-Or visit https://rabbitmiles.com/activity/363 and check browser console - the CORS error should be gone.
+Or visit https://rabbitmiles.com/activity/[id] (replacing `[id]` with any activity ID from your account) and check browser console - the CORS error should be gone.
 
 ## Technical Details
 

@@ -27,7 +27,7 @@ Updates `FRONTEND_URL` environment variable in these Lambda functions:
 - jq installed (for JSON processing)
 
 ## After running
-Visit https://rabbitmiles.com/activity/363 - the CORS error should be gone.
+Visit https://rabbitmiles.com/activity/[any-activity-id] - the CORS error should be gone (replace `[any-activity-id]` with an actual activity ID from your account).
 
 ## More details
 See [CORS_DOMAIN_FIX.md](./CORS_DOMAIN_FIX.md) for complete documentation.
