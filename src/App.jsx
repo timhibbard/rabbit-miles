@@ -7,6 +7,7 @@ import Settings from './pages/Settings';
 import Privacy from './pages/Privacy';
 import Terms from './pages/Terms';
 import ActivityDetail from './pages/ActivityDetail';
+import About from './pages/About';
 
 function App() {
   return (
@@ -20,6 +21,7 @@ function App() {
           <Route path="settings" element={<Settings />} />
           <Route path="privacy" element={<Privacy />} />
           <Route path="terms" element={<Terms />} />
+          <Route path="about" element={<About />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>
