@@ -222,8 +222,8 @@ def handler(event, context):
     print(f"LOG - Strava client_secret length: {len(client_secret)} chars")
     
     # CRITICAL: redirect_uri must EXACTLY match the one used in auth_start
-    # auth_start uses {FRONTEND_URL}/callback, so we must use the same here
-    redirect_uri = f"{FRONTEND}/callback"
+    # auth_start uses {API_BASE_URL}/auth/callback, so we must use the same here
+    redirect_uri = f"{API_BASE}/auth/callback"
     print(f"LOG - OAuth redirect_uri: {redirect_uri}")
 
     body = urlencode(

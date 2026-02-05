@@ -110,7 +110,7 @@ def handler(event, context):
             "body": '{"error": "Database configuration error. Please contact support at tim@rabbitmiles.com."}'
         }
     
-    redirect_uri = f"{FRONTEND}/callback"
+    redirect_uri = f"{API_BASE}/auth/callback"
     print(f"LOG - OAuth redirect_uri: {redirect_uri}")
     
     params = {
