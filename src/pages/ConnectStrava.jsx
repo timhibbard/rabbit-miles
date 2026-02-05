@@ -44,7 +44,8 @@ function ConnectStrava() {
       if (sessionToken) {
         debug.log('Found session token in URL fragment');
         // Validate token format (base64.signature pattern)
-        const tokenPattern = /^[A-Za-z0-9_-]+\.[a-f0-9]{64}$/;
+        // Token must have non-empty base64 payload and 64-character hex signature
+        const tokenPattern = /^[A-Za-z0-9_-]{10,}\.[a-f0-9]{64}$/;
         if (tokenPattern.test(sessionToken)) {
           debug.log('Session token format is valid, storing in sessionStorage');
           sessionStorage.setItem('rm_session', sessionToken);
