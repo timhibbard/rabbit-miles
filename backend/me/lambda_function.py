@@ -147,10 +147,26 @@ def handler(event, context):
         headers = event.get("headers") or {}
         cookies_array = event.get("cookies") or []
         cookie_header = headers.get("cookie") or headers.get("Cookie")
+        origin_header = headers.get("origin") or headers.get("Origin") or ""
+        referer_header = headers.get("referer") or headers.get("Referer") or ""
+        host_header = headers.get("host") or headers.get("Host") or ""
+        sec_fetch_site = headers.get("sec-fetch-site") or headers.get("Sec-Fetch-Site") or ""
+        sec_fetch_mode = headers.get("sec-fetch-mode") or headers.get("Sec-Fetch-Mode") or ""
+        sec_fetch_dest = headers.get("sec-fetch-dest") or headers.get("Sec-Fetch-Dest") or ""
+        sec_fetch_storage = headers.get("sec-fetch-storage-access") or headers.get("Sec-Fetch-Storage-Access") or ""
         
         # Log presence of cookies without exposing values
         print(f"Debug - cookies array present: {len(cookies_array) > 0}, count: {len(cookies_array)}")
         print(f"Debug - cookie header present: {cookie_header is not None}")
+        if cookie_header:
+            print(f"Debug - cookie header length: {len(cookie_header)}")
+        print(f"Debug - Origin: {origin_header}")
+        print(f"Debug - Referer: {referer_header}")
+        print(f"Debug - Host: {host_header}")
+        print(f"Debug - Sec-Fetch-Site: {sec_fetch_site}")
+        print(f"Debug - Sec-Fetch-Mode: {sec_fetch_mode}")
+        print(f"Debug - Sec-Fetch-Dest: {sec_fetch_dest}")
+        print(f"Debug - Sec-Fetch-Storage-Access: {sec_fetch_storage}")
         if cookies_array:
             # Log cookie names only, not values
             all_cookie_names = []
