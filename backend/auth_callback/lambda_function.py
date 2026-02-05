@@ -473,12 +473,13 @@ def handler(event, context):
     print(f"LOG - Response object created:")
     print(f"LOG -   Response keys: {list(response.keys())}")
     print(f"LOG -   Headers: {response['headers']}")
-    print(f"LOG -   Cookies array length: {len(response['cookies'])}")
-    # Safe array access with bounds checking
-    if len(response['cookies']) > 0:
-        print(f"LOG -   Cookie[0] length: {len(response['cookies'][0])} chars")
-    if len(response['cookies']) > 1:
-        print(f"LOG -   Cookie[1] length: {len(response['cookies'][1])} chars")
+    # Safe array access with bounds checking (ensure cookies is a list)
+    cookies = response.get('cookies') or []
+    print(f"LOG -   Cookies array length: {len(cookies)}")
+    if len(cookies) > 0:
+        print(f"LOG -   Cookie[0] length: {len(cookies[0])} chars")
+    if len(cookies) > 1:
+        print(f"LOG -   Cookie[1] length: {len(cookies[1])} chars")
     print(f"LOG -   Body length: {len(response['body'])} chars")
     print(f"LOG - Response method: 200 OK with HTML meta refresh (not 302 redirect)")
     print(f"LOG - Redirect delay: 1 second (allows cookies to be set)")
@@ -487,8 +488,8 @@ def handler(event, context):
     print(f"LOG -   2. HTML page ensures cookies are processed before redirect")
     print(f"LOG -   3. Meta refresh + JavaScript provide dual redirect mechanism")
     
-    if browser_type == "Chrome" and sec_fetch_storage == "none":
-        print(f"CRITICAL WARNING - Chrome with blocked third-party cookies detected!")
+    if browser_type in ["Chrome", "Edge"] and sec_fetch_storage == "none":
+        print(f"CRITICAL WARNING - {browser_type} with blocked third-party cookies detected!")
         print(f"CRITICAL WARNING - Cookie will be set but may not be sent on subsequent requests")
         print(f"CRITICAL WARNING - This is the most likely cause of authentication failures")
     

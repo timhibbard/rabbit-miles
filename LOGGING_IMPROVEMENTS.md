@@ -51,8 +51,8 @@ Enhanced logging to capture:
      - `active`: Storage Access API is active (cookies allowed)
 
 3. **Cookie Setting Details**
-   - Full cookie string preview (first 100 chars)
-   - Cookie value preview (first 20 and last 10 chars)
+   - Cookie string structure (sanitized to protect token value)
+   - Cookie value length
    - All cookie attributes (HttpOnly, Secure, SameSite, Path, Max-Age)
 
 4. **Cross-Site Analysis**
@@ -83,7 +83,7 @@ When the new user tries to connect again, check the **auth_callback** logs for:
 ### Expected Findings:
 
 ```
-LOG - Browser type detected: Chrome
+LOG - Browser type detected: Chrome (or Edge)
 LOG - Sec-Fetch-Storage-Access: none
 WARNING - Sec-Fetch-Storage-Access: none - Browser may be blocking third-party cookies
 ...
@@ -95,18 +95,19 @@ CRITICAL WARNING - This is the most likely cause of authentication failures
 ### Key Questions to Answer:
 
 1. **Is the cookie being set correctly?**
-   - Check `LOG - Full Set-Cookie string:` output
+   - Check `LOG - Set-Cookie string (sanitized):` output
    - Should include: `HttpOnly; Secure; SameSite=None; Path=/; Max-Age=2592000`
 
 2. **What is the Sec-Fetch-Storage-Access value?**
    - `none` = cookies blocked (expected for new user)
    - Empty or not present = cookies may work (like Tim's Safari)
 
-3. **Is the browser Chrome?**
-   - Chrome has stricter third-party cookie policies than Safari
+3. **Is the browser Chrome or Edge?**
+   - Both Chrome and Edge (Chromium-based) have strict third-party cookie policies
 
-4. **Is the cookie value correct?**
-   - Check first 20 and last 10 chars match what's logged in auth_callback
+4. **What is the cookie value length?**
+   - Should be around 108 characters
+   - Check for consistency between auth_callback and /me requests
 
 ## Solution Options
 
