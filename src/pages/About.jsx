@@ -55,7 +55,7 @@ function About() {
                   >
                     {originStory.challenge} of {originStory.year}
                   </a>
-                  , a group of 5-6 runners were shepherding{' '}
+                  , a group of 5-6 runners were acting as sherpa for{' '}
                   <a 
                     href={originStory.sherpaTarget.stravaUrl}
                     target="_blank" 
