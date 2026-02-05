@@ -108,6 +108,7 @@ src/
 ├── pages/          # Page components
 │   ├── Dashboard.jsx
 │   ├── ConnectStrava.jsx
+│   ├── OAuthCallback.jsx  # OAuth callback handler
 │   └── Settings.jsx
 ├── utils/          # Utility functions
 │   ├── api.js      # Axios configuration
@@ -154,11 +155,19 @@ When debug mode is enabled:
 
 ## OAuth Flow
 
+The app uses cookie-based authentication with Strava OAuth:
+
 1. User clicks "Connect with Strava" button
-2. User is redirected to backend OAuth endpoint: `{API_BASE_URL}/auth/start`
-3. Backend handles OAuth with Strava and sets httpOnly cookies
-4. App calls `/me` endpoint to check authentication status
-5. Dashboard displays user information from `/me` response
+2. Frontend redirects to backend OAuth endpoint: `{API_BASE_URL}/auth/start`
+3. Backend redirects to Strava OAuth authorization page
+4. After authorization, Strava redirects to: `{FRONTEND_URL}/callback` (GitHub Pages)
+5. Frontend `/callback` page forwards OAuth params to: `{API_BASE_URL}/auth/callback`
+6. Backend validates state, exchanges code for tokens, and sets httpOnly session cookie
+7. Backend redirects to `/connect?connected=1`
+8. App calls `/me` endpoint to verify authentication and get user info
+9. Dashboard displays user information
+
+**Note:** The callback now uses the GitHub Pages domain (`timhibbard.github.io`) in the Strava application settings, providing a better user experience with a consistent branded domain throughout the OAuth flow.
 
 ## Webhook Flow
 

@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/Layout';
 import Dashboard from './pages/Dashboard';
 import ConnectStrava from './pages/ConnectStrava';
+import OAuthCallback from './pages/OAuthCallback';
 import Settings from './pages/Settings';
 import Privacy from './pages/Privacy';
 import Terms from './pages/Terms';
@@ -14,6 +15,7 @@ function App() {
         <Route path="/" element={<Layout />}>
           <Route index element={<Dashboard />} />
           <Route path="connect" element={<ConnectStrava />} />
+          <Route path="callback" element={<OAuthCallback />} />
           <Route path="activity/:id" element={<ActivityDetail />} />
           <Route path="settings" element={<Settings />} />
           <Route path="privacy" element={<Privacy />} />
