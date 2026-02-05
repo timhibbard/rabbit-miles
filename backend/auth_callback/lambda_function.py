@@ -388,8 +388,7 @@ def handler(event, context):
     print(f"LOG - Cookie configuration:")
     print(f"LOG -   Name: rm_session")
     print(f"LOG -   Value length: {len(session_token)} chars")
-    print(f"LOG -   Value (first 20 chars): {session_token[:20]}...")
-    print(f"LOG -   Value (last 10 chars): ...{session_token[-10:]}")
+    # Don't log actual token value for security - only log length
     print(f"LOG -   HttpOnly: Yes (JavaScript cannot access)")
     print(f"LOG -   Secure: Yes (HTTPS only)")
     print(f"LOG -   SameSite: None (cross-site allowed)")
@@ -398,9 +397,10 @@ def handler(event, context):
     print(f"LOG -   Max-Age: {max_age} seconds ({max_age // 86400} days)")
     print(f"LOG - Set-Cookie header length: {len(set_cookie)} chars")
     if len(set_cookie) > 100:
-        print(f"LOG - Full Set-Cookie string: {set_cookie[:100]}...")
+        # Log cookie structure without exposing token value
+        print(f"LOG - Set-Cookie string (sanitized): rm_session=[TOKEN]; HttpOnly; Secure; SameSite=None; Path=/; Max-Age={max_age}")
     else:
-        print(f"LOG - Full Set-Cookie string: {set_cookie}")
+        print(f"LOG - Set-Cookie string: {set_cookie}")
     
     # Log cookie domain analysis
     if origin:
@@ -474,8 +474,11 @@ def handler(event, context):
     print(f"LOG -   Response keys: {list(response.keys())}")
     print(f"LOG -   Headers: {response['headers']}")
     print(f"LOG -   Cookies array length: {len(response['cookies'])}")
-    print(f"LOG -   Cookie[0] length: {len(response['cookies'][0])} chars")
-    print(f"LOG -   Cookie[1] length: {len(response['cookies'][1])} chars")
+    # Safe array access with bounds checking
+    if len(response['cookies']) > 0:
+        print(f"LOG -   Cookie[0] length: {len(response['cookies'][0])} chars")
+    if len(response['cookies']) > 1:
+        print(f"LOG -   Cookie[1] length: {len(response['cookies'][1])} chars")
     print(f"LOG -   Body length: {len(response['body'])} chars")
     print(f"LOG - Response method: 200 OK with HTML meta refresh (not 302 redirect)")
     print(f"LOG - Redirect delay: 1 second (allows cookies to be set)")
