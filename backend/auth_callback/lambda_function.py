@@ -238,11 +238,8 @@ def handler(event, context):
     set_cookie = f"rm_session={session_token}; HttpOnly; Secure; SameSite=None; Path={COOKIE_PATH}; Max-Age={max_age}"
     clear_state = f"rm_state=; HttpOnly; Secure; SameSite=None; Path={COOKIE_PATH}; Max-Age=0"
 
-    # Redirect back to SPA
-    # Include session token in URL fragment as fallback for browsers that block third-party cookies
-    # URL fragments are not sent to the server, so they're safe for including tokens
-    # The frontend will check for this token and store it in sessionStorage if cookies don't work
-    redirect_to = f"{FRONTEND}/connect?connected=1#session={session_token}"
+    # Redirect back to SPA with connected=1 query parameter
+    redirect_to = f"{FRONTEND}/connect?connected=1"
 
     return {
         "statusCode": 302,

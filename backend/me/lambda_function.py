@@ -47,19 +47,15 @@ def verify_session_token(tok):
     except Exception:
         return None
 
-def parse_authorization_header(headers):
+def check_authorization_header(headers):
+    """Check if Authorization header is present and log warning (cookie-based auth only)"""
     auth_header = headers.get("authorization") or headers.get("Authorization")
-    if not auth_header:
-        return None
-    if auth_header.lower().startswith("bearer "):
-        return auth_header.split(" ", 1)[1].strip()
-    return None
+    if auth_header:
+        # Log that an Authorization header was received but will be ignored
+        print("Warning: Authorization header detected but ignored (cookie-based auth only)")
 
 def parse_session_token(event):
-    headers = event.get("headers") or {}
-    bearer_token = parse_authorization_header(headers)
-    if bearer_token:
-        return bearer_token
+    """Parse session token from cookies only (cookie-based authentication)"""
     return parse_session_cookie(event)
 
 def parse_session_cookie(event):
@@ -95,6 +91,17 @@ def exec_sql(sql, parameters=None):
         kwargs["parameters"] = parameters
     return rds.execute_statement(**kwargs)
 
+def extract_cookie_names(cookie_string):
+    """Extract cookie names from a cookie string"""
+    cookie_names = []
+    if not cookie_string:
+        return cookie_names
+    for part in cookie_string.split(";"):
+        if "=" in part:
+            cookie_name = part.split("=")[0].strip()
+            cookie_names.append(cookie_name)
+    return cookie_names
+
 def handler(event, context):
     cors_headers = get_cors_headers()
     
@@ -129,6 +136,13 @@ def handler(event, context):
                 "body": json.dumps({"error": "server configuration error"})
             }
         
+        # Debug: Log request context for better diagnostics
+        request_context = event.get("requestContext", {})
+        http_context = request_context.get("http", {})
+        print(f"Debug - Request method: {http_context.get('method', 'UNKNOWN')}")
+        print(f"Debug - Request path: {http_context.get('path', 'UNKNOWN')}")
+        print(f"Debug - Source IP: {http_context.get('sourceIp', 'UNKNOWN')}")
+        
         # Debug: Log cookie information (sanitized for security)
         headers = event.get("headers") or {}
         cookies_array = event.get("cookies") or []
@@ -139,12 +153,19 @@ def handler(event, context):
         print(f"Debug - cookie header present: {cookie_header is not None}")
         if cookies_array:
             # Log cookie names only, not values
+            all_cookie_names = []
             for cookie_str in cookies_array:
-                if cookie_str and "=" in cookie_str:
-                    cookie_name = cookie_str.split("=")[0].strip()
-                    print(f"Debug - found cookie: {cookie_name}")
+                if cookie_str:
+                    all_cookie_names.extend(extract_cookie_names(cookie_str))
+            print(f"Debug - cookie names in array: {', '.join(all_cookie_names) if all_cookie_names else 'none'}")
+        if cookie_header:
+            cookie_names = extract_cookie_names(cookie_header)
+            print(f"Debug - cookie names in header: {', '.join(cookie_names) if cookie_names else 'none'}")
         
-        tok = parse_session_cookie(event)
+        # Check for Authorization header (should not be present)
+        check_authorization_header(headers)
+        
+        tok = parse_session_token(event)
         if tok:
             print("Found session token")
         
