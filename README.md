@@ -185,14 +185,13 @@ The app uses cookie-based authentication with Strava OAuth:
 1. User clicks "Connect with Strava" button
 2. Frontend redirects to backend OAuth endpoint: `{API_BASE_URL}/auth/start`
 3. Backend redirects to Strava OAuth authorization page
-4. After authorization, Strava redirects to: `{FRONTEND_URL}/callback` (GitHub Pages)
-5. Frontend `/callback` page forwards OAuth params to: `{API_BASE_URL}/auth/callback`
-6. Backend validates state, exchanges code for tokens, and sets httpOnly session cookie
-7. Backend redirects to `/connect?connected=1`
-8. App calls `/me` endpoint to verify authentication and get user info
-9. Dashboard displays user information
+4. After authorization, Strava redirects to: `{API_BASE_URL}/auth/callback` (API Gateway)
+5. Backend validates state, exchanges code for tokens, and sets httpOnly session cookie
+6. Backend redirects to `/connect?connected=1`
+7. App calls `/me` endpoint to verify authentication and get user info
+8. Dashboard displays user information
 
-**Note:** The callback now uses the GitHub Pages domain (`timhibbard.github.io`) in the Strava application settings, providing a better user experience with a consistent branded domain throughout the OAuth flow.
+**Important:** The Strava application's "Authorization Callback Domain" must be set to `9zke9jame0.execute-api.us-east-1.amazonaws.com` (the API Gateway domain).
 
 ## Webhook Flow
 

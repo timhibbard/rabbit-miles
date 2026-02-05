@@ -57,6 +57,14 @@ def handler(event, context):
             "body": '{"error": "Server configuration error. Please contact support at tim@rabbitmiles.com."}'
         }
     
+    if not API_BASE:
+        print("ERROR - API_BASE_URL environment variable not set")
+        return {
+            "statusCode": 500,
+            "headers": {"Content-Type": "application/json"},
+            "body": '{"error": "Server configuration error. Please contact support at tim@rabbitmiles.com."}'
+        }
+    
     if not os.environ.get("STRAVA_CLIENT_ID"):
         print("ERROR - STRAVA_CLIENT_ID environment variable not set")
         return {
@@ -110,7 +118,7 @@ def handler(event, context):
             "body": '{"error": "Database configuration error. Please contact support at tim@rabbitmiles.com."}'
         }
     
-    redirect_uri = f"{FRONTEND}/callback"
+    redirect_uri = f"{API_BASE}/auth/callback"
     print(f"LOG - OAuth redirect_uri: {redirect_uri}")
     
     params = {
