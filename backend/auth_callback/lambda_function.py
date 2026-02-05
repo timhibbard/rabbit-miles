@@ -168,9 +168,20 @@ def handler(event, context):
     print(f"LOG - Number of headers: {len(headers)}")
     print(f"LOG - Header keys: {list(headers.keys())}")
     
+    browser_type = "unknown"
     user_agent = headers.get("user-agent") or headers.get("User-Agent") or ""
     if user_agent:
         print(f"LOG - User-Agent: {user_agent}")
+        # Detect browser type for cookie compatibility debugging
+        if "Edg" in user_agent:
+            browser_type = "Edge"
+        elif "Chrome" in user_agent:
+            browser_type = "Chrome"
+        elif "Safari" in user_agent:
+            browser_type = "Safari"
+        elif "Firefox" in user_agent:
+            browser_type = "Firefox"
+        print(f"LOG - Browser type detected: {browser_type}")
     
     referer = headers.get("referer") or headers.get("Referer") or ""
     if referer:
@@ -179,6 +190,26 @@ def handler(event, context):
     origin = headers.get("origin") or headers.get("Origin") or ""
     if origin:
         print(f"LOG - Origin: {origin}")
+    
+    # Log additional security headers that affect cookie behavior
+    sec_fetch_site = headers.get("sec-fetch-site") or headers.get("Sec-Fetch-Site") or ""
+    sec_fetch_mode = headers.get("sec-fetch-mode") or headers.get("Sec-Fetch-Mode") or ""
+    sec_fetch_dest = headers.get("sec-fetch-dest") or headers.get("Sec-Fetch-Dest") or ""
+    sec_fetch_storage = headers.get("sec-fetch-storage-access") or headers.get("Sec-Fetch-Storage-Access") or ""
+    
+    print(f"LOG - Security context headers:")
+    print(f"LOG -   Sec-Fetch-Site: {sec_fetch_site}")
+    print(f"LOG -   Sec-Fetch-Mode: {sec_fetch_mode}")
+    print(f"LOG -   Sec-Fetch-Dest: {sec_fetch_dest}")
+    print(f"LOG -   Sec-Fetch-Storage-Access: {sec_fetch_storage}")
+    
+    # Analyze cookie blocking indicators
+    if sec_fetch_storage == "none":
+        print(f"WARNING - Sec-Fetch-Storage-Access: none - Browser may be blocking third-party cookies")
+    elif sec_fetch_storage == "inactive":
+        print(f"WARNING - Sec-Fetch-Storage-Access: inactive - Storage Access API available but not active")
+    elif sec_fetch_storage == "active":
+        print(f"LOG - Sec-Fetch-Storage-Access: active - Storage Access API is active")
     
     # Log cookies in request (if any)
     cookies_array = event.get("cookies") or []
@@ -356,6 +387,8 @@ def handler(event, context):
     print(f"LOG - Cookie configuration:")
     print(f"LOG -   Name: rm_session")
     print(f"LOG -   Value length: {len(session_token)} chars")
+    print(f"LOG -   Value (first 20 chars): {session_token[:20]}...")
+    print(f"LOG -   Value (last 10 chars): ...{session_token[-10:]}")
     print(f"LOG -   HttpOnly: Yes (JavaScript cannot access)")
     print(f"LOG -   Secure: Yes (HTTPS only)")
     print(f"LOG -   SameSite: None (cross-site allowed)")
@@ -363,6 +396,21 @@ def handler(event, context):
     print(f"LOG -   Path: {COOKIE_PATH}")
     print(f"LOG -   Max-Age: {max_age} seconds ({max_age // 86400} days)")
     print(f"LOG - Set-Cookie header length: {len(set_cookie)} chars")
+    print(f"LOG - Full Set-Cookie string: {set_cookie[:100]}...")
+    
+    # Log cookie domain analysis
+    if origin:
+        print(f"LOG - Cross-site cookie analysis:")
+        print(f"LOG -   Request origin: {origin}")
+        print(f"LOG -   API domain: {urlparse(API_BASE).netloc if API_BASE else 'unknown'}")
+        print(f"LOG -   Cross-site: Yes (GitHub Pages -> API Gateway)")
+        print(f"LOG -   SameSite=None required: Yes")
+        if sec_fetch_storage == "none":
+            print(f"WARNING - Browser indicates third-party cookies may be blocked!")
+            print(f"WARNING - User may need to:")
+            print(f"WARNING -   1. Enable third-party cookies in browser settings")
+            print(f"WARNING -   2. Allow cookies for this site specifically")
+            print(f"WARNING -   3. Use a different browser (Safari, Firefox)")
 
     # Redirect back to SPA with connected=1 query parameter
     redirect_to = f"{FRONTEND}/connect?connected=1"
@@ -422,7 +470,21 @@ def handler(event, context):
     print(f"LOG -   Response keys: {list(response.keys())}")
     print(f"LOG -   Headers: {response['headers']}")
     print(f"LOG -   Cookies array length: {len(response['cookies'])}")
+    print(f"LOG -   Cookie[0] length: {len(response['cookies'][0])} chars")
+    print(f"LOG -   Cookie[1] length: {len(response['cookies'][1])} chars")
     print(f"LOG -   Body length: {len(response['body'])} chars")
+    print(f"LOG - Response method: 200 OK with HTML meta refresh (not 302 redirect)")
+    print(f"LOG - Redirect delay: 1 second (allows cookies to be set)")
+    print(f"LOG - Why HTML instead of 302:")
+    print(f"LOG -   1. Some browsers block cookies on 302 redirects for cross-site requests")
+    print(f"LOG -   2. HTML page ensures cookies are processed before redirect")
+    print(f"LOG -   3. Meta refresh + JavaScript provide dual redirect mechanism")
+    
+    if browser_type == "Chrome" and sec_fetch_storage == "none":
+        print(f"CRITICAL WARNING - Chrome with blocked third-party cookies detected!")
+        print(f"CRITICAL WARNING - Cookie will be set but may not be sent on subsequent requests")
+        print(f"CRITICAL WARNING - This is the most likely cause of authentication failures")
+    
     print("=" * 80)
     print("AUTH CALLBACK LAMBDA - SUCCESS")
     print("=" * 80)

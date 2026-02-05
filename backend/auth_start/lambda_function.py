@@ -86,8 +86,26 @@ def handler(event, context):
     
     headers = event.get("headers") or {}
     user_agent = headers.get("user-agent") or headers.get("User-Agent") or ""
+    browser_type = "unknown"
     if user_agent:
         print(f"LOG - User-Agent: {user_agent}")
+        # Detect browser type for cookie compatibility debugging
+        if "Edg" in user_agent:
+            browser_type = "Edge"
+        elif "Chrome" in user_agent:
+            browser_type = "Chrome"
+        elif "Safari" in user_agent:
+            browser_type = "Safari"
+        elif "Firefox" in user_agent:
+            browser_type = "Firefox"
+        print(f"LOG - Browser type detected: {browser_type}")
+    
+    # Log security headers that affect cookie behavior
+    sec_fetch_storage = headers.get("sec-fetch-storage-access") or headers.get("Sec-Fetch-Storage-Access") or ""
+    if sec_fetch_storage:
+        print(f"LOG - Sec-Fetch-Storage-Access: {sec_fetch_storage}")
+        if sec_fetch_storage == "none":
+            print(f"WARNING - Third-party cookies may be blocked by browser")
     
     print(f"LOG - Generating OAuth state token")
     state = secrets.token_urlsafe(24)
