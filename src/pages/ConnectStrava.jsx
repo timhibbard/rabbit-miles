@@ -32,10 +32,31 @@ function ConnectStrava() {
     debug.log('ConnectStrava mounted');
     debug.log('URL:', window.location.href);
     debug.log('Search params:', window.location.search);
+    debug.log('Hash:', window.location.hash);
     debug.log('justConnected:', justConnected);
 
-    // Clean up URL if needed (remove query params)
-    if (justConnected) {
+    // Check for session token in URL fragment (fallback for browsers that block cookies)
+    // URL fragments are not sent to the server, so they're safe for including tokens
+    if (window.location.hash) {
+      const hashParams = new URLSearchParams(window.location.hash.substring(1));
+      const sessionToken = hashParams.get('session');
+      
+      if (sessionToken) {
+        debug.log('Found session token in URL fragment');
+        // Validate token format (base64.signature pattern)
+        // Token must have non-empty base64 payload and 64-character hex signature
+        const tokenPattern = /^[A-Za-z0-9_-]{10,}\.[a-f0-9]{64}$/;
+        if (tokenPattern.test(sessionToken)) {
+          debug.log('Session token format is valid, storing in sessionStorage');
+          sessionStorage.setItem('rm_session', sessionToken);
+        } else {
+          console.warn('Session token format is invalid, ignoring');
+        }
+      }
+    }
+
+    // Clean up URL if needed (remove query params and hash)
+    if (justConnected || window.location.hash) {
       debug.log('Cleaning up URL');
       window.history.replaceState({}, '', window.location.pathname);
     }
@@ -79,6 +100,9 @@ function ConnectStrava() {
   };
 
   const handleDisconnect = () => {
+    // Clear session token from sessionStorage if present
+    sessionStorage.removeItem('rm_session');
+    
     // Redirect to backend disconnect endpoint
     // The backend will clear the session cookie
     const disconnectUrl = `${API_BASE_URL}/auth/disconnect`;
