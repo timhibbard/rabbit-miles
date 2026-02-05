@@ -173,9 +173,10 @@ def handler(event, context):
     if user_agent:
         print(f"LOG - User-Agent: {user_agent}")
         # Detect browser type for cookie compatibility debugging
+        # Note: Check in specific order as Chrome includes "Safari", Edge includes "Chrome"
         if "Edg" in user_agent:
             browser_type = "Edge"
-        elif "Chrome" in user_agent:
+        elif "Chrome" in user_agent and "Safari" in user_agent:
             browser_type = "Chrome"
         elif "Safari" in user_agent:
             browser_type = "Safari"
@@ -396,7 +397,10 @@ def handler(event, context):
     print(f"LOG -   Path: {COOKIE_PATH}")
     print(f"LOG -   Max-Age: {max_age} seconds ({max_age // 86400} days)")
     print(f"LOG - Set-Cookie header length: {len(set_cookie)} chars")
-    print(f"LOG - Full Set-Cookie string: {set_cookie[:100]}...")
+    if len(set_cookie) > 100:
+        print(f"LOG - Full Set-Cookie string: {set_cookie[:100]}...")
+    else:
+        print(f"LOG - Full Set-Cookie string: {set_cookie}")
     
     # Log cookie domain analysis
     if origin:

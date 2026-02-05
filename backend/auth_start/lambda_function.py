@@ -90,9 +90,10 @@ def handler(event, context):
     if user_agent:
         print(f"LOG - User-Agent: {user_agent}")
         # Detect browser type for cookie compatibility debugging
+        # Note: Check in specific order as Chrome includes "Safari", Edge includes "Chrome"
         if "Edg" in user_agent:
             browser_type = "Edge"
-        elif "Chrome" in user_agent:
+        elif "Chrome" in user_agent and "Safari" in user_agent:
             browser_type = "Chrome"
         elif "Safari" in user_agent:
             browser_type = "Safari"
