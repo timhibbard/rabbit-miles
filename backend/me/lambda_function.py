@@ -205,12 +205,12 @@ def handler(event, context):
         if cookie_header:
             cookie_names = extract_cookie_names(cookie_header)
             print(f"LOG - Cookie names from header: {cookie_names}")
-            # Parse and log each cookie
+            # Parse and log each cookie (name and length only for security)
             for part in cookie_header.split(";"):
                 part = part.strip()
                 if "=" in part:
                     name, value = part.split("=", 1)
-                    print(f"LOG -   Cookie '{name}': length={len(value)} chars, preview={value[:10]}...")
+                    print(f"LOG -   Cookie '{name}': length={len(value)} chars")
         
         # Log additional browser context that may affect cookies
         user_agent = headers.get("user-agent") or headers.get("User-Agent") or ""
@@ -237,7 +237,6 @@ def handler(event, context):
         if tok:
             print(f"LOG - Session token found!")
             print(f"LOG -   Token length: {len(tok)} chars")
-            print(f"LOG -   Token preview: {tok[:20]}...{tok[-20:]}")
         else:
             print(f"LOG - No session token found in request")
         

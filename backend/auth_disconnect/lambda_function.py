@@ -109,16 +109,19 @@ def handler(event, context):
         print("No session cookie found, clearing and redirecting")
         
         redirect_to = f"{FRONTEND}/?connected=0"
+        import html
+        import json
+        redirect_to_escaped = html.escape(redirect_to, quote=True)
         html_body = f"""<!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
     <title>Disconnecting from Strava...</title>
-    <meta http-equiv="refresh" content="1;url={redirect_to}">
+    <meta http-equiv="refresh" content="1;url={redirect_to_escaped}">
 </head>
 <body>
     <p>Redirecting...</p>
-    <script>setTimeout(function() {{ window.location.href = "{redirect_to}"; }}, 1000);</script>
+    <script>setTimeout(function() {{ window.location.href = {json.dumps(redirect_to)}; }}, 1000);</script>
 </body>
 </html>"""
         
@@ -140,16 +143,19 @@ def handler(event, context):
         print("Invalid session token, clearing and redirecting")
         
         redirect_to = f"{FRONTEND}/?connected=0"
+        import html
+        import json
+        redirect_to_escaped = html.escape(redirect_to, quote=True)
         html_body = f"""<!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
     <title>Disconnecting from Strava...</title>
-    <meta http-equiv="refresh" content="1;url={redirect_to}">
+    <meta http-equiv="refresh" content="1;url={redirect_to_escaped}">
 </head>
 <body>
     <p>Redirecting...</p>
-    <script>setTimeout(function() {{ window.location.href = "{redirect_to}"; }}, 1000);</script>
+    <script>setTimeout(function() {{ window.location.href = {json.dumps(redirect_to)}; }}, 1000);</script>
 </body>
 </html>"""
         
@@ -184,16 +190,18 @@ def handler(event, context):
         clear = f"rm_session=; HttpOnly; Secure; SameSite=None; Partitioned; Path={COOKIE_PATH}; Max-Age=0"
         
         redirect_to = f"{FRONTEND}/?connected=0&error=disconnect_failed"
+        import html
+        redirect_to_escaped = html.escape(redirect_to, quote=True)
         html_body = f"""<!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
     <title>Disconnecting from Strava...</title>
-    <meta http-equiv="refresh" content="1;url={redirect_to}">
+    <meta http-equiv="refresh" content="1;url={redirect_to_escaped}">
 </head>
 <body>
     <p>Redirecting...</p>
-    <script>setTimeout(function() {{ window.location.href = "{redirect_to}"; }}, 1000);</script>
+    <script>setTimeout(function() {{ window.location.href = {json.dumps(redirect_to)}; }}, 1000);</script>
 </body>
 </html>"""
         
@@ -218,12 +226,14 @@ def handler(event, context):
     
     # Return HTML page instead of 302 redirect to ensure cookies are cleared before redirect
     # This works around browser issues with cookies in cross-site 302 redirects
+    import html
+    redirect_to_escaped = html.escape(redirect_to, quote=True)
     html_body = f"""<!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
     <title>Disconnecting from Strava...</title>
-    <meta http-equiv="refresh" content="1;url={redirect_to}">
+    <meta http-equiv="refresh" content="1;url={redirect_to_escaped}">
     <style>
         body {{ font-family: system-ui, sans-serif; text-align: center; padding-top: 100px; }}
         .spinner {{ border: 4px solid #f3f3f3; border-top: 4px solid #ea580c; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto 20px; }}
@@ -234,11 +244,11 @@ def handler(event, context):
     <div class="spinner"></div>
     <h2>Successfully disconnected from Strava</h2>
     <p>Redirecting you back to RabbitMiles...</p>
-    <p><small>If you are not redirected, <a href="{redirect_to}">click here</a>.</small></p>
+    <p><small>If you are not redirected, <a href="{redirect_to_escaped}">click here</a>.</small></p>
     <script>
         // Fallback redirect via JavaScript after 1 second
         setTimeout(function() {{
-            window.location.href = "{redirect_to}";
+            window.location.href = {json.dumps(redirect_to)};
         }}, 1000);
     </script>
 </body>

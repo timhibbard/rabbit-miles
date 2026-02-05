@@ -161,12 +161,6 @@ def handler(event, context):
     print(f"LOG - Request has cookies array: {len(cookies_array) > 0} (count: {len(cookies_array)})")
     print(f"LOG - Request has cookie header: {bool(cookie_header)}")
 
-    if err:
-        # Strava can return access_denied if user cancels
-        print(f"ERROR - Strava OAuth error: {err}")
-        print(f"LOG - Redirecting to frontend with error")
-        return {"statusCode": 302, "headers": {"Location": f"{FRONTEND}/?connected=0&error={err}"}, "body": ""}
-
     if not code or not state:
         print(f"ERROR - Missing required parameters: code={bool(code)}, state={bool(state)}")
         return {"statusCode": 400, "body": "missing code/state"}
@@ -224,8 +218,8 @@ def handler(event, context):
     # Exchange code for tokens
     print(f"LOG - Getting Strava credentials")
     client_id, client_secret = _get_strava_creds()
-    print(f"LOG - Strava client_id: {client_id[:10]}... (length: {len(client_id)})")
-    print(f"LOG - Strava client_secret: ****** (length: {len(client_secret)})")
+    print(f"LOG - Strava client_id length: {len(client_id)} chars")
+    print(f"LOG - Strava client_secret length: {len(client_secret)} chars")
     
     # CRITICAL: redirect_uri must EXACTLY match the one used in auth_start
     # auth_start uses {FRONTEND_URL}/callback, so we must use the same here
@@ -328,8 +322,6 @@ def handler(event, context):
     max_age = 30 * 24 * 3600
     print(f"LOG - Session token created successfully")
     print(f"LOG -   Token length: {len(session_token)} characters")
-    print(f"LOG -   Token format: base64payload.hmacSignature")
-    print(f"LOG -   Token preview: {session_token[:20]}...{session_token[-20:]}")
 
     # Partitioned attribute is required for cross-site cookies in Chrome and modern browsers
     set_cookie = f"rm_session={session_token}; HttpOnly; Secure; SameSite=None; Partitioned; Path={COOKIE_PATH}; Max-Age={max_age}"
@@ -345,7 +337,6 @@ def handler(event, context):
     print(f"LOG -   Path: {COOKIE_PATH}")
     print(f"LOG -   Max-Age: {max_age} seconds ({max_age // 86400} days)")
     print(f"LOG - Set-Cookie header length: {len(set_cookie)} chars")
-    print(f"LOG - Set-Cookie preview: {set_cookie[:80]}...")
 
     # Redirect back to SPA with connected=1 query parameter
     redirect_to = f"{FRONTEND}/connect?connected=1"
@@ -355,9 +346,11 @@ def handler(event, context):
     print(f"LOG -   Content-Type: text/html; charset=utf-8")
     print(f"LOG -   Redirect destination: {redirect_to}")
     print(f"LOG -   Number of cookies to set: 2 (rm_session, rm_state clear)")
-    print(f"LOG -   Cookie 1 (rm_session): {set_cookie[:80]}...")
-    print(f"LOG -   Cookie 2 (rm_state clear): {clear_state}")
     print(f"LOG - Using HTML page instead of 302 redirect to ensure cookies are stored")
+    
+    # Escape the redirect URL for safe inclusion in HTML/JavaScript
+    import html
+    redirect_to_escaped = html.escape(redirect_to, quote=True)
 
     # Return HTML page instead of 302 redirect to ensure cookies are set before redirect
     # This works around browser issues with cookies in cross-site 302 redirects
@@ -366,7 +359,7 @@ def handler(event, context):
 <head>
     <meta charset="UTF-8">
     <title>Connecting to Strava...</title>
-    <meta http-equiv="refresh" content="1;url={redirect_to}">
+    <meta http-equiv="refresh" content="1;url={redirect_to_escaped}">
     <style>
         body {{ font-family: system-ui, sans-serif; text-align: center; padding-top: 100px; }}
         .spinner {{ border: 4px solid #f3f3f3; border-top: 4px solid #ea580c; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto 20px; }}
@@ -377,11 +370,11 @@ def handler(event, context):
     <div class="spinner"></div>
     <h2>Successfully connected to Strava!</h2>
     <p>Redirecting you back to RabbitMiles...</p>
-    <p><small>If you are not redirected, <a href="{redirect_to}">click here</a>.</small></p>
+    <p><small>If you are not redirected, <a href="{redirect_to_escaped}">click here</a>.</small></p>
     <script>
         // Fallback redirect via JavaScript after 1 second
         setTimeout(function() {{
-            window.location.href = "{redirect_to}";
+            window.location.href = {json.dumps(redirect_to)};
         }}, 1000);
     </script>
 </body>
