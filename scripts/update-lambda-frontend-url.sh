@@ -6,8 +6,12 @@ set -e
 
 NEW_FRONTEND_URL="https://rabbitmiles.com"
 
-# List of Lambda functions that need CORS headers updated
-FUNCTIONS_WITH_CORS=(
+# List of Lambda functions that need FRONTEND_URL updated
+# These handle API requests from the frontend and need correct domain config
+FUNCTIONS_TO_UPDATE=(
+  "rabbitmiles-auth-start"
+  "rabbitmiles-auth-callback"
+  "rabbitmiles-auth-disconnect"
   "rabbitmiles-me"
   "rabbitmiles-get-activities"
   "rabbitmiles-get-activity-detail"
@@ -18,7 +22,7 @@ FUNCTIONS_WITH_CORS=(
 echo "Updating FRONTEND_URL to: $NEW_FRONTEND_URL"
 echo "=========================================="
 
-for FUNC_NAME in "${FUNCTIONS_WITH_CORS[@]}"; do
+for FUNC_NAME in "${FUNCTIONS_TO_UPDATE[@]}"; do
   echo ""
   echo "Processing: $FUNC_NAME"
   

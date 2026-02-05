@@ -1,5 +1,9 @@
 # CORS Error Fix - Domain Migration
 
+## ⚠️ ACTION REQUIRED
+
+This fix requires updating AWS Lambda environment variables. Please run the provided script with AWS credentials configured.
+
 ## Problem
 
 The frontend has migrated to `https://rabbitmiles.com` (custom domain) but the backend Lambda functions still have `FRONTEND_URL` environment variable set to the old GitHub Pages URL (`https://timhibbard.github.io/rabbit-miles`).
@@ -26,12 +30,15 @@ Update the `FRONTEND_URL` environment variable in AWS Lambda from the old domain
 
 ### Affected Lambda Functions
 
-These Lambda functions handle frontend API requests and need CORS headers:
-- `rabbitmiles-me`
-- `rabbitmiles-get-activities`
-- `rabbitmiles-get-activity-detail`
-- `rabbitmiles-fetch-activities`
-- `rabbitmiles-reset-last-matched`
+These Lambda functions use `FRONTEND_URL` for CORS headers or OAuth redirects:
+- `rabbitmiles-auth-start` (OAuth flow)
+- `rabbitmiles-auth-callback` (OAuth flow)
+- `rabbitmiles-auth-disconnect` (OAuth flow)
+- `rabbitmiles-me` (API with CORS)
+- `rabbitmiles-get-activities` (API with CORS)
+- `rabbitmiles-get-activity-detail` (API with CORS)
+- `rabbitmiles-fetch-activities` (API with CORS)
+- `rabbitmiles-reset-last-matched` (API with CORS)
 
 ### Fix Steps
 
