@@ -113,69 +113,124 @@ def _make_session_token(athlete_id: int, days: int = 30) -> str:
 
 
 def handler(event, context):
+    print("=" * 80)
+    print("AUTH CALLBACK LAMBDA - START")
+    print("=" * 80)
+    
+    # Log full event structure (sanitized)
+    print(f"LOG - Event keys: {list(event.keys())}")
+    print(f"LOG - Request context: {event.get('requestContext', {}).get('http', {})}")
+    
     qs = event.get("queryStringParameters") or {}
     code = qs.get("code")
     state = qs.get("state")
     err = qs.get("error")
+    
+    print(f"LOG - Query string parameters: code={bool(code)}, state={bool(state)}, error={err}")
+    if code:
+        print(f"LOG - OAuth code present: {code[:10]}...{code[-10:]} (length: {len(code)})")
+    if state:
+        print(f"LOG - OAuth state present: {state[:10]}...{state[-10:]} (length: {len(state)})")
+    
     if API_BASE_PATH:
-        print(f"Debug - API_BASE_URL path detected: {API_BASE_PATH}")
-    print(f"Debug - Cookie path configured as: {COOKIE_PATH}")
-    print(f"Debug - Received OAuth callback with code={code[:20] if code else None}..., state={state[:20] if state else None}...")
+        print(f"LOG - API_BASE_URL path detected: {API_BASE_PATH}")
+    print(f"LOG - Cookie path configured as: {COOKIE_PATH}")
+    print(f"LOG - FRONTEND URL: {FRONTEND}")
+    print(f"LOG - API_BASE URL: {API_BASE}")
     
     # Log request headers for debugging
     headers = event.get("headers") or {}
+    print(f"LOG - Number of headers: {len(headers)}")
+    print(f"LOG - Header keys: {list(headers.keys())}")
+    
     user_agent = headers.get("user-agent") or headers.get("User-Agent") or ""
     if user_agent:
-        print(f"Debug - User-Agent: {user_agent[:100]}...")
+        print(f"LOG - User-Agent: {user_agent}")
+    
     referer = headers.get("referer") or headers.get("Referer") or ""
     if referer:
-        print(f"Debug - Referer: {referer}")
+        print(f"LOG - Referer: {referer}")
+    
+    origin = headers.get("origin") or headers.get("Origin") or ""
+    if origin:
+        print(f"LOG - Origin: {origin}")
+    
+    # Log cookies in request (if any)
+    cookies_array = event.get("cookies") or []
+    cookie_header = headers.get("cookie") or headers.get("Cookie")
+    print(f"LOG - Request has cookies array: {len(cookies_array) > 0} (count: {len(cookies_array)})")
+    print(f"LOG - Request has cookie header: {bool(cookie_header)}")
 
     if err:
         # Strava can return access_denied if user cancels
+        print(f"ERROR - Strava OAuth error: {err}")
+        print(f"LOG - Redirecting to frontend with error")
         return {"statusCode": 302, "headers": {"Location": f"{FRONTEND}/?connected=0&error={err}"}, "body": ""}
 
     if not code or not state:
+        print(f"ERROR - Missing required parameters: code={bool(code)}, state={bool(state)}")
         return {"statusCode": 400, "body": "missing code/state"}
 
     # Validate state from database (fallback to cookie for backwards compatibility)
     state_valid = False
     
+    print(f"LOG - Starting state validation")
     # First try database validation
     try:
+        print(f"LOG - Attempting database state validation")
         sql = "SELECT expires_at FROM oauth_states WHERE state = :state"
         params = [{"name": "state", "value": {"stringValue": state}}]
         result = _exec_sql(sql, params)
         
+        print(f"LOG - Database query result: {result.get('numberOfRecordsUpdated', 0)} records")
         if result.get("records"):
             expires_at = result["records"][0][0].get("longValue")
             current_time = int(time.time())
+            print(f"LOG - State expires_at: {expires_at}, current_time: {current_time}")
             
             if expires_at and expires_at > current_time:
                 state_valid = True
+                print(f"LOG - State validation SUCCESS via database")
+            else:
+                print(f"LOG - State expired or invalid")
+        else:
+            print(f"LOG - State not found in database")
         
         # Clean up state (used or expired) after validation check
         try:
+            print(f"LOG - Cleaning up OAuth state from database")
             delete_sql = "DELETE FROM oauth_states WHERE state = :state"
             _exec_sql(delete_sql, params)
+            print(f"LOG - OAuth state cleanup successful")
         except Exception as cleanup_error:
             # Log cleanup failure but don't fail the request
-            print(f"Warning: Failed to cleanup OAuth state: {cleanup_error}")
+            print(f"WARNING - Failed to cleanup OAuth state: {cleanup_error}")
     except Exception as e:
         # If database validation fails, fall back to cookie validation
-        print(f"Database state validation failed, falling back to cookie: {e}")
+        print(f"LOG - Database state validation failed: {e}")
+        print(f"LOG - Falling back to cookie validation")
         cookies = _parse_cookies(event)
+        print(f"LOG - Parsed cookies: {list(cookies.keys())}")
         if cookies.get("rm_state") == state:
             state_valid = True
+            print(f"LOG - State validation SUCCESS via cookie")
+        else:
+            print(f"LOG - State validation FAILED - cookie mismatch")
     
     if not state_valid:
+        print(f"ERROR - State validation FAILED - rejecting request")
         return {"statusCode": 400, "body": "invalid state"}
 
     # Exchange code for tokens
+    print(f"LOG - Getting Strava credentials")
     client_id, client_secret = _get_strava_creds()
+    print(f"LOG - Strava client_id: {client_id[:10]}... (length: {len(client_id)})")
+    print(f"LOG - Strava client_secret: ****** (length: {len(client_secret)})")
+    
     # CRITICAL: redirect_uri must EXACTLY match the one used in auth_start
     # auth_start uses {FRONTEND_URL}/callback, so we must use the same here
     redirect_uri = f"{FRONTEND}/callback"
+    print(f"LOG - OAuth redirect_uri: {redirect_uri}")
 
     body = urlencode(
         {
@@ -188,11 +243,16 @@ def handler(event, context):
         }
     ).encode()
 
+    print(f"LOG - Exchanging OAuth code for tokens with Strava")
+    print(f"LOG - Strava token URL: {STRAVA_TOKEN_URL}")
     req = Request(STRAVA_TOKEN_URL, data=body, headers={"Content-Type": "application/x-www-form-urlencoded"})
     try:
         with urlopen(req, timeout=20) as resp:
+            print(f"LOG - Strava response status: {resp.status}")
             token_resp = json.loads(resp.read().decode())
+            print(f"LOG - Strava response keys: {list(token_resp.keys())}")
     except Exception as e:
+        print(f"ERROR - Token exchange failed: {e}")
         return {"statusCode": 500, "body": f"token exchange failed: {e}"}
 
     access_token = token_resp.get("access_token")
@@ -201,7 +261,15 @@ def handler(event, context):
     athlete = token_resp.get("athlete") or {}
     athlete_id = athlete.get("id")
 
+    print(f"LOG - Extracted from Strava response:")
+    print(f"LOG -   access_token: {bool(access_token)} (length: {len(access_token) if access_token else 0})")
+    print(f"LOG -   refresh_token: {bool(refresh_token)} (length: {len(refresh_token) if refresh_token else 0})")
+    print(f"LOG -   expires_at: {expires_at}")
+    print(f"LOG -   athlete_id: {athlete_id}")
+    print(f"LOG -   athlete keys: {list(athlete.keys())}")
+
     if not access_token or not refresh_token or not athlete_id:
+        print(f"ERROR - Missing required fields in token response")
         return {"statusCode": 500, "body": f"unexpected token response: {json.dumps(token_resp)[:500]}"}
 
     athlete_id = int(athlete_id)
@@ -212,8 +280,14 @@ def handler(event, context):
     # Get profile picture URL (Strava provides 'profile' or 'profile_medium')
     # Use None instead of empty string for better database handling
     profile_picture = athlete.get("profile_medium") or athlete.get("profile") or None
+    
+    print(f"LOG - Processed athlete data:")
+    print(f"LOG -   athlete_id: {athlete_id}")
+    print(f"LOG -   display_name: {display_name}")
+    print(f"LOG -   profile_picture: {bool(profile_picture)}")
 
     # Upsert user row (Data API)
+    print(f"LOG - Upserting user to database")
     sql = """
     INSERT INTO users (athlete_id, display_name, profile_picture, access_token, refresh_token, expires_at, updated_at)
     VALUES (:aid, :dname, :pic, :at, :rt, :exp, now())
@@ -233,36 +307,57 @@ def handler(event, context):
     # Only add profile_picture parameter if it's not None
     if profile_picture:
         params.append({"name": "pic", "value": {"stringValue": profile_picture}})
+        print(f"LOG - Including profile picture in database")
     else:
         params.append({"name": "pic", "value": {"isNull": True}})
+        print(f"LOG - Profile picture is NULL")
     
     params.extend([
         {"name": "at", "value": {"stringValue": access_token}},
         {"name": "rt", "value": {"stringValue": refresh_token}},
         {"name": "exp", "value": {"longValue": expires_at}},
     ])
+    
+    print(f"LOG - Executing database upsert for athlete_id: {athlete_id}")
     _exec_sql(sql, params)
-    print(f"Successfully upserted user {athlete_id} ({display_name}) to database")
+    print(f"LOG - Database upsert SUCCESS for user {athlete_id} ({display_name})")
 
     # Create session cookie
+    print(f"LOG - Creating session token for athlete_id: {athlete_id}")
     session_token = _make_session_token(athlete_id)
     max_age = 30 * 24 * 3600
-    print(f"Created session token for athlete_id: {athlete_id}")
+    print(f"LOG - Session token created successfully")
+    print(f"LOG -   Token length: {len(session_token)} characters")
+    print(f"LOG -   Token format: base64payload.hmacSignature")
+    print(f"LOG -   Token preview: {session_token[:20]}...{session_token[-20:]}")
 
     # Partitioned attribute is required for cross-site cookies in Chrome and modern browsers
     set_cookie = f"rm_session={session_token}; HttpOnly; Secure; SameSite=None; Partitioned; Path={COOKIE_PATH}; Max-Age={max_age}"
     clear_state = f"rm_state=; HttpOnly; Secure; SameSite=None; Partitioned; Path={COOKIE_PATH}; Max-Age=0"
-    print(f"Setting rm_session cookie with Partitioned attribute for athlete_id: {athlete_id}")
-    print(f"Debug - Cookie attributes: HttpOnly=Yes, Secure=Yes, SameSite=None, Partitioned=Yes, Path={COOKIE_PATH}, Max-Age={max_age}")
-    print(f"Debug - Session token length: {len(session_token)} characters")
-    print(f"Debug - Redirect URL: {FRONTEND}/connect?connected=1")
+    
+    print(f"LOG - Cookie configuration:")
+    print(f"LOG -   Name: rm_session")
+    print(f"LOG -   Value length: {len(session_token)} chars")
+    print(f"LOG -   HttpOnly: Yes (JavaScript cannot access)")
+    print(f"LOG -   Secure: Yes (HTTPS only)")
+    print(f"LOG -   SameSite: None (cross-site allowed)")
+    print(f"LOG -   Partitioned: Yes (CHIPS enabled)")
+    print(f"LOG -   Path: {COOKIE_PATH}")
+    print(f"LOG -   Max-Age: {max_age} seconds ({max_age // 86400} days)")
+    print(f"LOG - Set-Cookie header length: {len(set_cookie)} chars")
+    print(f"LOG - Set-Cookie preview: {set_cookie[:80]}...")
 
     # Redirect back to SPA with connected=1 query parameter
     redirect_to = f"{FRONTEND}/connect?connected=1"
 
-    print(f"Debug - Response cookies array: {[set_cookie[:50] + '...', clear_state[:50] + '...']}")
-    print(f"Debug - Response status: 200 (HTML with redirect)")
-    print(f"Debug - Response location: {redirect_to}")
+    print(f"LOG - Preparing response:")
+    print(f"LOG -   Status: 200 OK (HTML page with meta refresh)")
+    print(f"LOG -   Content-Type: text/html; charset=utf-8")
+    print(f"LOG -   Redirect destination: {redirect_to}")
+    print(f"LOG -   Number of cookies to set: 2 (rm_session, rm_state clear)")
+    print(f"LOG -   Cookie 1 (rm_session): {set_cookie[:80]}...")
+    print(f"LOG -   Cookie 2 (rm_state clear): {clear_state}")
+    print(f"LOG - Using HTML page instead of 302 redirect to ensure cookies are stored")
 
     # Return HTML page instead of 302 redirect to ensure cookies are set before redirect
     # This works around browser issues with cookies in cross-site 302 redirects
@@ -292,7 +387,7 @@ def handler(event, context):
 </body>
 </html>"""
 
-    return {
+    response = {
         "statusCode": 200,
         "headers": {
             "Content-Type": "text/html; charset=utf-8",
@@ -303,3 +398,14 @@ def handler(event, context):
         "cookies": [set_cookie, clear_state],
         "body": html_body,
     }
+    
+    print(f"LOG - Response object created:")
+    print(f"LOG -   Response keys: {list(response.keys())}")
+    print(f"LOG -   Headers: {response['headers']}")
+    print(f"LOG -   Cookies array length: {len(response['cookies'])}")
+    print(f"LOG -   Body length: {len(response['body'])} chars")
+    print("=" * 80)
+    print("AUTH CALLBACK LAMBDA - SUCCESS")
+    print("=" * 80)
+    
+    return response

@@ -103,10 +103,17 @@ def extract_cookie_names(cookie_string):
     return cookie_names
 
 def handler(event, context):
+    print("=" * 80)
+    print("/ME LAMBDA - START")
+    print("=" * 80)
+    
     cors_headers = get_cors_headers()
+    print(f"LOG - CORS headers configured: {cors_headers}")
     
     # Handle OPTIONS preflight requests
     if event.get("requestContext", {}).get("http", {}).get("method") == "OPTIONS":
+        print(f"LOG - OPTIONS preflight request detected")
+        print(f"LOG - Returning CORS preflight response")
         return {
             "statusCode": 200,
             "headers": {
@@ -119,9 +126,10 @@ def handler(event, context):
         }
     
     try:
+        print(f"LOG - Validating environment variables")
         # Validate required environment variables
         if not DB_CLUSTER_ARN or not DB_SECRET_ARN:
-            print("ERROR: Missing DB_CLUSTER_ARN or DB_SECRET_ARN environment variable")
+            print("ERROR - Missing DB_CLUSTER_ARN or DB_SECRET_ARN environment variable")
             return {
                 "statusCode": 500,
                 "headers": cors_headers,
@@ -129,22 +137,33 @@ def handler(event, context):
             }
         
         if not APP_SECRET:
-            print("ERROR: Missing APP_SECRET environment variable")
+            print("ERROR - Missing APP_SECRET environment variable")
             return {
                 "statusCode": 500,
                 "headers": cors_headers,
                 "body": json.dumps({"error": "server configuration error"})
             }
         
+        print(f"LOG - Environment variables OK")
+        print(f"LOG -   DB_CLUSTER_ARN: {DB_CLUSTER_ARN[:50]}...")
+        print(f"LOG -   DB_SECRET_ARN: {DB_SECRET_ARN[:50]}...")
+        print(f"LOG -   DB_NAME: {DB_NAME}")
+        print(f"LOG -   APP_SECRET length: {len(APP_SECRET)} bytes")
+        print(f"LOG -   FRONTEND_URL: {FRONTEND_URL}")
+        
         # Debug: Log request context for better diagnostics
         request_context = event.get("requestContext", {})
         http_context = request_context.get("http", {})
-        print(f"Debug - Request method: {http_context.get('method', 'UNKNOWN')}")
-        print(f"Debug - Request path: {http_context.get('path', 'UNKNOWN')}")
-        print(f"Debug - Source IP: {http_context.get('sourceIp', 'UNKNOWN')}")
+        print(f"LOG - Request method: {http_context.get('method', 'UNKNOWN')}")
+        print(f"LOG - Request path: {http_context.get('path', 'UNKNOWN')}")
+        print(f"LOG - Source IP: {http_context.get('sourceIp', 'UNKNOWN')}")
         
         # Debug: Log cookie information (sanitized for security)
         headers = event.get("headers") or {}
+        print(f"LOG - Analyzing request headers")
+        print(f"LOG - Number of headers: {len(headers)}")
+        print(f"LOG - Header keys: {list(headers.keys())}")
+        
         cookies_array = event.get("cookies") or []
         cookie_header = headers.get("cookie") or headers.get("Cookie")
         origin_header = headers.get("origin") or headers.get("Origin") or ""
@@ -156,33 +175,47 @@ def handler(event, context):
         sec_fetch_storage = headers.get("sec-fetch-storage-access") or headers.get("Sec-Fetch-Storage-Access") or ""
         
         # Log presence of cookies without exposing values
-        print(f"Debug - cookies array present: {len(cookies_array) > 0}, count: {len(cookies_array)}")
-        print(f"Debug - cookie header present: {cookie_header is not None}")
+        print(f"LOG - Cookie analysis:")
+        print(f"LOG -   Cookies array present: {len(cookies_array) > 0}, count: {len(cookies_array)}")
+        print(f"LOG -   Cookie header present: {cookie_header is not None}")
         if cookie_header:
-            print(f"Debug - cookie header length: {len(cookie_header)}")
-        print(f"Debug - Origin: {origin_header}")
-        print(f"Debug - Referer: {referer_header}")
-        print(f"Debug - Host: {host_header}")
-        print(f"Debug - Sec-Fetch-Site: {sec_fetch_site}")
-        print(f"Debug - Sec-Fetch-Mode: {sec_fetch_mode}")
-        print(f"Debug - Sec-Fetch-Dest: {sec_fetch_dest}")
-        print(f"Debug - Sec-Fetch-Storage-Access: {sec_fetch_storage}")
-        print(f"Debug - Expected cookie domain: API Gateway domain (cross-site from {origin_header})")
-        print(f"Debug - CORS origin configured: {get_cors_origin()}")
+            print(f"LOG -   Cookie header length: {len(cookie_header)} chars")
+        print(f"LOG - Request context:")
+        print(f"LOG -   Origin: {origin_header}")
+        print(f"LOG -   Referer: {referer_header}")
+        print(f"LOG -   Host: {host_header}")
+        print(f"LOG -   Sec-Fetch-Site: {sec_fetch_site}")
+        print(f"LOG -   Sec-Fetch-Mode: {sec_fetch_mode}")
+        print(f"LOG -   Sec-Fetch-Dest: {sec_fetch_dest}")
+        print(f"LOG -   Sec-Fetch-Storage-Access: {sec_fetch_storage}")
+        print(f"LOG -   Expected cookie domain: API Gateway domain (cross-site from {origin_header})")
+        print(f"LOG -   CORS origin configured: {get_cors_origin()}")
+        
         if cookies_array:
             # Log cookie names only, not values
+            print(f"LOG - Parsing cookies array:")
             all_cookie_names = []
-            for cookie_str in cookies_array:
+            for idx, cookie_str in enumerate(cookies_array):
                 if cookie_str:
-                    all_cookie_names.extend(extract_cookie_names(cookie_str))
-            print(f"Debug - cookie names in array: {', '.join(all_cookie_names) if all_cookie_names else 'none'}")
+                    cookie_names = extract_cookie_names(cookie_str)
+                    all_cookie_names.extend(cookie_names)
+                    print(f"LOG -   Array[{idx}]: {cookie_names}")
+            print(f"LOG - All cookie names from array: {all_cookie_names}")
+        
         if cookie_header:
             cookie_names = extract_cookie_names(cookie_header)
-            print(f"Debug - cookie names in header: {', '.join(cookie_names) if cookie_names else 'none'}")
+            print(f"LOG - Cookie names from header: {cookie_names}")
+            # Parse and log each cookie
+            for part in cookie_header.split(";"):
+                part = part.strip()
+                if "=" in part:
+                    name, value = part.split("=", 1)
+                    print(f"LOG -   Cookie '{name}': length={len(value)} chars, preview={value[:10]}...")
         
         # Log additional browser context that may affect cookies
         user_agent = headers.get("user-agent") or headers.get("User-Agent") or ""
         if user_agent:
+            print(f"LOG - User-Agent: {user_agent}")
             # Log browser type (Chrome, Safari, Firefox, etc.) for cookie compatibility debugging
             # Check in order: Edge, Chrome, Safari (since Chrome includes Safari in UA string)
             browser_type = "unknown"
@@ -194,47 +227,79 @@ def handler(event, context):
                 browser_type = "Safari"
             elif "Firefox" in user_agent:
                 browser_type = "Firefox"
-            print(f"Debug - Browser type: {browser_type}")
+            print(f"LOG - Browser type detected: {browser_type}")
         
         # Check for Authorization header (should not be present)
         check_authorization_header(headers)
         
+        print(f"LOG - Parsing session token from cookies")
         tok = parse_session_token(event)
         if tok:
-            print("Found session token")
+            print(f"LOG - Session token found!")
+            print(f"LOG -   Token length: {len(tok)} chars")
+            print(f"LOG -   Token preview: {tok[:20]}...{tok[-20:]}")
+        else:
+            print(f"LOG - No session token found in request")
         
         if not tok:
-            print(f"No session cookie found")
-            print(f"Debug - Full event keys: {list(event.keys())}")
+            print(f"ERROR - No session cookie found - authentication required")
+            print(f"LOG - Troubleshooting info:")
+            print(f"LOG -   1. Check if cookie was set during /auth/callback")
+            print(f"LOG -   2. Check browser cookie storage (DevTools > Application > Cookies)")
+            print(f"LOG -   3. Verify cookie domain matches API Gateway domain")
+            print(f"LOG -   4. Check if third-party cookies are blocked in browser")
+            print(f"LOG -   5. Verify withCredentials=true in frontend request")
+            print(f"LOG - Full event keys: {list(event.keys())}")
             # Log header keys only, not values (avoid exposing sensitive data)
-            print(f"Debug - Header keys: {list(headers.keys()) if headers else 'none'}")
+            print(f"LOG - Header keys: {list(headers.keys()) if headers else 'none'}")
+            print("=" * 80)
+            print("/ME LAMBDA - FAILED (No Cookie)")
+            print("=" * 80)
             return {
                 "statusCode": 401,
                 "headers": cors_headers,
                 "body": json.dumps({"error": "not authenticated"})
             }
         
+        print(f"LOG - Verifying session token signature")
         aid = verify_session_token(tok)
         if not aid:
-            print("Session token verification failed")
+            print("ERROR - Session token verification FAILED")
+            print(f"LOG - Token was present but signature/expiration check failed")
+            print(f"LOG - Possible causes:")
+            print(f"LOG -   1. APP_SECRET mismatch between callback and me Lambda")
+            print(f"LOG -   2. Token has expired")
+            print(f"LOG -   3. Token was tampered with")
+            print("=" * 80)
+            print("/ME LAMBDA - FAILED (Invalid Token)")
+            print("=" * 80)
             return {
                 "statusCode": 401,
                 "headers": cors_headers,
                 "body": json.dumps({"error": "invalid session"})
             }
-        print(f"Verified session for athlete_id: {aid}")
+        print(f"LOG - Session token verification SUCCESS")
+        print(f"LOG - Verified athlete_id: {aid}")
 
+        print(f"LOG - Querying database for user data")
         sql = "SELECT athlete_id, display_name, profile_picture FROM users WHERE athlete_id = :aid LIMIT 1"
         res = exec_sql(sql, parameters=[{"name":"aid","value":{"longValue":aid}}])
         records = res.get("records") or []
+        print(f"LOG - Database query returned {len(records)} records")
+        
         if not records:
-            print(f"User not found in database for athlete_id: {aid}")
+            print(f"ERROR - User not found in database for athlete_id: {aid}")
+            print(f"LOG - User may have been deleted or never created")
+            print("=" * 80)
+            print("/ME LAMBDA - FAILED (User Not Found)")
+            print("=" * 80)
             return {
                 "statusCode": 404,
                 "headers": cors_headers,
                 "body": json.dumps({"error": "user not found"})
             }
-        print(f"Successfully retrieved user from database")
+        
+        print(f"LOG - User found in database!")
         rec = records[0]
         # records format: list of field lists, where each field has stringValue/longValue etc
         athlete_id = int(rec[0].get("longValue") or rec[0].get("stringValue"))
@@ -243,20 +308,39 @@ def handler(event, context):
         profile_picture = ""
         if len(rec) > 2 and rec[2]:
             profile_picture = rec[2].get("stringValue", "")
+        
+        print(f"LOG - User data:")
+        print(f"LOG -   athlete_id: {athlete_id}")
+        print(f"LOG -   display_name: {display_name}")
+        print(f"LOG -   profile_picture: {bool(profile_picture)}")
+        
+        response_data = {
+            "athlete_id": athlete_id,
+            "display_name": display_name,
+            "profile_picture": profile_picture
+        }
+        
+        print(f"LOG - Returning success response")
+        print("=" * 80)
+        print("/ME LAMBDA - SUCCESS")
+        print("=" * 80)
+        
         return {
             "statusCode": 200,
             "headers": cors_headers,
-            "body": json.dumps({
-                "athlete_id": athlete_id,
-                "display_name": display_name,
-                "profile_picture": profile_picture
-            })
+            "body": json.dumps(response_data)
         }
     except Exception as e:
         # Catch any unexpected errors and return proper error with CORS headers
-        print(f"Unexpected error in /me handler: {str(e)}")
+        print(f"CRITICAL ERROR - Unexpected exception in /me handler")
+        print(f"ERROR - Exception type: {type(e).__name__}")
+        print(f"ERROR - Exception message: {str(e)}")
         import traceback
+        print(f"ERROR - Stack trace:")
         traceback.print_exc()
+        print("=" * 80)
+        print("/ME LAMBDA - FAILED (Exception)")
+        print("=" * 80)
         # Return generic error to client, full details are in CloudWatch logs
         return {
             "statusCode": 500,
