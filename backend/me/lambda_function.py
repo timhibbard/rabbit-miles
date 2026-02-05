@@ -129,11 +129,20 @@ def handler(event, context):
                 "body": json.dumps({"error": "server configuration error"})
             }
         
-        # Debug: Log cookie information
+        # Debug: Log cookie information (sanitized for security)
+        headers = event.get("headers") or {}
         cookies_array = event.get("cookies") or []
-        cookie_header = (event.get("headers") or {}).get("cookie") or (event.get("headers") or {}).get("Cookie")
-        print(f"Debug - cookies array: {cookies_array}")
-        print(f"Debug - cookie header: {cookie_header}")
+        cookie_header = headers.get("cookie") or headers.get("Cookie")
+        
+        # Log presence of cookies without exposing values
+        print(f"Debug - cookies array present: {len(cookies_array) > 0}, count: {len(cookies_array)}")
+        print(f"Debug - cookie header present: {cookie_header is not None}")
+        if cookies_array:
+            # Log cookie names only, not values
+            for cookie_str in cookies_array:
+                if cookie_str and "=" in cookie_str:
+                    cookie_name = cookie_str.split("=")[0].strip()
+                    print(f"Debug - found cookie: {cookie_name}")
         
         tok = parse_session_cookie(event)
         if tok:
@@ -142,7 +151,8 @@ def handler(event, context):
         if not tok:
             print(f"No session cookie found")
             print(f"Debug - Full event keys: {list(event.keys())}")
-            print(f"Debug - Headers: {event.get('headers')}")
+            # Log header keys only, not values (avoid exposing sensitive data)
+            print(f"Debug - Header keys: {list(headers.keys()) if headers else 'none'}")
             return {
                 "statusCode": 401,
                 "headers": cors_headers,
