@@ -18,7 +18,7 @@ function About() {
 
   const supportInfo = {
     betaApp: {
-      title: "Pacepal Beta",
+      title: "On Pace For Beta",
       url: "https://testflight.apple.com/join/ZnYvs7We"
     },
     creator: {
