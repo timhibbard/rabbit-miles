@@ -138,6 +138,31 @@ def handler(event, context):
     print(f"LOG - FRONTEND URL: {FRONTEND}")
     print(f"LOG - API_BASE URL: {API_BASE}")
     
+    # Validate required environment variables
+    if not FRONTEND:
+        print("ERROR - FRONTEND_URL environment variable not set")
+        return {
+            "statusCode": 500,
+            "headers": {"Content-Type": "application/json"},
+            "body": '{"error": "Server configuration error. Please contact support at tim@rabbitmiles.com."}'
+        }
+    
+    if not API_BASE:
+        print("ERROR - API_BASE_URL environment variable not set")
+        return {
+            "statusCode": 500,
+            "headers": {"Content-Type": "application/json"},
+            "body": '{"error": "Server configuration error. Please contact support at tim@rabbitmiles.com."}'
+        }
+    
+    if not APP_SECRET:
+        print("ERROR - APP_SECRET environment variable not set")
+        return {
+            "statusCode": 500,
+            "headers": {"Content-Type": "application/json"},
+            "body": '{"error": "Server configuration error. Please contact support at tim@rabbitmiles.com."}'
+        }
+    
     # Log request headers for debugging
     headers = event.get("headers") or {}
     print(f"LOG - Number of headers: {len(headers)}")
