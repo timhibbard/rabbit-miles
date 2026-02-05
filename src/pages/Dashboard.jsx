@@ -87,8 +87,9 @@ function Dashboard() {
       }
 
       const activityDate = new Date(activity.start_date_local);
-      const miles = activity.distance / METERS_TO_MILES;
-      const time = activity.moving_time;
+      // Use on-trail distance and time if available, otherwise skip (activity not yet matched)
+      const miles = activity.distance_on_trail !== null ? activity.distance_on_trail / METERS_TO_MILES : 0;
+      const time = activity.time_on_trail !== null ? activity.time_on_trail : 0;
 
       // Total (all time)
       totalMiles += miles;
@@ -463,7 +464,7 @@ function Dashboard() {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
           <div className="bg-white rounded-lg shadow p-6">
             <h3 className="text-sm font-medium text-gray-500 mb-2">
-              Total Miles
+              Total Miles on Trail
             </h3>
             <p className="text-3xl font-bold text-gray-900">
               {stats.totalMiles.toFixed(1)}
@@ -475,7 +476,7 @@ function Dashboard() {
 
           <div className="bg-white rounded-lg shadow p-6">
             <h3 className="text-sm font-medium text-gray-500 mb-2">
-              This Week
+              This Week on Trail
             </h3>
             <p className="text-3xl font-bold text-gray-900">
               {stats.thisWeek.toFixed(1)}
@@ -487,7 +488,7 @@ function Dashboard() {
 
           <div className="bg-white rounded-lg shadow p-6">
             <h3 className="text-sm font-medium text-gray-500 mb-2">
-              {currentMonthName}
+              {currentMonthName} on Trail
             </h3>
             <p className="text-3xl font-bold text-gray-900">
               {stats.thisMonth.toFixed(1)}
@@ -499,7 +500,7 @@ function Dashboard() {
 
           <div className="bg-white rounded-lg shadow p-6">
             <h3 className="text-sm font-medium text-gray-500 mb-2">
-              {currentYear}
+              {currentYear} on Trail
             </h3>
             <p className="text-3xl font-bold text-gray-900">
               {stats.thisYear.toFixed(1)}
