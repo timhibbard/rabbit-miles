@@ -89,7 +89,9 @@ def handler(event, context):
     }
     url = "https://www.strava.com/oauth/authorize?" + urlencode(params)
 
-    cookie_val = f"rm_state={state}; HttpOnly; Secure; SameSite=None; Path={COOKIE_PATH}; Max-Age=600"
+    # Partitioned attribute is required for cross-site cookies in Chrome and modern browsers
+    cookie_val = f"rm_state={state}; HttpOnly; Secure; SameSite=None; Partitioned; Path={COOKIE_PATH}; Max-Age=600"
+    print(f"Setting rm_state cookie with Partitioned attribute for state: {state[:8]}...")
 
     return {
         "statusCode": 302,

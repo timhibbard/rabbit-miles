@@ -162,6 +162,22 @@ def handler(event, context):
             cookie_names = extract_cookie_names(cookie_header)
             print(f"Debug - cookie names in header: {', '.join(cookie_names) if cookie_names else 'none'}")
         
+        # Log additional browser context that may affect cookies
+        user_agent = headers.get("user-agent") or headers.get("User-Agent") or ""
+        if user_agent:
+            # Log browser type (Chrome, Safari, Firefox, etc.) for cookie compatibility debugging
+            # Check in order: Edge, Chrome, Safari (since Chrome includes Safari in UA string)
+            browser_type = "unknown"
+            if "Edg" in user_agent:
+                browser_type = "Edge"
+            elif "Chrome" in user_agent:
+                browser_type = "Chrome"
+            elif "Safari" in user_agent:
+                browser_type = "Safari"
+            elif "Firefox" in user_agent:
+                browser_type = "Firefox"
+            print(f"Debug - Browser type: {browser_type}")
+        
         # Check for Authorization header (should not be present)
         check_authorization_header(headers)
         

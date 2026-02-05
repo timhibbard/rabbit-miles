@@ -235,8 +235,10 @@ def handler(event, context):
     max_age = 30 * 24 * 3600
     print(f"Created session token for athlete_id: {athlete_id}")
 
-    set_cookie = f"rm_session={session_token}; HttpOnly; Secure; SameSite=None; Path={COOKIE_PATH}; Max-Age={max_age}"
-    clear_state = f"rm_state=; HttpOnly; Secure; SameSite=None; Path={COOKIE_PATH}; Max-Age=0"
+    # Partitioned attribute is required for cross-site cookies in Chrome and modern browsers
+    set_cookie = f"rm_session={session_token}; HttpOnly; Secure; SameSite=None; Partitioned; Path={COOKIE_PATH}; Max-Age={max_age}"
+    clear_state = f"rm_state=; HttpOnly; Secure; SameSite=None; Partitioned; Path={COOKIE_PATH}; Max-Age=0"
+    print(f"Setting rm_session cookie with Partitioned attribute for athlete_id: {athlete_id}")
 
     # Redirect back to SPA with connected=1 query parameter
     redirect_to = f"{FRONTEND}/connect?connected=1"

@@ -100,7 +100,9 @@ def handler(event, context):
     session = cookies.get("rm_session")
     if not session:
         # still clear cookie and redirect
-        clear = f"rm_session=; HttpOnly; Secure; SameSite=None; Path={COOKIE_PATH}; Max-Age=0"
+        # Partitioned attribute is required for cross-site cookies in Chrome and modern browsers
+        clear = f"rm_session=; HttpOnly; Secure; SameSite=None; Partitioned; Path={COOKIE_PATH}; Max-Age=0"
+        print("No session cookie found, clearing and redirecting")
         return {
             "statusCode": 302,
             "headers": {"Location": f"{FRONTEND}/?connected=0"},
@@ -111,7 +113,9 @@ def handler(event, context):
     aid = _verify_session_token(session)
     if not aid:
         # invalid session: clear cookie
-        clear = f"rm_session=; HttpOnly; Secure; SameSite=None; Path={COOKIE_PATH}; Max-Age=0"
+        # Partitioned attribute is required for cross-site cookies in Chrome and modern browsers
+        clear = f"rm_session=; HttpOnly; Secure; SameSite=None; Partitioned; Path={COOKIE_PATH}; Max-Age=0"
+        print("Invalid session token, clearing and redirecting")
         return {
             "statusCode": 302,
             "headers": {"Location": f"{FRONTEND}/?connected=0"},
@@ -131,9 +135,13 @@ def handler(event, context):
     params = [{"name": "aid", "value": {"longValue": aid}}]
     try:
         _exec_sql(sql, params)
+        print(f"Successfully cleared tokens for athlete_id: {aid}")
     except Exception as e:
         # best-effort: clear cookie and redirect even on DB failures, but surface minimal error
-        clear = f"rm_session=; HttpOnly; Secure; SameSite=None; Path={COOKIE_PATH}; Max-Age=0"
+        # Log generic error to avoid exposing sensitive database details
+        print(f"Failed to clear tokens in database: database error occurred")
+        # Partitioned attribute is required for cross-site cookies in Chrome and modern browsers
+        clear = f"rm_session=; HttpOnly; Secure; SameSite=None; Partitioned; Path={COOKIE_PATH}; Max-Age=0"
         return {
             "statusCode": 302,
             "headers": {"Location": f"{FRONTEND}/?connected=0&error=disconnect_failed"},
@@ -142,9 +150,11 @@ def handler(event, context):
         }
 
     # Clear session cookie and redirect to frontend
-    clear_session = f"rm_session=; HttpOnly; Secure; SameSite=None; Path={COOKIE_PATH}; Max-Age=0"
+    # Partitioned attribute is required for cross-site cookies in Chrome and modern browsers
+    clear_session = f"rm_session=; HttpOnly; Secure; SameSite=None; Partitioned; Path={COOKIE_PATH}; Max-Age=0"
     # also clear any leftover rm_state just in case
-    clear_state = f"rm_state=; HttpOnly; Secure; SameSite=None; Path={COOKIE_PATH}; Max-Age=0"
+    clear_state = f"rm_state=; HttpOnly; Secure; SameSite=None; Partitioned; Path={COOKIE_PATH}; Max-Age=0"
+    print(f"Clearing session cookies and redirecting to frontend for athlete_id: {aid}")
 
     return {
         "statusCode": 302,
