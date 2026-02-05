@@ -47,13 +47,12 @@ def verify_session_token(tok):
     except Exception:
         return None
 
-def parse_authorization_header(headers):
-    """Parse Authorization header (for debugging only - not used for authentication)"""
+def check_authorization_header(headers):
+    """Check if Authorization header is present and log warning (cookie-based auth only)"""
     auth_header = headers.get("authorization") or headers.get("Authorization")
     if auth_header:
         # Log that an Authorization header was received but will be ignored
         print("Warning: Authorization header detected but ignored (cookie-based auth only)")
-    return None
 
 def parse_session_token(event):
     """Parse session token from cookies only (cookie-based authentication)"""
@@ -91,6 +90,17 @@ def exec_sql(sql, parameters=None):
     if parameters:
         kwargs["parameters"] = parameters
     return rds.execute_statement(**kwargs)
+
+def extract_cookie_names(cookie_string):
+    """Extract cookie names from a cookie string"""
+    cookie_names = []
+    if not cookie_string:
+        return cookie_names
+    for part in cookie_string.split(";"):
+        if "=" in part:
+            cookie_name = part.split("=")[0].strip()
+            cookie_names.append(cookie_name)
+    return cookie_names
 
 def handler(event, context):
     cors_headers = get_cors_headers()
@@ -143,25 +153,17 @@ def handler(event, context):
         print(f"Debug - cookie header present: {cookie_header is not None}")
         if cookies_array:
             # Log cookie names only, not values
-            cookie_names = []
+            all_cookie_names = []
             for cookie_str in cookies_array:
-                if cookie_str and "=" in cookie_str:
-                    # Handle multiple cookies in one string
-                    for part in cookie_str.split(";"):
-                        if "=" in part:
-                            cookie_name = part.split("=")[0].strip()
-                            cookie_names.append(cookie_name)
-            print(f"Debug - cookie names in array: {', '.join(cookie_names) if cookie_names else 'none'}")
+                if cookie_str:
+                    all_cookie_names.extend(extract_cookie_names(cookie_str))
+            print(f"Debug - cookie names in array: {', '.join(all_cookie_names) if all_cookie_names else 'none'}")
         if cookie_header:
-            cookie_names = []
-            for part in cookie_header.split(";"):
-                if "=" in part:
-                    cookie_name = part.split("=")[0].strip()
-                    cookie_names.append(cookie_name)
+            cookie_names = extract_cookie_names(cookie_header)
             print(f"Debug - cookie names in header: {', '.join(cookie_names) if cookie_names else 'none'}")
         
         # Check for Authorization header (should not be present)
-        parse_authorization_header(headers)
+        check_authorization_header(headers)
         
         tok = parse_session_token(event)
         if tok:
