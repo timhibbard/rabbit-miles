@@ -120,6 +120,16 @@ def handler(event, context):
     if API_BASE_PATH:
         print(f"Debug - API_BASE_URL path detected: {API_BASE_PATH}")
     print(f"Debug - Cookie path configured as: {COOKIE_PATH}")
+    print(f"Debug - Received OAuth callback with code={code[:20] if code else None}..., state={state[:20] if state else None}...")
+    
+    # Log request headers for debugging
+    headers = event.get("headers") or {}
+    user_agent = headers.get("user-agent") or headers.get("User-Agent") or ""
+    if user_agent:
+        print(f"Debug - User-Agent: {user_agent[:100]}...")
+    referer = headers.get("referer") or headers.get("Referer") or ""
+    if referer:
+        print(f"Debug - Referer: {referer}")
 
     if err:
         # Strava can return access_denied if user cancels
@@ -243,9 +253,16 @@ def handler(event, context):
     set_cookie = f"rm_session={session_token}; HttpOnly; Secure; SameSite=None; Partitioned; Path={COOKIE_PATH}; Max-Age={max_age}"
     clear_state = f"rm_state=; HttpOnly; Secure; SameSite=None; Partitioned; Path={COOKIE_PATH}; Max-Age=0"
     print(f"Setting rm_session cookie with Partitioned attribute for athlete_id: {athlete_id}")
+    print(f"Debug - Cookie attributes: HttpOnly=Yes, Secure=Yes, SameSite=None, Partitioned=Yes, Path={COOKIE_PATH}, Max-Age={max_age}")
+    print(f"Debug - Session token length: {len(session_token)} characters")
+    print(f"Debug - Redirect URL: {FRONTEND}/connect?connected=1")
 
     # Redirect back to SPA with connected=1 query parameter
     redirect_to = f"{FRONTEND}/connect?connected=1"
+
+    print(f"Debug - Response cookies array: {[set_cookie[:50] + '...', clear_state[:50] + '...']}")
+    print(f"Debug - Response status: 302")
+    print(f"Debug - Response location: {redirect_to}")
 
     return {
         "statusCode": 302,

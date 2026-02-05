@@ -167,6 +167,8 @@ def handler(event, context):
         print(f"Debug - Sec-Fetch-Mode: {sec_fetch_mode}")
         print(f"Debug - Sec-Fetch-Dest: {sec_fetch_dest}")
         print(f"Debug - Sec-Fetch-Storage-Access: {sec_fetch_storage}")
+        print(f"Debug - Expected cookie domain: API Gateway domain (cross-site from {origin_header})")
+        print(f"Debug - CORS origin configured: {get_cors_origin()}")
         if cookies_array:
             # Log cookie names only, not values
             all_cookie_names = []
