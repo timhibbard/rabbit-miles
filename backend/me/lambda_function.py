@@ -129,12 +129,20 @@ def handler(event, context):
                 "body": json.dumps({"error": "server configuration error"})
             }
         
+        # Debug: Log cookie information
+        cookies_array = event.get("cookies") or []
+        cookie_header = (event.get("headers") or {}).get("cookie") or (event.get("headers") or {}).get("Cookie")
+        print(f"Debug - cookies array: {cookies_array}")
+        print(f"Debug - cookie header: {cookie_header}")
+        
         tok = parse_session_cookie(event)
         if tok:
             print("Found session token")
         
         if not tok:
             print(f"No session cookie found")
+            print(f"Debug - Full event keys: {list(event.keys())}")
+            print(f"Debug - Headers: {event.get('headers')}")
             return {
                 "statusCode": 401,
                 "headers": cors_headers,
