@@ -13,6 +13,7 @@ import json
 import base64
 import hmac
 import hashlib
+import html
 from urllib.parse import urlparse
 import boto3
 
@@ -141,8 +142,14 @@ def handler(event, context):
         print(f"LOG -   FRONTEND_URL: {FRONTEND}")
         print(f"LOG -   API_BASE_URL: {API_BASE}")
         print(f"LOG -   APP_SECRET length: {len(APP_SECRET)} bytes")
-        print(f"LOG -   DB_CLUSTER_ARN: {DB_CLUSTER_ARN[:50]}...")
-        print(f"LOG -   DB_SECRET_ARN: {DB_SECRET_ARN[:50]}...")
+        if len(DB_CLUSTER_ARN) > 50:
+            print(f"LOG -   DB_CLUSTER_ARN: {DB_CLUSTER_ARN[:50]}...")
+        else:
+            print(f"LOG -   DB_CLUSTER_ARN: {DB_CLUSTER_ARN}")
+        if len(DB_SECRET_ARN) > 50:
+            print(f"LOG -   DB_SECRET_ARN: {DB_SECRET_ARN[:50]}...")
+        else:
+            print(f"LOG -   DB_SECRET_ARN: {DB_SECRET_ARN}")
         
         if API_BASE_PATH:
             print(f"LOG - API_BASE_URL path detected: {API_BASE_PATH}")
@@ -174,7 +181,6 @@ def handler(event, context):
             print("LOG - Clearing any existing session cookie and redirecting to frontend")
             
             redirect_to = f"{FRONTEND}/?connected=0"
-            import html
             redirect_to_escaped = html.escape(redirect_to, quote=True)
             
             print(f"LOG - Redirect destination: {redirect_to}")
@@ -215,7 +221,6 @@ def handler(event, context):
             print("LOG - Invalid session token, clearing and redirecting")
             
             redirect_to = f"{FRONTEND}/?connected=0"
-            import html
             redirect_to_escaped = html.escape(redirect_to, quote=True)
             
             print(f"LOG - Redirect destination: {redirect_to}")
@@ -271,7 +276,6 @@ def handler(event, context):
             clear = f"rm_session=; HttpOnly; Secure; SameSite=None; Path={COOKIE_PATH}; Max-Age=0"
             
             redirect_to = f"{FRONTEND}/?connected=0&error=disconnect_failed"
-            import html
             redirect_to_escaped = html.escape(redirect_to, quote=True)
             
             print(f"LOG - Redirect destination: {redirect_to}")
@@ -315,7 +319,6 @@ def handler(event, context):
         
         # Return HTML page instead of 302 redirect to ensure cookies are cleared before redirect
         # This works around browser issues with cookies in cross-site 302 redirects
-        import html
         redirect_to_escaped = html.escape(redirect_to, quote=True)
         
         print("=" * 80)
