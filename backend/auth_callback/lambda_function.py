@@ -406,9 +406,12 @@ def handler(event, context):
     if origin:
         print(f"LOG - Cross-site cookie analysis:")
         print(f"LOG -   Request origin: {origin}")
-        print(f"LOG -   API domain: {urlparse(API_BASE).netloc if API_BASE else 'unknown'}")
-        print(f"LOG -   Cross-site: Yes (GitHub Pages -> API Gateway)")
-        print(f"LOG -   SameSite=None required: Yes")
+        api_domain = urlparse(API_BASE).netloc if API_BASE else 'unknown'
+        print(f"LOG -   API domain: {api_domain}")
+        origin_domain = urlparse(origin).netloc if origin else 'unknown'
+        is_cross_site = origin_domain != api_domain
+        print(f"LOG -   Cross-site: {'Yes' if is_cross_site else 'No'} ({origin_domain} -> {api_domain})")
+        print(f"LOG -   SameSite=None required: {'Yes' if is_cross_site else 'No'}")
         if sec_fetch_storage == "none":
             print(f"WARNING - Browser indicates third-party cookies may be blocked!")
             print(f"WARNING - User may need to:")
