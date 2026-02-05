@@ -18,7 +18,7 @@ From the existing logs, we can see a clear pattern:
 
 ## Root Cause Analysis
 
-The issue is **third-party cookie blocking in Chrome**. The authentication flow is:
+The issue appears to be **user-specific cookie blocking or browser configuration**. The authentication flow is:
 
 1. User clicks "Connect with Strava" on GitHub Pages (`timhibbard.github.io`)
 2. Redirects to API Gateway (`9zke9jame0.execute-api.us-east-1.amazonaws.com`)
@@ -27,9 +27,13 @@ The issue is **third-party cookie blocking in Chrome**. The authentication flow 
 5. API Gateway sets `rm_session` cookie (in auth_callback)
 6. Redirects user back to GitHub Pages
 7. GitHub Pages calls `/me` endpoint on API Gateway
-8. **Chrome blocks the cookie from being sent** because it's a cross-site request
+8. **For the new user, the cookie is not being sent** with subsequent requests
 
-Chrome shows `Sec-Fetch-Storage-Access: none` which explicitly indicates that third-party cookies are being blocked.
+**Important Note:** Chrome works for Tim (the current user), so this is NOT a general Chrome third-party cookie blocking issue. The `Sec-Fetch-Storage-Access: none` header from the new user indicates their specific browser/environment is blocking third-party cookies, which could be due to:
+- Browser privacy settings
+- Browser extensions (ad blockers, privacy tools)
+- Incognito/private browsing mode
+- Enterprise/organization browser policies
 
 ## Logging Improvements Added
 

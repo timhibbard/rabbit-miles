@@ -494,7 +494,8 @@ def handler(event, context):
     if browser_type in ["Chrome", "Edge"] and sec_fetch_storage == "none":
         print(f"CRITICAL WARNING - {browser_type} with blocked third-party cookies detected!")
         print(f"CRITICAL WARNING - Cookie will be set but may not be sent on subsequent requests")
-        print(f"CRITICAL WARNING - This is the most likely cause of authentication failures")
+        print(f"CRITICAL WARNING - This is likely due to browser privacy settings, extensions, or incognito mode")
+        print(f"CRITICAL WARNING - User should check: browser extensions (ad blockers), privacy settings, incognito/private mode")
     
     print("=" * 80)
     print("AUTH CALLBACK LAMBDA - SUCCESS")

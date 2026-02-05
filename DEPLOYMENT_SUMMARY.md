@@ -8,15 +8,22 @@ This PR adds comprehensive logging to the authentication flow to diagnose the th
 
 From the existing logs, we identified:
 
-**Working (Tim - Safari):**
+**Working (Tim - Safari and Chrome):**
 - ✅ Cookie present and sent with requests
 - ✅ Authentication succeeds
-- ℹ️ `Sec-Fetch-Storage-Access` header: empty
+- ℹ️ `Sec-Fetch-Storage-Access` header: empty (Safari) or not blocking (Chrome)
 
 **Failing (New User - Chrome):**
 - ❌ Cookie not present in requests
 - ❌ Authentication fails
 - ⚠️ `Sec-Fetch-Storage-Access: none` - indicates third-party cookies blocked
+
+**Key Finding:** Since Chrome works for Tim but not for the new user, this is NOT a general Chrome/browser issue. The problem is specific to the new user's:
+- Browser privacy settings
+- Browser extensions (ad blockers, privacy extensions)
+- Incognito/private browsing mode
+- Enterprise/organizational browser policies
+- Browser version or configuration
 
 ## Files Modified
 
@@ -110,14 +117,16 @@ After deployment, when the new user attempts to connect:
    ```
 
 2. **This will confirm the diagnosis:**
-   - Third-party cookies are being blocked by Chrome
+   - Third-party cookies are being blocked by the new user's browser
    - Cookie is set but browser won't send it cross-site
-   - This is expected Chrome behavior with current architecture
+   - This is NOT standard Chrome behavior (since it works for Tim)
+   - Issue is specific to user's browser configuration or extensions
 
 3. **Next steps will be clear:**
-   - Implement Storage Access API in frontend
-   - Or provide user guidance on enabling cookies
-   - Or consider architectural changes
+   - Identify what's different about the new user's setup (extensions, settings, mode)
+   - Provide user guidance on checking browser settings/extensions
+   - Consider implementing Storage Access API as a robust solution
+   - Or consider architectural changes if this becomes a common issue
 
 ## Deployment Instructions
 
