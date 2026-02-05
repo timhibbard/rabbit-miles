@@ -110,8 +110,8 @@ Expected /me response shape:
 ### Common Environment Variables
 Copilot should assume these exist and reference them by name only:
 
-- API_BASE_URL (must include stage, e.g. /prod)
-- FRONTEND_URL
+- API_BASE_URL (for custom domain: https://api.rabbitmiles.com; for AWS default: include stage e.g. /prod)
+- FRONTEND_URL (custom domain: https://rabbitmiles.com)
 - APP_SECRET
 - DB_CLUSTER_ARN
 - DB_SECRET_ARN
@@ -124,8 +124,8 @@ Copilot should assume these exist and reference them by name only:
 ## Frontend Integration Rules
 
 - Frontend is a React SPA hosted on GitHub Pages.
-- Production API base URL:
-  https://9zke9jame0.execute-api.us-east-1.amazonaws.com/prod
+- Production frontend URL: https://rabbitmiles.com
+- Production API base URL: https://api.rabbitmiles.com
 - Frontend must:
   - Call /me on app load
   - Use cookie-based authentication
