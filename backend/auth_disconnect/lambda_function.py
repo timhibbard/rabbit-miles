@@ -97,21 +97,53 @@ def _exec_sql(sql: str, parameters: list = None):
 
 
 def handler(event, context):
+    print("=" * 80)
+    print("AUTH DISCONNECT LAMBDA - START")
+    print("=" * 80)
+    
+    print(f"LOG - Environment configuration:")
+    print(f"LOG -   FRONTEND_URL: {FRONTEND}")
+    print(f"LOG -   API_BASE_URL: {API_BASE}")
+    print(f"LOG -   APP_SECRET length: {len(APP_SECRET)} bytes")
+    
     if API_BASE_PATH:
-        print(f"Debug - API_BASE_URL path detected: {API_BASE_PATH}")
-    print(f"Debug - Cookie path configured as: {COOKIE_PATH}")
+        print(f"LOG - API_BASE_URL path detected: {API_BASE_PATH}")
+    print(f"LOG - Cookie path configured as: {COOKIE_PATH}")
+    
+    # Log request context
+    request_context = event.get("requestContext", {})
+    http_context = request_context.get("http", {})
+    print(f"LOG - Request method: {http_context.get('method', 'UNKNOWN')}")
+    print(f"LOG - Request path: {http_context.get('path', 'UNKNOWN')}")
+    print(f"LOG - Source IP: {http_context.get('sourceIp', 'UNKNOWN')}")
+    
+    headers = event.get("headers") or {}
+    user_agent = headers.get("user-agent") or headers.get("User-Agent") or ""
+    if user_agent:
+        print(f"LOG - User-Agent: {user_agent}")
+    
+    print(f"LOG - Parsing cookies from request")
     cookies = _parse_cookies(event)
+    print(f"LOG - Cookies found: {list(cookies.keys())}")
     session = cookies.get("rm_session")
+    
     if not session:
+        print(f"LOG - No session cookie found in request")
         # still clear cookie and redirect
         # Partitioned attribute is required for cross-site cookies in Chrome and modern browsers
         clear = f"rm_session=; HttpOnly; Secure; SameSite=None; Partitioned; Path={COOKIE_PATH}; Max-Age=0"
-        print("No session cookie found, clearing and redirecting")
+        print("LOG - Clearing any existing session cookie and redirecting to frontend")
         
         redirect_to = f"{FRONTEND}/?connected=0"
         import html
         import json
         redirect_to_escaped = html.escape(redirect_to, quote=True)
+        
+        print(f"LOG - Redirect destination: {redirect_to}")
+        print("=" * 80)
+        print("AUTH DISCONNECT LAMBDA - SUCCESS (No Session)")
+        print("=" * 80)
+        
         html_body = f"""<!DOCTYPE html>
 <html>
 <head>
@@ -137,15 +169,22 @@ def handler(event, context):
 
     aid = _verify_session_token(session)
     if not aid:
+        print(f"LOG - Session token present but verification FAILED")
         # invalid session: clear cookie
         # Partitioned attribute is required for cross-site cookies in Chrome and modern browsers
         clear = f"rm_session=; HttpOnly; Secure; SameSite=None; Partitioned; Path={COOKIE_PATH}; Max-Age=0"
-        print("Invalid session token, clearing and redirecting")
+        print("LOG - Invalid session token, clearing and redirecting")
         
         redirect_to = f"{FRONTEND}/?connected=0"
         import html
         import json
         redirect_to_escaped = html.escape(redirect_to, quote=True)
+        
+        print(f"LOG - Redirect destination: {redirect_to}")
+        print("=" * 80)
+        print("AUTH DISCONNECT LAMBDA - SUCCESS (Invalid Session)")
+        print("=" * 80)
+        
         html_body = f"""<!DOCTYPE html>
 <html>
 <head>
@@ -170,6 +209,8 @@ def handler(event, context):
         }
 
     # Remove sensitive tokens from the users row but keep the account (so we don't lose preferences)
+    print(f"LOG - Session token verified for athlete_id: {aid}")
+    print(f"LOG - Clearing Strava tokens from database")
     sql = """
     UPDATE users
     SET access_token = NULL,
@@ -181,17 +222,24 @@ def handler(event, context):
     params = [{"name": "aid", "value": {"longValue": aid}}]
     try:
         _exec_sql(sql, params)
-        print(f"Successfully cleared tokens for athlete_id: {aid}")
+        print(f"LOG - Successfully cleared tokens for athlete_id: {aid}")
     except Exception as e:
         # best-effort: clear cookie and redirect even on DB failures, but surface minimal error
         # Log generic error to avoid exposing sensitive database details
-        print(f"Failed to clear tokens in database: database error occurred")
+        print(f"ERROR - Failed to clear tokens in database: {e}")
+        print(f"LOG - Proceeding with cookie clear and redirect despite DB error")
         # Partitioned attribute is required for cross-site cookies in Chrome and modern browsers
         clear = f"rm_session=; HttpOnly; Secure; SameSite=None; Partitioned; Path={COOKIE_PATH}; Max-Age=0"
         
         redirect_to = f"{FRONTEND}/?connected=0&error=disconnect_failed"
         import html
         redirect_to_escaped = html.escape(redirect_to, quote=True)
+        
+        print(f"LOG - Redirect destination: {redirect_to}")
+        print("=" * 80)
+        print("AUTH DISCONNECT LAMBDA - PARTIAL SUCCESS (DB Error)")
+        print("=" * 80)
+        
         html_body = f"""<!DOCTYPE html>
 <html>
 <head>
@@ -220,14 +268,20 @@ def handler(event, context):
     clear_session = f"rm_session=; HttpOnly; Secure; SameSite=None; Partitioned; Path={COOKIE_PATH}; Max-Age=0"
     # also clear any leftover rm_state just in case
     clear_state = f"rm_state=; HttpOnly; Secure; SameSite=None; Partitioned; Path={COOKIE_PATH}; Max-Age=0"
-    print(f"Clearing session cookies and redirecting to frontend for athlete_id: {aid}")
+    print(f"LOG - Clearing session cookies and redirecting to frontend for athlete_id: {aid}")
 
     redirect_to = f"{FRONTEND}/?connected=0"
+    print(f"LOG - Redirect destination: {redirect_to}")
     
     # Return HTML page instead of 302 redirect to ensure cookies are cleared before redirect
     # This works around browser issues with cookies in cross-site 302 redirects
     import html
     redirect_to_escaped = html.escape(redirect_to, quote=True)
+    
+    print("=" * 80)
+    print("AUTH DISCONNECT LAMBDA - SUCCESS")
+    print("=" * 80)
+    
     html_body = f"""<!DOCTYPE html>
 <html>
 <head>

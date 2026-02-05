@@ -92,6 +92,31 @@ AWS Lambda functions automatically deploy when changes are pushed to the `backen
 For setup instructions, see:
 - [LAMBDA_DEPLOYMENT.md](LAMBDA_DEPLOYMENT.md) - General Lambda deployment
 - [WEBHOOK_SETUP.md](WEBHOOK_SETUP.md) - Strava webhook configuration
+- [ENV_VARS.md](ENV_VARS.md) - Complete environment variables reference
+
+## Troubleshooting
+
+If you're experiencing issues with authentication or user login:
+
+- **Quick Reference:** [QUICK_TROUBLESHOOT.md](QUICK_TROUBLESHOOT.md) - 5-minute diagnosis checklist
+- **Detailed Guide:** [DEBUGGING_GUIDE.md](DEBUGGING_GUIDE.md) - Comprehensive debugging strategies
+- **Environment Setup:** [ENV_VARS.md](ENV_VARS.md) - Complete list of required environment variables
+- **Existing Issues:** [TROUBLESHOOTING_AUTH.md](TROUBLESHOOTING_AUTH.md) - Known authentication issues
+
+### Verification Script
+
+Run the environment verification script to check Lambda configuration:
+
+```bash
+./scripts/verify-lambda-env.sh
+```
+
+This script automatically checks:
+- All required environment variables are set
+- APP_SECRET is consistent across Lambdas
+- FRONTEND_URL and API_BASE_URL are correctly formatted
+- Database ARNs are configured
+- Common configuration errors
 
 ## Environment Variables
 
