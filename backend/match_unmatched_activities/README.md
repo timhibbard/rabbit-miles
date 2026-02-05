@@ -11,9 +11,10 @@ This Lambda function finds activities in the database where `last_matched IS NUL
 
 ## Use Cases
 
-1. **Initial Backfill**: After deploying trail matching, process all existing activities
-2. **Scheduled Cleanup**: Run daily/weekly to catch any activities missed by webhooks
-3. **Manual Trigger**: Admin can invoke manually if needed
+1. **Automatic Trigger**: Automatically invoked after `fetch_activities` stores new activities for a user (if `MATCH_UNMATCHED_ACTIVITIES_LAMBDA_ARN` is configured in fetch_activities)
+2. **Initial Backfill**: After deploying trail matching, process all existing activities
+3. **Scheduled Cleanup**: Run daily/weekly to catch any activities missed by webhooks
+4. **Manual Trigger**: Admin can invoke manually if needed
 
 ## Invocation
 
