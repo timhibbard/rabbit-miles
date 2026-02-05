@@ -10,7 +10,7 @@ import ActivityDetail from './pages/ActivityDetail';
 
 function App() {
   return (
-    <BrowserRouter basename="/rabbit-miles">
+    <BrowserRouter>
       <Routes>
         <Route path="/" element={<Layout />}>
           <Route index element={<Dashboard />} />

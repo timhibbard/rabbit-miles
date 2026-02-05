@@ -65,8 +65,8 @@ function pointToSegmentDistance(px, py, x1, y1, x2, y2) {
 export async function loadTrailData() {
   try {
     const [mainResponse, spursResponse] = await Promise.all([
-      fetch('/rabbit-miles/main.geojson'),
-      fetch('/rabbit-miles/spurs.geojson')
+      fetch('/main.geojson'),
+      fetch('/spurs.geojson')
     ]);
     
     if (!mainResponse.ok || !spursResponse.ok) {
