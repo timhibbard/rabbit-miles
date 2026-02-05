@@ -166,15 +166,16 @@ def handler(event, context):
         user_agent = headers.get("user-agent") or headers.get("User-Agent") or ""
         if user_agent:
             # Log browser type (Chrome, Safari, Firefox, etc.) for cookie compatibility debugging
+            # Check in order: Edge, Chrome, Safari (since Chrome includes Safari in UA string)
             browser_type = "unknown"
-            if "Chrome" in user_agent and "Edg" not in user_agent:
+            if "Edg" in user_agent:
+                browser_type = "Edge"
+            elif "Chrome" in user_agent:
                 browser_type = "Chrome"
-            elif "Safari" in user_agent and "Chrome" not in user_agent:
+            elif "Safari" in user_agent:
                 browser_type = "Safari"
             elif "Firefox" in user_agent:
                 browser_type = "Firefox"
-            elif "Edg" in user_agent:
-                browser_type = "Edge"
             print(f"Debug - Browser type: {browser_type}")
         
         # Check for Authorization header (should not be present)

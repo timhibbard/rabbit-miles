@@ -138,7 +138,8 @@ def handler(event, context):
         print(f"Successfully cleared tokens for athlete_id: {aid}")
     except Exception as e:
         # best-effort: clear cookie and redirect even on DB failures, but surface minimal error
-        print(f"Failed to clear tokens in database: {e}")
+        # Log generic error to avoid exposing sensitive database details
+        print(f"Failed to clear tokens in database: database error occurred")
         # Partitioned attribute is required for cross-site cookies in Chrome and modern browsers
         clear = f"rm_session=; HttpOnly; Secure; SameSite=None; Partitioned; Path={COOKIE_PATH}; Max-Age=0"
         return {
