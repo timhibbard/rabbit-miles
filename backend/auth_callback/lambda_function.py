@@ -37,9 +37,10 @@ STRAVA_TOKEN_URL = "https://www.strava.com/oauth/token"
 
 # Extract path from API_BASE_URL for cookie Path attribute
 # API_BASE_URL format: https://domain.com/stage or https://domain.com
-# We need the path portion (e.g., /stage) for cookies to work with API Gateway
+# Use a root path to avoid path mismatches across stages.
 _parsed_api_base = urlparse(API_BASE) if API_BASE else None
-COOKIE_PATH = _parsed_api_base.path if _parsed_api_base and _parsed_api_base.path else "/"
+API_BASE_PATH = _parsed_api_base.path if _parsed_api_base and _parsed_api_base.path else ""
+COOKIE_PATH = "/"
 
 
 def _parse_cookies(event: dict) -> dict:
@@ -116,6 +117,9 @@ def handler(event, context):
     code = qs.get("code")
     state = qs.get("state")
     err = qs.get("error")
+    if API_BASE_PATH:
+        print(f"Debug - API_BASE_URL path detected: {API_BASE_PATH}")
+    print(f"Debug - Cookie path configured as: {COOKIE_PATH}")
 
     if err:
         # Strava can return access_denied if user cancels
