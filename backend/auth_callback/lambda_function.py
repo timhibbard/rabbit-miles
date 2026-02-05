@@ -159,7 +159,9 @@ def handler(event, context):
 
     # Exchange code for tokens
     client_id, client_secret = _get_strava_creds()
-    redirect_uri = f"{API_BASE}/auth/callback"
+    # CRITICAL: redirect_uri must EXACTLY match the one used in auth_start
+    # auth_start uses {FRONTEND_URL}/callback, so we must use the same here
+    redirect_uri = f"{FRONTEND}/callback"
 
     body = urlencode(
         {
@@ -167,7 +169,7 @@ def handler(event, context):
             "client_secret": client_secret,
             "code": code,
             "grant_type": "authorization_code",
-            # Strava does not require redirect_uri for token exchange, but harmless if included
+            # OAuth 2.0 spec requires redirect_uri to match the authorization request
             "redirect_uri": redirect_uri,
         }
     ).encode()
