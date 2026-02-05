@@ -151,6 +151,41 @@ All backend Lambdas require environment variables set in AWS Lambda console or v
 
 ---
 
+### 5. fetch_activities Lambda
+
+**Purpose**: Fetches activities from Strava API and stores them in the database. Can be invoked via API Gateway (user-initiated) or directly from auth_callback (for new users).
+
+**Function Name**: `rabbitmiles-fetch-activities` (adjust to your naming)
+
+**Handler**: `lambda_function.handler`
+
+| Variable | Required | Example | Description |
+|----------|----------|---------|-------------|
+| `APP_SECRET` | ✅ Yes | `<long-random-string>` | Secret key for verifying session tokens (for API Gateway invocations). **Must match auth_callback and me**. |
+| `FRONTEND_URL` | ✅ Yes | `https://rabbitmiles.com` | Frontend URL for CORS headers. |
+| `STRAVA_CLIENT_ID` | ✅ Yes | `123456` | Strava application client ID. |
+| `STRAVA_CLIENT_SECRET` | ✅ Yes* | `<secret>` | Strava application client secret. *Can use STRAVA_SECRET_ARN instead. |
+| `STRAVA_SECRET_ARN` | ⚠️ Optional | `arn:aws:secretsmanager:...` | Alternative to STRAVA_CLIENT_SECRET. JSON: `{"client_id":"...","client_secret":"..."}` |
+| `DB_CLUSTER_ARN` | ✅ Yes | `arn:aws:rds:us-east-1:123456789012:cluster:rabbitmiles-db` | Aurora Serverless cluster ARN. |
+| `DB_SECRET_ARN` | ✅ Yes | `arn:aws:secretsmanager:us-east-1:123456789012:secret:rabbitmiles-db-abc123` | Secrets Manager ARN containing DB credentials. |
+| `DB_NAME` | ⚠️ Optional | `postgres` | Database name. Defaults to `postgres` if not set. |
+| `MATCH_UNMATCHED_ACTIVITIES_LAMBDA_ARN` | ⚠️ Optional | `arn:aws:lambda:us-east-1:123456789012:function:rabbitmiles-match-unmatched-activities` | ARN of match_unmatched_activities Lambda. If set, trail matching will be triggered automatically after fetching activities. |
+
+**IAM Permissions Required**:
+- `rds-data:ExecuteStatement` (for database operations)
+- `secretsmanager:GetSecretValue` (for DB credentials and optionally Strava credentials)
+- `lambda:InvokeFunction` (if MATCH_UNMATCHED_ACTIVITIES_LAMBDA_ARN is set, to trigger trail matching)
+
+**Database Requirements**:
+- `users` table must exist (for token refresh)
+- `activities` table must exist (for storing activities)
+
+**Critical Configuration**:
+- Lambda must NOT be in a VPC (RDS Data API doesn't require VPC)
+- If MATCH_UNMATCHED_ACTIVITIES_LAMBDA_ARN is set, trail matching will run automatically after activities are fetched
+
+---
+
 ### Other Backend Lambdas
 
 For completeness, other Lambdas in the system (activities, trails, webhooks) require similar database and API configuration:

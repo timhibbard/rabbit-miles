@@ -6,6 +6,7 @@
 # STRAVA_CLIENT_ID, STRAVA_CLIENT_SECRET (or STRAVA_SECRET_ARN)
 # APP_SECRET (for session verification)
 # FRONTEND_URL (for CORS)
+# MATCH_UNMATCHED_ACTIVITIES_LAMBDA_ARN (optional - for auto trail matching)
 
 import os
 import json
@@ -19,6 +20,7 @@ import boto3
 
 rds = boto3.client("rds-data")
 sm = boto3.client("secretsmanager")
+lambda_client = boto3.client("lambda")
 
 # Get environment variables safely - validation happens in handler
 DB_CLUSTER_ARN = os.environ.get("DB_CLUSTER_ARN", "")
@@ -27,6 +29,7 @@ DB_NAME = os.environ.get("DB_NAME", "postgres")
 APP_SECRET_STR = os.environ.get("APP_SECRET", "")
 APP_SECRET = APP_SECRET_STR.encode() if APP_SECRET_STR else b""
 FRONTEND_URL = os.environ.get("FRONTEND_URL", "").rstrip("/")
+MATCH_UNMATCHED_ACTIVITIES_LAMBDA_ARN = os.environ.get("MATCH_UNMATCHED_ACTIVITIES_LAMBDA_ARN", "")
 
 STRAVA_ACTIVITIES_URL = "https://www.strava.com/api/v3/athlete/activities"
 STRAVA_TOKEN_URL = "https://www.strava.com/oauth/token"
@@ -297,6 +300,44 @@ def store_activities(athlete_id, activities):
     return stored_count
 
 
+def trigger_trail_matching():
+    """
+    Trigger the match_unmatched_activities Lambda to match newly fetched activities with trails.
+    
+    This is called after activities are successfully stored to initiate trail matching.
+    Uses async invocation so it doesn't block the fetch_activities flow.
+    
+    Note: This triggers matching for ALL unmatched activities across all users, not just
+    the current athlete. This is intentional to handle any backlog of unmatched activities,
+    but it means trail matching happens globally, not just for the current user.
+    
+    Returns:
+        bool: True if trail matching was successfully triggered, False if not configured
+              or if invocation failed.
+    """
+    if not MATCH_UNMATCHED_ACTIVITIES_LAMBDA_ARN:
+        print("INFO: MATCH_UNMATCHED_ACTIVITIES_LAMBDA_ARN not configured, skipping trail matching")
+        return False
+    
+    try:
+        # Invoke match_unmatched_activities Lambda asynchronously
+        # This will find ALL activities where last_matched IS NULL (across all users)
+        # and trigger matching for them
+        payload = json.dumps({})  # No specific payload needed - will match all unmatched
+        
+        response = lambda_client.invoke(
+            FunctionName=MATCH_UNMATCHED_ACTIVITIES_LAMBDA_ARN,
+            InvocationType='Event',  # Async invocation
+            Payload=payload
+        )
+        print(f"Successfully triggered trail matching lambda: status {response.get('StatusCode')}")
+        return True
+    except Exception as e:
+        # Don't fail the fetch flow if trail matching trigger fails
+        print(f"WARNING: Failed to trigger trail matching: {e}")
+        return False
+
+
 def fetch_activities_for_athlete(athlete_id, access_token, refresh_token, expires_at):
     """Fetch and store activities for a single athlete"""
     current_time = int(time.time())
@@ -335,6 +376,11 @@ def fetch_activities_for_athlete(athlete_id, access_token, refresh_token, expire
     except Exception as e:
         print(f"ERROR: Failed to store activities: {e}")
         raise
+    
+    # Trigger trail matching for newly fetched activities
+    if stored_count > 0:
+        print(f"Triggering trail matching for {stored_count} newly stored activities...")
+        trigger_trail_matching()
     
     print(f"=== fetch_activities_for_athlete END: {stored_count} activities stored ===")
     return stored_count
