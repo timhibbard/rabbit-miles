@@ -392,8 +392,7 @@ def handler(event, context):
         print(f"LOG - Triggering automatic activity fetch for new user {athlete_id}")
         try:
             # Create payload for fetch_activities lambda
-            # The fetch_activities lambda expects to be called via API Gateway with cookies
-            # We'll invoke it directly with the athlete_id, access_token, refresh_token, expires_at
+            # Invoke directly with credentials (lambda supports both direct invocation and API Gateway)
             payload = json.dumps({
                 "athlete_id": athlete_id,
                 "access_token": access_token,

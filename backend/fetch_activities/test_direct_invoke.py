@@ -23,7 +23,7 @@ def test_event_detection():
     }
     
     is_direct_invoke = "athlete_id" in direct_event and "access_token" in direct_event
-    assert is_direct_invoke == True, "Should detect direct invocation"
+    assert is_direct_invoke, "Should detect direct invocation"
     print("✓ Test 1 passed: Detects direct invocation")
     
     # Test case 2: API Gateway invocation event
@@ -39,7 +39,7 @@ def test_event_detection():
     }
     
     is_direct_invoke = "athlete_id" in api_gateway_event and "access_token" in api_gateway_event
-    assert is_direct_invoke == False, "Should not detect API Gateway event as direct invocation"
+    assert not is_direct_invoke, "Should not detect API Gateway event as direct invocation"
     print("✓ Test 2 passed: Does not mistake API Gateway event for direct invocation")
     
     # Test case 3: Direct invocation missing access_token
@@ -48,7 +48,7 @@ def test_event_detection():
     }
     
     is_direct_invoke = "athlete_id" in incomplete_event and "access_token" in incomplete_event
-    assert is_direct_invoke == False, "Should not detect incomplete event as direct invocation"
+    assert not is_direct_invoke, "Should not detect incomplete event as direct invocation"
     print("✓ Test 3 passed: Requires both athlete_id and access_token")
 
 
