@@ -306,6 +306,14 @@ def trigger_trail_matching():
     
     This is called after activities are successfully stored to initiate trail matching.
     Uses async invocation so it doesn't block the fetch_activities flow.
+    
+    Note: This triggers matching for ALL unmatched activities across all users, not just
+    the current athlete. This is intentional to handle any backlog of unmatched activities,
+    but it means trail matching happens globally, not just for the current user.
+    
+    Returns:
+        bool: True if trail matching was successfully triggered, False if not configured
+              or if invocation failed.
     """
     if not MATCH_UNMATCHED_ACTIVITIES_LAMBDA_ARN:
         print("INFO: MATCH_UNMATCHED_ACTIVITIES_LAMBDA_ARN not configured, skipping trail matching")
@@ -313,7 +321,8 @@ def trigger_trail_matching():
     
     try:
         # Invoke match_unmatched_activities Lambda asynchronously
-        # This will find all activities where last_matched IS NULL and trigger matching for them
+        # This will find ALL activities where last_matched IS NULL (across all users)
+        # and trigger matching for them
         payload = json.dumps({})  # No specific payload needed - will match all unmatched
         
         response = lambda_client.invoke(
