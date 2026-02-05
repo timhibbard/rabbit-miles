@@ -1,6 +1,12 @@
 # 🎯 OAuth Callback URL Update
 
-## Summary
+## ⚠️ STATUS: REVERTED
+
+**This change has been reverted. See `DEPLOYMENT_CALLBACK_DOMAIN_FIX.md` for the current implementation.**
+
+The OAuth flow now uses the API Gateway domain (`9zke9jame0.execute-api.us-east-1.amazonaws.com`) directly instead of going through the frontend callback page. This simplifies the flow and requires only one domain to be configured in Strava.
+
+## Original Summary (No Longer Active)
 This PR updates the Strava OAuth callback flow to use the GitHub Pages frontend URL (`https://timhibbard.github.io/rabbit-miles/callback`) instead of the API Gateway URL. This allows you to configure `timhibbard.github.io` as the **Authorization Callback Domain** in your Strava application settings.
 
 ## What's Changed
