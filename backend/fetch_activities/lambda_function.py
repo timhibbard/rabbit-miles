@@ -341,10 +341,60 @@ def fetch_activities_for_athlete(athlete_id, access_token, refresh_token, expire
 
 
 def handler(event, context):
-    """Lambda handler - requires authentication, fetches activities for authenticated user only"""
+    """Lambda handler - requires authentication, fetches activities for authenticated user only
+    
+    Can be invoked in two ways:
+    1. Via API Gateway with cookies (for user-initiated fetches)
+    2. Directly from another lambda with payload containing athlete credentials (for automatic fetches)
+    """
     cors_headers = get_cors_headers()
     
     print(f"fetch_activities handler called")
+    print(f"Event keys: {list(event.keys())}")
+    
+    # Check if this is a direct lambda invocation (has athlete_id in payload)
+    # vs an API Gateway invocation (has requestContext)
+    is_direct_invoke = "athlete_id" in event and "access_token" in event
+    
+    if is_direct_invoke:
+        print(f"Direct lambda invocation detected")
+        # Direct invocation from auth_callback with credentials
+        athlete_id = event.get("athlete_id")
+        access_token = event.get("access_token")
+        refresh_token = event.get("refresh_token")
+        expires_at = event.get("expires_at")
+        
+        print(f"Direct invocation for athlete_id: {athlete_id}")
+        
+        # Validate credentials are present
+        if not athlete_id or not access_token or not refresh_token:
+            print(f"ERROR: Missing required fields in direct invocation")
+            return {
+                "statusCode": 400,
+                "body": json.dumps({"error": "missing required fields"})
+            }
+        
+        # Fetch and store activities
+        try:
+            stored_count = fetch_activities_for_athlete(athlete_id, access_token, refresh_token, expires_at)
+            print(f"Direct invocation completed: {stored_count} activities stored")
+            return {
+                "statusCode": 200,
+                "body": json.dumps({
+                    "message": "Successfully fetched activities",
+                    "total_activities_stored": stored_count
+                })
+            }
+        except Exception as e:
+            print(f"Error in direct invocation: {e}")
+            import traceback
+            traceback.print_exc()
+            return {
+                "statusCode": 500,
+                "body": json.dumps({"error": "internal server error"})
+            }
+    
+    # API Gateway invocation - continue with existing logic
     print(f"Request method: {event.get('requestContext', {}).get('http', {}).get('method')}")
     
     # Handle OPTIONS preflight

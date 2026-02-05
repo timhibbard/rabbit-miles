@@ -22,11 +22,13 @@ import boto3
 
 rds = boto3.client("rds-data")
 sm = boto3.client("secretsmanager")
+lambda_client = boto3.client("lambda")
 
 # Get environment variables safely - validation happens in handler
 DB_CLUSTER_ARN = os.environ.get("DB_CLUSTER_ARN", "")
 DB_SECRET_ARN = os.environ.get("DB_SECRET_ARN", "")
 DB_NAME = os.environ.get("DB_NAME", "postgres")
+FETCH_ACTIVITIES_LAMBDA_ARN = os.environ.get("FETCH_ACTIVITIES_LAMBDA_ARN", "")
 
 API_BASE = os.environ.get("API_BASE_URL", "").rstrip("/")
 FRONTEND = os.environ.get("FRONTEND_URL", "").rstrip("/")
@@ -337,6 +339,18 @@ def handler(event, context):
     print(f"LOG -   display_name: {display_name}")
     print(f"LOG -   profile_picture: {bool(profile_picture)}")
 
+    # Check if user already exists (to determine if this is a new user)
+    print(f"LOG - Checking if user {athlete_id} already exists")
+    check_sql = "SELECT athlete_id FROM users WHERE athlete_id = :aid"
+    check_params = [{"name": "aid", "value": {"longValue": athlete_id}}]
+    check_result = _exec_sql(check_sql, check_params)
+    is_new_user = len(check_result.get("records", [])) == 0
+    
+    if is_new_user:
+        print(f"LOG - New user detected: {athlete_id} ({display_name})")
+    else:
+        print(f"LOG - Existing user returning: {athlete_id} ({display_name})")
+
     # Upsert user row (Data API)
     print(f"LOG - Upserting user to database")
     sql = """
@@ -372,6 +386,32 @@ def handler(event, context):
     print(f"LOG - Executing database upsert for athlete_id: {athlete_id}")
     _exec_sql(sql, params)
     print(f"LOG - Database upsert SUCCESS for user {athlete_id} ({display_name})")
+
+    # Trigger activity fetch for new users
+    if is_new_user and FETCH_ACTIVITIES_LAMBDA_ARN:
+        print(f"LOG - Triggering automatic activity fetch for new user {athlete_id}")
+        try:
+            # Create payload for fetch_activities lambda
+            # Invoke directly with credentials (lambda supports both direct invocation and API Gateway)
+            payload = json.dumps({
+                "athlete_id": athlete_id,
+                "access_token": access_token,
+                "refresh_token": refresh_token,
+                "expires_at": expires_at
+            })
+            
+            # Invoke asynchronously (Event type) so we don't block the auth flow
+            response = lambda_client.invoke(
+                FunctionName=FETCH_ACTIVITIES_LAMBDA_ARN,
+                InvocationType='Event',  # Async invocation
+                Payload=payload
+            )
+            print(f"LOG - Successfully triggered activity fetch lambda: status {response.get('StatusCode')}")
+        except Exception as e:
+            # Don't fail the auth flow if activity fetch trigger fails
+            print(f"WARNING - Failed to trigger activity fetch: {e}")
+    elif is_new_user:
+        print(f"WARNING - FETCH_ACTIVITIES_LAMBDA_ARN not configured, skipping automatic activity fetch")
 
     # Create session cookie
     print(f"LOG - Creating session token for athlete_id: {athlete_id}")

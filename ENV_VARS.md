@@ -81,10 +81,12 @@ All backend Lambdas require environment variables set in AWS Lambda console or v
 | `DB_CLUSTER_ARN` | ✅ Yes | `arn:aws:rds:us-east-1:123456789012:cluster:rabbitmiles-db` | Aurora Serverless cluster ARN. |
 | `DB_SECRET_ARN` | ✅ Yes | `arn:aws:secretsmanager:us-east-1:123456789012:secret:rabbitmiles-db-abc123` | Secrets Manager ARN containing DB credentials. |
 | `DB_NAME` | ⚠️ Optional | `postgres` | Database name. Defaults to `postgres` if not set. |
+| `FETCH_ACTIVITIES_LAMBDA_ARN` | ⚠️ Optional | `arn:aws:lambda:us-east-1:123456789012:function:rabbitmiles-fetch-activities` | ARN of fetch_activities Lambda. If set, new users will have activities fetched automatically. |
 
 **IAM Permissions Required**:
 - `rds-data:ExecuteStatement`
 - `secretsmanager:GetSecretValue` (for DB credentials and optionally Strava credentials)
+- `lambda:InvokeFunction` (if FETCH_ACTIVITIES_LAMBDA_ARN is set, to trigger automatic activity fetch for new users)
 
 **Database Requirements**:
 - `oauth_states` table must exist (for state validation)
@@ -242,7 +244,8 @@ Use this checklist to verify all environment variables are set correctly:
 - [ ] `STRAVA_CLIENT_SECRET` or `STRAVA_SECRET_ARN` set
 - [ ] `DB_CLUSTER_ARN` set
 - [ ] `DB_SECRET_ARN` set
-- [ ] Lambda has required IAM permissions
+- [ ] `FETCH_ACTIVITIES_LAMBDA_ARN` set (optional, for automatic activity fetch)
+- [ ] Lambda has required IAM permissions (including `lambda:InvokeFunction` if using auto-fetch)
 - [ ] `users` and `oauth_states` tables exist
 
 ### ✅ me Lambda
