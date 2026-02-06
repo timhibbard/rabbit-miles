@@ -53,6 +53,8 @@ jobs:
           - name: admin_user_activities
             secret: LAMBDA_ADMIN_USER_ACTIVITIES
             needs_utils: true
+          - name: backfill_athlete_count
+            secret: LAMBDA_BACKFILL_ATHLETE_COUNT
     steps:
       - name: Checkout code
         uses: actions/checkout@v4

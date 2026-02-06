@@ -281,6 +281,51 @@ All backend Lambdas require environment variables set in AWS Lambda console or v
 
 ---
 
+### 9. backfill_athlete_count Lambda
+
+**Purpose**: Backfills the `athlete_count` field for existing activities by fetching data from Strava API. Used when adding new fields to activities table that require historical data population.
+
+**Function Name**: `rabbitmiles-backfill-athlete-count` (adjust to your naming)
+
+**Handler**: `lambda_function.handler`
+
+| Variable | Required | Example | Description |
+|----------|----------|---------|-------------|
+| `DB_CLUSTER_ARN` | ✅ Yes | `arn:aws:rds:us-east-1:123456789012:cluster:rabbitmiles-db` | Aurora Serverless cluster ARN. |
+| `DB_SECRET_ARN` | ✅ Yes | `arn:aws:secretsmanager:us-east-1:123456789012:secret:rabbitmiles-db-abc123` | Secrets Manager ARN containing DB credentials. |
+| `DB_NAME` | ⚠️ Optional | `postgres` | Database name. Defaults to `postgres` if not set. |
+
+**IAM Permissions Required**:
+- `rds-data:ExecuteStatement`
+- `secretsmanager:GetSecretValue`
+
+**Database Requirements**:
+- `users` table must exist (to get user tokens)
+- `activities` table must exist with `athlete_count` column
+
+**Invocation**:
+- Can be invoked manually or via EventBridge schedule
+- Supports two modes:
+  - Batch mode: Process all users (invoke with empty payload `{}`)
+  - Single user mode: Process specific user (invoke with `{"athlete_id": 123456}`)
+- Updates all activities with the latest values from Strava API, overwriting existing data
+
+**Usage Examples**:
+```bash
+# Backfill all users
+aws lambda invoke --function-name rabbitmiles-backfill-athlete-count --payload '{}' response.json
+
+# Backfill single user
+aws lambda invoke --function-name rabbitmiles-backfill-athlete-count --payload '{"athlete_id": 123456}' response.json
+```
+
+**Notes**:
+- Respects Strava API rate limits (100 requests per 15 minutes, 1000 per day)
+- Logs progress and results to CloudWatch
+- This Lambda serves as a template for future field backfills
+
+---
+
 ### Other Backend Lambdas
 
 For completeness, other Lambdas in the system (activities, trails, webhooks) require similar database and API configuration:
