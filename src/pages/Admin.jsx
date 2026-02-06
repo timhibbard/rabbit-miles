@@ -9,6 +9,10 @@ function Admin() {
   const [selectedUser, setSelectedUser] = useState(null);
   const [activities, setActivities] = useState([]);
   const [activitiesLoading, setActivitiesLoading] = useState(false);
+  const [loadingMoreActivities, setLoadingMoreActivities] = useState(false);
+  const [activitiesOffset, setActivitiesOffset] = useState(0);
+  const [totalActivitiesCount, setTotalActivitiesCount] = useState(0);
+  const [hasMoreActivities, setHasMoreActivities] = useState(false);
   const [error, setError] = useState(null);
   const [refreshingUsers, setRefreshingUsers] = useState(false);
   const [refreshingActivities, setRefreshingActivities] = useState(false);
@@ -58,13 +62,20 @@ function Admin() {
     setSelectedUser(user);
     setActivitiesLoading(true);
     setError(null);
+    setActivitiesOffset(0);
+    setActivities([]);
 
-    const result = await fetchUserActivities(user.athlete_id);
+    const result = await fetchUserActivities(user.athlete_id, 50, 0);
     if (result.success) {
       setActivities(result.data.activities || []);
+      setTotalActivitiesCount(result.data.total_count || 0);
+      setHasMoreActivities((result.data.activities || []).length < (result.data.total_count || 0));
+      setActivitiesOffset(50);
     } else {
       setError(result.error || 'Failed to load activities');
       setActivities([]);
+      setTotalActivitiesCount(0);
+      setHasMoreActivities(false);
     }
     setActivitiesLoading(false);
   };
@@ -87,10 +98,14 @@ function Admin() {
     
     setRefreshingActivities(true);
     setError(null);
+    setActivitiesOffset(0);
 
-    const result = await fetchUserActivities(selectedUser.athlete_id);
+    const result = await fetchUserActivities(selectedUser.athlete_id, 50, 0);
     if (result.success) {
       setActivities(result.data.activities || []);
+      setTotalActivitiesCount(result.data.total_count || 0);
+      setHasMoreActivities((result.data.activities || []).length < (result.data.total_count || 0));
+      setActivitiesOffset(50);
     } else {
       setError(result.error || 'Failed to refresh activities');
     }
@@ -152,14 +167,44 @@ function Admin() {
     if (result.success) {
       setSuccessMessage(`Successfully backfilled ${result.data.activities_stored} activities for ${selectedUser.display_name}`);
       // Refresh activities list to show newly backfilled activities
-      const activitiesResult = await fetchUserActivities(selectedUser.athlete_id);
+      setActivitiesOffset(0);
+      const activitiesResult = await fetchUserActivities(selectedUser.athlete_id, 50, 0);
       if (activitiesResult.success) {
         setActivities(activitiesResult.data.activities || []);
+        setTotalActivitiesCount(activitiesResult.data.total_count || 0);
+        setHasMoreActivities((activitiesResult.data.activities || []).length < (activitiesResult.data.total_count || 0));
+        setActivitiesOffset(50);
       }
     } else {
       setError(result.error || 'Failed to backfill activities');
     }
     setBackfillingActivities(false);
+  };
+
+  const loadMoreActivities = async () => {
+    if (!selectedUser || loadingMoreActivities || !hasMoreActivities) return;
+    
+    setLoadingMoreActivities(true);
+    setError(null);
+
+    const result = await fetchUserActivities(selectedUser.athlete_id, 50, activitiesOffset);
+    if (result.success) {
+      const newActivities = result.data.activities || [];
+      setActivities([...activities, ...newActivities]);
+      const newOffset = activitiesOffset + newActivities.length;
+      setActivitiesOffset(newOffset);
+      setHasMoreActivities(newOffset < (result.data.total_count || 0));
+    } else {
+      setError(result.error || 'Failed to load more activities');
+    }
+    setLoadingMoreActivities(false);
+  };
+
+  const handleScroll = (e) => {
+    const bottom = e.target.scrollHeight - e.target.scrollTop <= e.target.clientHeight + 50;
+    if (bottom && hasMoreActivities && !loadingMoreActivities) {
+      loadMoreActivities();
+    }
   };
 
   const formatDate = (dateString) => {
@@ -392,7 +437,7 @@ function Admin() {
         <div className="bg-white shadow-md rounded-lg overflow-hidden">
           <div className="px-6 py-4 bg-gray-50 border-b border-gray-200 flex justify-between items-center">
             <h2 className="text-xl font-semibold text-gray-900">
-              {selectedUser ? `${selectedUser.display_name}'s Activities (${activities.length})` : 'Select a User'}
+              {selectedUser ? `${selectedUser.display_name}'s Activities (${activities.length}${totalActivitiesCount > activities.length ? ` of ${totalActivitiesCount}` : ''})` : 'Select a User'}
             </h2>
             {selectedUser && (
               <div className="flex gap-2">
@@ -444,7 +489,7 @@ function Admin() {
               </div>
             )}
           </div>
-          <div className="divide-y divide-gray-200 max-h-[600px] overflow-y-auto">
+          <div className="divide-y divide-gray-200 max-h-[600px] overflow-y-auto" onScroll={handleScroll}>
             {!selectedUser ? (
               <div className="px-6 py-8 text-center text-gray-500">
                 Select a user from the list to view their activities
@@ -459,41 +504,54 @@ function Admin() {
                 No activities found for this user
               </div>
             ) : (
-              activities.map((activity) => (
-                <a
-                  key={activity.id}
-                  href={`/activity/${activity.id}?debug=1`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="block px-6 py-4 hover:bg-gray-50 transition-colors cursor-pointer"
-                >
-                  <div className="flex justify-between items-start">
-                    <div className="flex-1">
-                      <h3 className="font-medium text-gray-900">{activity.name}</h3>
-                      <div className="mt-1 text-sm text-gray-500 space-y-1">
-                        <p>Type: {activity.type}</p>
-                        <p>Distance: {formatDistance(activity.distance)}</p>
-                        <p>Duration: {formatDuration(activity.moving_time)}</p>
-                        <p>Date: {formatDate(activity.start_date_local)}</p>
-                        {activity.distance_on_trail !== null && activity.distance_on_trail !== undefined && 
-                         activity.time_on_trail !== null && activity.time_on_trail !== undefined && (
-                          <p className="text-orange-600 font-medium">
-                            Trail: {formatDistance(activity.distance_on_trail)} / {formatDuration(activity.time_on_trail)}
-                          </p>
-                        )}
+              <>
+                {activities.map((activity) => (
+                  <a
+                    key={activity.id}
+                    href={`/activity/${activity.id}?debug=1`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block px-6 py-4 hover:bg-gray-50 transition-colors cursor-pointer"
+                  >
+                    <div className="flex justify-between items-start">
+                      <div className="flex-1">
+                        <h3 className="font-medium text-gray-900">{activity.name}</h3>
+                        <div className="mt-1 text-sm text-gray-500 space-y-1">
+                          <p>Type: {activity.type}</p>
+                          <p>Distance: {formatDistance(activity.distance)}</p>
+                          <p>Duration: {formatDuration(activity.moving_time)}</p>
+                          <p>Date: {formatDate(activity.start_date_local)}</p>
+                          {activity.distance_on_trail !== null && activity.distance_on_trail !== undefined && 
+                           activity.time_on_trail !== null && activity.time_on_trail !== undefined && (
+                            <p className="text-orange-600 font-medium">
+                              Trail: {formatDistance(activity.distance_on_trail)} / {formatDuration(activity.time_on_trail)}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex flex-col items-end gap-2">
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                          {activity.strava_activity_id}
+                        </span>
+                        <svg className="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
+                        </svg>
                       </div>
                     </div>
-                    <div className="flex flex-col items-end gap-2">
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                        {activity.strava_activity_id}
-                      </span>
-                      <svg className="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
-                      </svg>
-                    </div>
+                  </a>
+                ))}
+                {loadingMoreActivities && (
+                  <div className="px-6 py-4 text-center">
+                    <div className="inline-block animate-spin rounded-full h-5 w-5 border-b-2 border-orange-600"></div>
+                    <p className="mt-2 text-sm text-gray-600">Loading more activities...</p>
                   </div>
-                </a>
-              ))
+                )}
+                {!hasMoreActivities && activities.length > 0 && (
+                  <div className="px-6 py-4 text-center text-sm text-gray-500">
+                    All activities loaded
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>
