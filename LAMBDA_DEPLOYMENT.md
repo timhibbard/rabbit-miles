@@ -10,10 +10,33 @@ The repository includes a GitHub Actions workflow that automatically deploys all
 
 The following Lambda functions will be auto-deployed:
 
+### Authentication & User Management
 1. **auth_start** - Initiates Strava OAuth flow
 2. **auth_callback** - Handles OAuth callback from Strava
 3. **auth_disconnect** - Disconnects Strava integration
 4. **me** - Returns authenticated user information
+
+### Activities & Data
+5. **get_activities** - Retrieves user's activities
+6. **get_activity_detail** - Gets detailed activity information
+7. **fetch_activities** - Fetches activities from Strava API
+8. **update_activities** - Updates activity data
+
+### Trail Matching
+9. **match_activity_trail** - Matches activities to trails
+10. **match_unmatched_activities** - Processes unmatched activities
+11. **reset_last_matched** - Resets trail matching state
+12. **update_trail_data** - Updates trail information
+
+### Webhooks
+13. **webhook** - Handles Strava webhook events
+14. **webhook_processor** - Processes webhook events from queue
+
+### Admin (NEW)
+15. **admin_list_users** - Lists all users (admin only)
+16. **admin_user_activities** - Views user activities (admin only)
+
+**Note**: Admin Lambdas require the `admin_utils.py` dependency, which is automatically included during deployment.
 
 ## Prerequisites
 
@@ -46,7 +69,19 @@ Create a policy with these permissions:
         "arn:aws:lambda:*:*:function:rabbitmiles-auth-start",
         "arn:aws:lambda:*:*:function:rabbitmiles-auth-callback",
         "arn:aws:lambda:*:*:function:rabbitmiles-auth-disconnect",
-        "arn:aws:lambda:*:*:function:rabbitmiles-me"
+        "arn:aws:lambda:*:*:function:rabbitmiles-me",
+        "arn:aws:lambda:*:*:function:rabbitmiles-get-activities",
+        "arn:aws:lambda:*:*:function:rabbitmiles-get-activity-detail",
+        "arn:aws:lambda:*:*:function:rabbitmiles-fetch-activities",
+        "arn:aws:lambda:*:*:function:rabbitmiles-update-activities",
+        "arn:aws:lambda:*:*:function:rabbitmiles-match-activity-trail",
+        "arn:aws:lambda:*:*:function:rabbitmiles-match-unmatched-activities",
+        "arn:aws:lambda:*:*:function:rabbitmiles-reset-last-matched",
+        "arn:aws:lambda:*:*:function:rabbitmiles-update-trail-data",
+        "arn:aws:lambda:*:*:function:rabbitmiles-webhook",
+        "arn:aws:lambda:*:*:function:rabbitmiles-webhook-processor",
+        "arn:aws:lambda:*:*:function:rabbitmiles-admin-list-users",
+        "arn:aws:lambda:*:*:function:rabbitmiles-admin-user-activities"
       ]
     }
   ]
@@ -87,6 +122,18 @@ Add the following secrets to your GitHub repository:
 | `LAMBDA_AUTH_CALLBACK_NAME` | Name of auth_callback Lambda function | `rabbitmiles-auth-callback` |
 | `LAMBDA_AUTH_DISCONNECT_NAME` | Name of auth_disconnect Lambda function | `rabbitmiles-auth-disconnect` |
 | `LAMBDA_ME_NAME` | Name of me Lambda function | `rabbitmiles-me` |
+| `LAMBDA_GET_ACTIVITIES` | Name of get_activities Lambda function | `rabbitmiles-get-activities` |
+| `LAMBDA_GET_ACTIVITY_DETAIL` | Name of get_activity_detail Lambda function | `rabbitmiles-get-activity-detail` |
+| `LAMBDA_FETCH_ACTIVITIES` | Name of fetch_activities Lambda function | `rabbitmiles-fetch-activities` |
+| `LAMBDA_UPDATE_ACTIVITIES` | Name of update_activities Lambda function | `rabbitmiles-update-activities` |
+| `LAMBDA_MATCH_ACTIVITY_TRAIL` | Name of match_activity_trail Lambda function | `rabbitmiles-match-activity-trail` |
+| `LAMBDA_MATCH_UNMATCHED_ACTIVITIES` | Name of match_unmatched_activities Lambda function | `rabbitmiles-match-unmatched-activities` |
+| `LAMBDA_RESET_LAST_MATCHED` | Name of reset_last_matched Lambda function | `rabbitmiles-reset-last-matched` |
+| `LAMBDA_UPDATE_TRAIL_DATA` | Name of update_trail_data Lambda function | `rabbitmiles-update-trail-data` |
+| `LAMBDA_WEBHOOK` | Name of webhook Lambda function | `rabbitmiles-webhook` |
+| `LAMBDA_WEBHOOK_PROCESSOR` | Name of webhook_processor Lambda function | `rabbitmiles-webhook-processor` |
+| `LAMBDA_ADMIN_LIST_USERS` | Name of admin_list_users Lambda function | `rabbitmiles-admin-list-users` |
+| `LAMBDA_ADMIN_USER_ACTIVITIES` | Name of admin_user_activities Lambda function | `rabbitmiles-admin-user-activities` |
 
 ### Adding Secrets
 

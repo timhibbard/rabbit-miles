@@ -23,6 +23,18 @@ After deploying the trail matching Lambda functions to AWS, you need to add the 
 - **Example value**: `match_unmatched_activities` or `prod-match-unmatched-activities`
 - **Used by**: GitHub Actions workflow to deploy code updates to this Lambda
 
+#### LAMBDA_ADMIN_LIST_USERS
+- **Description**: The AWS Lambda function name for the admin_list_users function
+- **Example value**: `admin_list_users` or `prod-admin-list-users`
+- **Used by**: GitHub Actions workflow to deploy code updates to this Lambda
+- **Note**: This Lambda requires the admin_utils.py dependency (automatically included in deployment)
+
+#### LAMBDA_ADMIN_USER_ACTIVITIES
+- **Description**: The AWS Lambda function name for the admin_user_activities function
+- **Example value**: `admin_user_activities` or `prod-admin-user-activities`
+- **Used by**: GitHub Actions workflow to deploy code updates to this Lambda
+- **Note**: This Lambda requires the admin_utils.py dependency (automatically included in deployment)
+
 ## Deployment Flow
 
 Once these secrets are configured:
@@ -30,10 +42,13 @@ Once these secrets are configured:
 1. Push changes to the `main` branch that affect `backend/**` files
 2. GitHub Actions will automatically:
    - Package each Lambda function (creates `function.zip`)
+   - For admin Lambdas: Include `admin_utils.py` dependency in the package
    - Deploy to AWS using `aws lambda update-function-code`
    - Deploy runs in parallel for all Lambda functions
 
 3. The workflow can also be triggered manually via the **Actions** tab → **Deploy Lambda Functions** → **Run workflow**
+
+**Note for Admin Lambdas**: The `admin_list_users` and `admin_user_activities` Lambdas depend on the shared `admin_utils.py` module. The deployment workflow automatically includes this file in their deployment packages.
 
 ## Verifying Secrets
 
@@ -56,14 +71,17 @@ For reference, here's the complete list of Lambda secrets used in the workflow:
 - `LAMBDA_AUTH_DISCONNECT_NAME`
 - `LAMBDA_ME_NAME`
 - `LAMBDA_GET_ACTIVITIES`
+- `LAMBDA_GET_ACTIVITY_DETAIL`
 - `LAMBDA_FETCH_ACTIVITIES`
 - `LAMBDA_WEBHOOK`
 - `LAMBDA_WEBHOOK_PROCESSOR`
 - `LAMBDA_RESET_LAST_MATCHED`
 - `LAMBDA_UPDATE_TRAIL_DATA`
 - `LAMBDA_UPDATE_ACTIVITIES`
-- **`LAMBDA_MATCH_ACTIVITY_TRAIL`** ← NEW
-- **`LAMBDA_MATCH_UNMATCHED_ACTIVITIES`** ← NEW
+- `LAMBDA_MATCH_ACTIVITY_TRAIL`
+- `LAMBDA_MATCH_UNMATCHED_ACTIVITIES`
+- **`LAMBDA_ADMIN_LIST_USERS`** ← NEW (Admin endpoint)
+- **`LAMBDA_ADMIN_USER_ACTIVITIES`** ← NEW (Admin endpoint)
 
 ## Additional AWS Secrets
 
