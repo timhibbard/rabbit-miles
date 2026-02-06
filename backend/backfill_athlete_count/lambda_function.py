@@ -60,8 +60,8 @@ def _get_strava_creds():
     if (not client_id or not client_secret) and secret_arn:
         resp = sm_client.get_secret_value(SecretId=secret_arn)
         data = json.loads(resp["SecretString"])
-        client_id = client_id or str(data.get("client_id") or data.get("clientId"))
-        client_secret = client_secret or str(data.get("client_secret") or data.get("clientSecret"))
+        client_id = client_id or (data.get("client_id") or data.get("clientId"))
+        client_secret = client_secret or (data.get("client_secret") or data.get("clientSecret"))
 
     if not client_id or not client_secret:
         raise RuntimeError("Missing STRAVA_CLIENT_ID/STRAVA_CLIENT_SECRET")
@@ -129,7 +129,12 @@ def get_user_tokens():
         athlete_id = record[0].get("longValue")
         access_token = record[1].get("stringValue")
         refresh_token = record[2].get("stringValue")
-        expires_at = int(record[3].get("longValue", 0))
+        # Default to 0 if missing - this will trigger a token refresh which is the safe behavior
+        expires_at = record[3].get("longValue")
+        if expires_at is None:
+            expires_at = 0
+        else:
+            expires_at = int(expires_at)
         
         if athlete_id and access_token:
             users.append({
@@ -227,7 +232,9 @@ def handler(event, context):
                 record = result["records"][0]
                 users[0]["access_token"] = record[0].get("stringValue")
                 users[0]["refresh_token"] = record[1].get("stringValue")
-                users[0]["expires_at"] = int(record[2].get("longValue", 0))
+                # Default to 0 if missing - this will trigger a token refresh which is the safe behavior
+                expires_at_value = record[2].get("longValue")
+                users[0]["expires_at"] = int(expires_at_value) if expires_at_value is not None else 0
             else:
                 return {
                     "statusCode": 404,
