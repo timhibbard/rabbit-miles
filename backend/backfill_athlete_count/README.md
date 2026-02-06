@@ -41,6 +41,13 @@ This function requires the same environment variables as other backend Lambdas:
 - `DB_CLUSTER_ARN` - ARN of the RDS Aurora Cluster
 - `DB_SECRET_ARN` - ARN of the Secrets Manager secret for database credentials
 - `DB_NAME` - Database name (default: "postgres")
+- `STRAVA_CLIENT_ID` - Strava OAuth client ID
+- `STRAVA_CLIENT_SECRET` - Strava OAuth client secret (or use `STRAVA_SECRET_ARN`)
+- `STRAVA_SECRET_ARN` - (Optional) ARN of Secrets Manager secret containing Strava credentials
+
+## Token Refresh
+
+The function automatically refreshes expired Strava access tokens for each athlete before fetching activities. Tokens are refreshed if they are expired or expiring within 5 minutes. This ensures that all athletes' activities can be fetched successfully, not just the user who triggered the function.
 
 ## Response
 
