@@ -267,4 +267,28 @@ export const deleteUser = async (athleteId) => {
   }
 };
 
+// Backfill activities for a user (admin only)
+export const backfillUserActivities = async (athleteId) => {
+  try {
+    debug.log(`Calling POST /admin/users/${athleteId}/backfill-activities endpoint...`);
+    const response = await api.post(`/admin/users/${athleteId}/backfill-activities`);
+    debug.log(`POST /admin/users/${athleteId}/backfill-activities response received:`, response.data);
+    return { success: true, data: response.data };
+  } catch (error) {
+    console.error(`POST /admin/users/${athleteId}/backfill-activities endpoint error:`, error.message);
+    if (error.response?.status === 401) {
+      debug.log('User not authenticated (401)');
+      return { success: false, notConnected: true };
+    }
+    if (error.response?.status === 403) {
+      debug.log('User not authorized for admin access (403)');
+      return { success: false, error: 'Access denied - admin privileges required' };
+    }
+    if (error.response?.status === 404) {
+      return { success: false, error: 'User not found' };
+    }
+    return { success: false, error: error.response?.data?.message || error.message };
+  }
+};
+
 export default api;
