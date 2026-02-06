@@ -5,7 +5,7 @@
 When trying to delete a user, you're seeing:
 - ❌ `404` error in browser console
 - ❌ `Preflight response is not successful. Status code: 404`
-- ❌ `XMLHttpRequest cannot load https://api.rabbitmiles.com/admin/users/204597277 due to access control checks`
+- ❌ `XMLHttpRequest cannot load https://api.rabbitmiles.com/admin/users/{athlete_id} due to access control checks`
 
 ## Root Cause
 
@@ -64,8 +64,9 @@ If you prefer to fix this manually in the AWS Console:
 #### Step 1: Verify Your API Gateway Configuration
 
 1. Go to [API Gateway Console](https://console.aws.amazon.com/apigateway/)
-2. Find your RabbitMiles HTTP API (look for the API ID from your screenshot: `9zke9jame0`)
+2. Find your RabbitMiles HTTP API (you can identify it by the API name)
 3. Click on it to open the configuration
+4. Note your API Gateway ID (you'll need it later)
 
 #### Step 2: Check Route Configuration  
 
@@ -108,10 +109,13 @@ aws lambda add-permission \
   --statement-id apigateway-admin-delete-user \
   --action lambda:InvokeFunction \
   --principal apigateway.amazonaws.com \
-  --source-arn "arn:aws:execute-api:us-east-1:366543485524:9zke9jame0/*/*/admin/users/*"
+  --source-arn "arn:aws:execute-api:<YOUR_REGION>:<YOUR_ACCOUNT_ID>:<YOUR_API_GATEWAY_ID>/*/*/admin/users/*"
 ```
 
-Replace `us-east-1` with your region if different.
+Replace:
+- `<YOUR_REGION>` with your AWS region (e.g., `us-east-1`)
+- `<YOUR_ACCOUNT_ID>` with your AWS account ID
+- `<YOUR_API_GATEWAY_ID>` with your API Gateway ID from Step 1
 
 #### Step 5: Deploy Changes
 
@@ -130,8 +134,8 @@ After applying the fix, test the delete user functionality:
 2. Open Developer Tools (F12) → Network tab
 3. Try to delete a user
 4. You should see:
-   - ✅ `OPTIONS /admin/users/204597277` → Status `200 OK`
-   - ✅ `DELETE /admin/users/204597277` → Status `200 OK` (or `404` if user doesn't exist)
+   - ✅ `OPTIONS /admin/users/{athlete_id}` → Status `200 OK`
+   - ✅ `DELETE /admin/users/{athlete_id}` → Status `200 OK` (or `404` if user doesn't exist)
 
 ### Expected Successful Response
 
@@ -139,9 +143,9 @@ After applying the fix, test the delete user functionality:
 {
   "success": true,
   "deleted": {
-    "athlete_id": 204597277,
-    "display_name": "Tim Hibbard-test",
-    "activities_count": 0
+    "athlete_id": 123456789,
+    "display_name": "Example User",
+    "activities_count": 42
   }
 }
 ```
@@ -191,14 +195,19 @@ If you're still getting 404 errors after following these steps:
    
 2. Verify the route exists:
    ```bash
-   aws apigatewayv2 get-routes --api-id 9zke9jame0
+   aws apigatewayv2 get-routes --api-id <YOUR_API_GATEWAY_ID>
    ```
 
 3. Test with curl (bypass browser CORS):
    ```bash
-   curl -X DELETE https://api.rabbitmiles.com/admin/users/204597277 \
-     -H "Cookie: rm_session=your-session-cookie" \
+   curl -X DELETE https://api.rabbitmiles.com/admin/users/123456789 \
+     -H "Cookie: rm_session=<YOUR_SESSION_COOKIE>" \
      -v
    ```
+   
+   **Note:** To get your session cookie value:
+   - Open browser DevTools (F12) → Application tab → Cookies
+   - Find the cookie named `rm_session`
+   - Copy its value
 
 If the curl command works but the browser doesn't, it's definitely a CORS configuration issue.
