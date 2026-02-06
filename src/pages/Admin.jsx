@@ -207,6 +207,16 @@ function Admin() {
     }
   };
 
+  const getActivityCountText = () => {
+    if (!selectedUser) return 'Select a User';
+    
+    const baseText = `${selectedUser.display_name}'s Activities`;
+    if (totalActivitiesCount > activities.length) {
+      return `${baseText} (${activities.length} of ${totalActivitiesCount})`;
+    }
+    return `${baseText} (${activities.length})`;
+  };
+
   const formatDate = (dateString) => {
     if (!dateString) return 'N/A';
     return new Date(dateString).toLocaleDateString('en-US', {
@@ -437,7 +447,7 @@ function Admin() {
         <div className="bg-white shadow-md rounded-lg overflow-hidden">
           <div className="px-6 py-4 bg-gray-50 border-b border-gray-200 flex justify-between items-center">
             <h2 className="text-xl font-semibold text-gray-900">
-              {selectedUser ? `${selectedUser.display_name}'s Activities (${activities.length}${totalActivitiesCount > activities.length ? ` of ${totalActivitiesCount}` : ''})` : 'Select a User'}
+              {getActivityCountText()}
             </h2>
             {selectedUser && (
               <div className="flex gap-2">
