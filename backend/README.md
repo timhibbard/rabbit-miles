@@ -157,7 +157,7 @@ This directory contains all AWS Lambda functions for the RabbitMiles backend API
 ```
 
 **Algorithm:**
-- 50 meter tolerance on either side of trail
+- 25 meter tolerance on either side of trail
 - Haversine distance for accurate geodesic calculations
 - Point-to-segment distance for trail proximity
 - Time calculation proportional to distance ratio

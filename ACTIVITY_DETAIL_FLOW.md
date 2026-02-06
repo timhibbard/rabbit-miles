@@ -75,7 +75,7 @@ The frontend calculates which segments are on/off trail by:
 1. Loading trail GeoJSON data (main trail + spurs)
 2. For each point in the activity route:
    - Calculate distance to nearest trail segment
-   - Mark as "on trail" if within 50 meters
+   - Mark as "on trail" if within 25 meters
 3. Group consecutive on/off trail points into segments
 4. Render each segment with appropriate color
 

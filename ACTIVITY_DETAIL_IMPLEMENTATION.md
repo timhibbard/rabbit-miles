@@ -33,13 +33,13 @@ This implementation adds a comprehensive activity detail page where users can cl
 - **Utilities**
   - `polyline.js`: Decodes Google encoded polylines into coordinates
   - `trailMatching.js`: Calculates which segments are on/off trail
-  - Uses same 50-meter tolerance as backend algorithm
+  - Uses same 25-meter tolerance as backend algorithm
   - Loads trail GeoJSON data from public directory
 
 ### Trail Visualization
 The implementation provides accurate trail visualization by:
 1. Loading trail GeoJSON data (main trail + spurs) on the frontend
-2. Calculating segment-by-segment which parts of the activity are within 50 meters of the trail
+2. Calculating segment-by-segment which parts of the activity are within 25 meters of the trail
 3. Rendering multiple polylines with appropriate colors:
    - **Green (#10b981)**: Segments on the trail
    - **Blue (#3b82f6)**: Segments off the trail

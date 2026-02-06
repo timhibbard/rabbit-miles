@@ -3,7 +3,7 @@
  * are on the trail vs off the trail
  */
 
-const TRAIL_TOLERANCE_METERS = 50; // 50 meters on each side of trail (matches backend algorithm)
+const TRAIL_TOLERANCE_METERS = 25; // 25 meters on each side of trail (matches backend algorithm)
 
 /**
  * Calculate the great circle distance in meters between two points

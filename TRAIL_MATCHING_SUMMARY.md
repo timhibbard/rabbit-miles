@@ -69,7 +69,7 @@ Display trail metrics to user
 3. **Segment Matching**: For each activity segment:
    - Calculate segment midpoint
    - Find minimum distance to all trail segments
-   - Mark as "on trail" if distance ≤ 50 meters
+   - Mark as "on trail" if distance ≤ 25 meters
 4. **Calculate Metrics**:
    - `distance_on_trail`: Sum of matched segment lengths
    - `time_on_trail`: Proportional to distance ratio (assumes constant speed)
@@ -77,7 +77,7 @@ Display trail metrics to user
 
 ### Key Technical Details
 
-- **Tolerance**: 50 meters on either side of trail centerline
+- **Tolerance**: 25 meters on either side of trail centerline
 - **Distance Calculation**: Haversine formula for accurate geodesic distances
 - **Point-to-Segment**: Proper perpendicular distance calculation
 - **Time Estimation**: Simple proportional calculation based on moving_time
