@@ -243,4 +243,28 @@ export const fetchUserActivities = async (athleteId, limit = 50, offset = 0) => 
   }
 };
 
+// Delete a user and all their data (admin only)
+export const deleteUser = async (athleteId) => {
+  try {
+    debug.log(`Calling DELETE /admin/users/${athleteId} endpoint...`);
+    const response = await api.delete(`/admin/users/${athleteId}`);
+    debug.log(`DELETE /admin/users/${athleteId} response received:`, response.data);
+    return { success: true, data: response.data };
+  } catch (error) {
+    console.error(`DELETE /admin/users/${athleteId} endpoint error:`, error.message);
+    if (error.response?.status === 401) {
+      debug.log('User not authenticated (401)');
+      return { success: false, notConnected: true };
+    }
+    if (error.response?.status === 403) {
+      debug.log('User not authorized for admin access (403)');
+      return { success: false, error: 'Access denied - admin privileges required' };
+    }
+    if (error.response?.status === 404) {
+      return { success: false, error: 'User not found' };
+    }
+    return { success: false, error: error.message };
+  }
+};
+
 export default api;

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { fetchMe, fetchAllUsers, fetchUserActivities } from '../utils/api';
+import { fetchMe, fetchAllUsers, fetchUserActivities, deleteUser } from '../utils/api';
 import { useNavigate } from 'react-router-dom';
 
 function Admin() {
@@ -12,6 +12,9 @@ function Admin() {
   const [error, setError] = useState(null);
   const [refreshingUsers, setRefreshingUsers] = useState(false);
   const [refreshingActivities, setRefreshingActivities] = useState(false);
+  const [deleteConfirmUser, setDeleteConfirmUser] = useState(null);
+  const [deleting, setDeleting] = useState(false);
+  const [successMessage, setSuccessMessage] = useState(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -93,6 +96,49 @@ function Admin() {
     setRefreshingActivities(false);
   };
 
+  const handleDeleteUserClick = (user, event) => {
+    // Stop propagation to prevent user selection
+    event.stopPropagation();
+    setDeleteConfirmUser(user);
+    setError(null);
+    setSuccessMessage(null);
+  };
+
+  const handleDeleteUserConfirm = async () => {
+    if (!deleteConfirmUser) return;
+
+    setDeleting(true);
+    setError(null);
+    setSuccessMessage(null);
+
+    const result = await deleteUser(deleteConfirmUser.athlete_id);
+    
+    if (result.success) {
+      setSuccessMessage(`User ${deleteConfirmUser.display_name} and all their data has been deleted successfully.`);
+      
+      // Clear selection if the deleted user was selected
+      if (selectedUser?.athlete_id === deleteConfirmUser.athlete_id) {
+        setSelectedUser(null);
+        setActivities([]);
+      }
+      
+      // Refresh the users list
+      const usersResult = await fetchAllUsers();
+      if (usersResult.success) {
+        setUsers(usersResult.data.users || []);
+      }
+      
+      setDeleteConfirmUser(null);
+    } else {
+      setError(result.error || 'Failed to delete user');
+    }
+    
+    setDeleting(false);
+  };
+
+  const handleDeleteUserCancel = () => {
+    setDeleteConfirmUser(null);
+  };
 
 
   const formatDate = (dateString) => {
@@ -182,6 +228,12 @@ function Admin() {
       {error && (
         <div className="mb-6 bg-yellow-50 border border-yellow-200 rounded-lg p-4">
           <p className="text-yellow-800">{error}</p>
+        </div>
+      )}
+
+      {successMessage && (
+        <div className="mb-6 bg-green-50 border border-green-200 rounded-lg p-4">
+          <p className="text-green-800">{successMessage}</p>
         </div>
       )}
 
@@ -284,19 +336,30 @@ function Admin() {
                         </div>
                       )}
                     </div>
-                    <svg
-                      className="h-5 w-5 text-gray-400 flex-shrink-0 ml-2"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth="2"
-                        d="M9 5l7 7-7 7"
-                      />
-                    </svg>
+                    <div className="flex items-center gap-2 flex-shrink-0 ml-2">
+                      <button
+                        onClick={(e) => handleDeleteUserClick(user, e)}
+                        className="p-2 text-red-600 hover:bg-red-50 rounded-md transition-colors"
+                        title="Delete user"
+                      >
+                        <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      </button>
+                      <svg
+                        className="h-5 w-5 text-gray-400"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth="2"
+                          d="M9 5l7 7-7 7"
+                        />
+                      </svg>
+                    </div>
                   </div>
                 </button>
               ))
@@ -389,6 +452,69 @@ function Admin() {
           </div>
         </div>
       </div>
+
+      {/* Delete Confirmation Dialog */}
+      {deleteConfirmUser && (
+        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50 flex items-center justify-center">
+          <div className="relative bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
+            <div className="p-6">
+              <div className="flex items-center mb-4">
+                <div className="flex-shrink-0 w-12 h-12 rounded-full bg-red-100 flex items-center justify-center">
+                  <svg className="h-6 w-6 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                </div>
+                <div className="ml-4">
+                  <h3 className="text-lg font-medium text-gray-900">Delete User</h3>
+                </div>
+              </div>
+              
+              <div className="mb-6">
+                <p className="text-gray-600 mb-3">
+                  Are you sure you want to delete <strong>{deleteConfirmUser.display_name}</strong> (ID: {deleteConfirmUser.athlete_id})?
+                </p>
+                <div className="bg-red-50 border border-red-200 rounded-md p-3">
+                  <p className="text-sm text-red-800">
+                    <strong>Warning:</strong> This action cannot be undone. This will permanently delete:
+                  </p>
+                  <ul className="mt-2 ml-4 text-sm text-red-700 list-disc">
+                    <li>User account and profile</li>
+                    <li>All activity records</li>
+                    <li>All associated data</li>
+                  </ul>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3">
+                <button
+                  onClick={handleDeleteUserCancel}
+                  disabled={deleting}
+                  className="px-4 py-2 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleDeleteUserConfirm}
+                  disabled={deleting}
+                  className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center"
+                >
+                  {deleting ? (
+                    <>
+                      <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Deleting...
+                    </>
+                  ) : (
+                    'Delete User'
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
