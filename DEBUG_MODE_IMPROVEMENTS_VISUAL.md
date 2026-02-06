@@ -9,7 +9,7 @@ Total Points: 1247
 Points On Trail: 856 (68.6%)
 Points Off Trail: 391 (31.4%)
 Trail Segments Loaded: 142
-Tolerance: 50 meters
+Tolerance: 25 meters
 
 ▼ View point-by-point analysis (first 50 points)
 ```
@@ -24,7 +24,7 @@ Total Points: 1247
 Points On Trail: 856 (68.6%)
 Points Off Trail: 391 (31.4%)
 Trail Segments Loaded: 142
-Tolerance: 50 meters
+Tolerance: 25 meters
 Last Matched: 2/4/2026, 5:30:00 PM                         ← NEW!
 
 ┌─────────────────────────────────────────────────────┐

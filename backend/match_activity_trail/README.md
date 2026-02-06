@@ -7,7 +7,7 @@ This Lambda function calculates how much of an activity was on the Swamp Rabbit 
 When an activity is created or updated, this function:
 1. Decodes the activity's Google-encoded polyline
 2. Loads trail GeoJSON data from S3 (`rabbitmiles-trail-data` bucket)
-3. Checks each activity segment against all trail segments with a 50-meter tolerance
+3. Checks each activity segment against all trail segments with a 25-meter tolerance
 4. Calculates distance and time spent on the trail
 5. Updates the database with `distance_on_trail`, `time_on_trail`, and `last_matched` timestamp
 
@@ -45,18 +45,18 @@ Required:
 3. **Segment Matching**: For each activity segment:
    - Calculates the segment midpoint
    - Checks distance to all trail segments
-   - Marks segment as "on trail" if within 50 meters of any trail segment
+   - Marks segment as "on trail" if within 25 meters of any trail segment
 4. **Metric Calculation**:
    - `distance_on_trail`: Sum of all segments marked as "on trail"
    - `time_on_trail`: Proportional to distance ratio (assumes constant speed)
 
 ### Tolerance
 
-- **50 meters** on either side of the trail centerline
+- **25 meters** on either side of the trail centerline
 - Chosen to accommodate GPS inaccuracies and path width variations
 - At Greenville, SC latitude (34.85°N):
-  - 50m ≈ 0.00045° latitude
-  - 50m ≈ 0.00055° longitude
+  - 25m ≈ 0.000225° latitude
+  - 25m ≈ 0.000275° longitude
 
 ## S3 Trail Data Structure
 

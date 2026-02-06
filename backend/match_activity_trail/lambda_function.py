@@ -23,8 +23,8 @@ DB_SECRET_ARN = os.environ.get("DB_SECRET_ARN", "")
 DB_NAME = os.environ.get("DB_NAME", "postgres")
 TRAIL_DATA_BUCKET = os.environ.get("TRAIL_DATA_BUCKET", "rabbitmiles-trail-data")
 
-# Trail tolerance in meters (50m on each side = 100m buffer zone)
-TRAIL_TOLERANCE_METERS = 50
+# Trail tolerance in meters (25m on each side = 50m buffer zone)
+TRAIL_TOLERANCE_METERS = 25
 
 
 def _exec_sql(sql, parameters=None):

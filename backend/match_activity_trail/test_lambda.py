@@ -180,9 +180,9 @@ def test_trail_tolerance():
     """Test that our tolerance value makes sense"""
     print("\nTesting trail tolerance...")
     
-    # 50 meters is about 0.00045 degrees at this latitude
+    # 25 meters is about 0.000225 degrees at this latitude
     # This is a reasonable tolerance for trail matching
-    tolerance_meters = 50
+    tolerance_meters = 25
     
     # Convert to approximate degrees at Greenville, SC latitude (34.85°)
     meters_per_degree_lat = 111000  # Approximately
