@@ -197,4 +197,50 @@ export const fetchActivityDetail = async (activityId) => {
   }
 };
 
+// Admin endpoints - only accessible to users with admin privileges
+
+// Fetch all users (admin only)
+export const fetchAllUsers = async () => {
+  try {
+    debug.log('Calling /admin/users endpoint...');
+    const response = await api.get('/admin/users');
+    debug.log('/admin/users response received:', response.data);
+    return { success: true, data: response.data };
+  } catch (error) {
+    console.error('/admin/users endpoint error:', error.message);
+    if (error.response?.status === 401) {
+      debug.log('User not authenticated (401)');
+      return { success: false, notConnected: true };
+    }
+    if (error.response?.status === 403) {
+      debug.log('User not authorized for admin access (403)');
+      return { success: false, error: 'Access denied - admin privileges required' };
+    }
+    return { success: false, error: error.message };
+  }
+};
+
+// Fetch activities for a specific user (admin only)
+export const fetchUserActivities = async (athleteId, limit = 50, offset = 0) => {
+  try {
+    debug.log(`Calling /admin/users/${athleteId}/activities endpoint (limit=${limit}, offset=${offset})...`);
+    const response = await api.get(`/admin/users/${athleteId}/activities`, {
+      params: { limit, offset },
+    });
+    debug.log(`/admin/users/${athleteId}/activities response received:`, response.data);
+    return { success: true, data: response.data };
+  } catch (error) {
+    console.error(`/admin/users/${athleteId}/activities endpoint error:`, error.message);
+    if (error.response?.status === 401) {
+      debug.log('User not authenticated (401)');
+      return { success: false, notConnected: true };
+    }
+    if (error.response?.status === 403) {
+      debug.log('User not authorized for admin access (403)');
+      return { success: false, error: 'Access denied - admin privileges required' };
+    }
+    return { success: false, error: error.message };
+  }
+};
+
 export default api;
