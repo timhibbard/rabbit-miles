@@ -35,6 +35,18 @@ After deploying the trail matching Lambda functions to AWS, you need to add the 
 - **Used by**: GitHub Actions workflow to deploy code updates to this Lambda
 - **Note**: This Lambda requires the admin_utils.py dependency (automatically included in deployment)
 
+#### LAMBDA_ADMIN_DELETE_USER
+- **Description**: The AWS Lambda function name for the admin_delete_user function
+- **Example value**: `admin_delete_user` or `prod-admin-delete-user`
+- **Used by**: GitHub Actions workflow to deploy code updates to this Lambda
+- **Note**: This Lambda requires the admin_utils.py dependency (automatically included in deployment)
+
+#### LAMBDA_ADMIN_BACKFILL_ACTIVITIES
+- **Description**: The AWS Lambda function name for the admin_backfill_activities function
+- **Example value**: `admin_backfill_activities` or `prod-admin-backfill-activities`
+- **Used by**: GitHub Actions workflow to deploy code updates to this Lambda
+- **Note**: This Lambda requires the admin_utils.py dependency (automatically included in deployment)
+
 ## Deployment Flow
 
 Once these secrets are configured:
@@ -82,6 +94,8 @@ For reference, here's the complete list of Lambda secrets used in the workflow:
 - `LAMBDA_MATCH_UNMATCHED_ACTIVITIES`
 - **`LAMBDA_ADMIN_LIST_USERS`** ← NEW (Admin endpoint)
 - **`LAMBDA_ADMIN_USER_ACTIVITIES`** ← NEW (Admin endpoint)
+- **`LAMBDA_ADMIN_DELETE_USER`** ← NEW (Admin endpoint)
+- **`LAMBDA_ADMIN_BACKFILL_ACTIVITIES`** ← NEW (Admin endpoint)
 
 ## Additional AWS Secrets
 

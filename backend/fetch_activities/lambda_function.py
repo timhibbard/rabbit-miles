@@ -362,19 +362,45 @@ def fetch_activities_for_athlete(athlete_id, access_token, refresh_token, expire
     else:
         print(f"Access token is valid, skipping refresh")
     
-    # Fetch activities from Strava (first page, 30 activities)
+    # Fetch all activities from Strava with pagination
+    # Strava API returns max 200 activities per page, we'll use 200 for efficiency
     print(f"Fetching activities from Strava API for athlete {athlete_id}...")
+    all_activities = []
+    page = 1
+    per_page = 200  # Maximum allowed by Strava API
+    
     try:
-        activities = fetch_strava_activities(access_token, per_page=30, page=1)
-        print(f"fetch_strava_activities returned: {type(activities)} with {len(activities) if isinstance(activities, list) else 'N/A'} items")
+        while True:
+            print(f"Fetching page {page} (per_page={per_page})...")
+            activities = fetch_strava_activities(access_token, per_page=per_page, page=page)
+            
+            if not isinstance(activities, list):
+                print(f"ERROR: fetch_strava_activities returned non-list: {type(activities)}")
+                break
+            
+            if len(activities) == 0:
+                print(f"No more activities on page {page}, stopping pagination")
+                break
+            
+            print(f"Page {page} returned {len(activities)} activities")
+            all_activities.extend(activities)
+            
+            # If we got fewer activities than per_page, we've reached the end
+            if len(activities) < per_page:
+                print(f"Received {len(activities)} < {per_page}, reached last page")
+                break
+            
+            page += 1
+        
+        print(f"Pagination complete: fetched {len(all_activities)} total activities across {page} page(s)")
     except Exception as e:
         print(f"ERROR: Failed to fetch activities from Strava: {e}")
         raise
     
     # Store activities in database
-    print(f"Storing activities in database...")
+    print(f"Storing {len(all_activities)} activities in database...")
     try:
-        stored_count = store_activities(athlete_id, activities)
+        stored_count = store_activities(athlete_id, all_activities)
         print(f"store_activities returned: {stored_count}")
     except Exception as e:
         print(f"ERROR: Failed to store activities: {e}")

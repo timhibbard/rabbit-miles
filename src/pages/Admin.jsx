@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { fetchMe, fetchAllUsers, fetchUserActivities, deleteUser } from '../utils/api';
+import { fetchMe, fetchAllUsers, fetchUserActivities, deleteUser, backfillUserActivities } from '../utils/api';
 import { useNavigate } from 'react-router-dom';
 
 function Admin() {
@@ -12,6 +12,7 @@ function Admin() {
   const [error, setError] = useState(null);
   const [refreshingUsers, setRefreshingUsers] = useState(false);
   const [refreshingActivities, setRefreshingActivities] = useState(false);
+  const [backfillingActivities, setBackfillingActivities] = useState(false);
   const [deleteConfirmUser, setDeleteConfirmUser] = useState(null);
   const [deleting, setDeleting] = useState(false);
   const [successMessage, setSuccessMessage] = useState(null);
@@ -140,6 +141,26 @@ function Admin() {
     setDeleteConfirmUser(null);
   };
 
+  const handleBackfillActivities = async () => {
+    if (!selectedUser) return;
+    
+    setBackfillingActivities(true);
+    setError(null);
+    setSuccessMessage(null);
+
+    const result = await backfillUserActivities(selectedUser.athlete_id);
+    if (result.success) {
+      setSuccessMessage(`Successfully backfilled ${result.data.activities_stored} activities for ${selectedUser.display_name}`);
+      // Refresh activities list to show newly backfilled activities
+      const activitiesResult = await fetchUserActivities(selectedUser.athlete_id);
+      if (activitiesResult.success) {
+        setActivities(activitiesResult.data.activities || []);
+      }
+    } else {
+      setError(result.error || 'Failed to backfill activities');
+    }
+    setBackfillingActivities(false);
+  };
 
   const formatDate = (dateString) => {
     if (!dateString) return 'N/A';
@@ -374,28 +395,53 @@ function Admin() {
               {selectedUser ? `${selectedUser.display_name}'s Activities (${activities.length})` : 'Select a User'}
             </h2>
             {selectedUser && (
-              <button
-                onClick={handleRefreshActivities}
-                disabled={refreshingActivities}
-                className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {refreshingActivities ? (
-                  <>
-                    <svg className="animate-spin -ml-0.5 mr-2 h-4 w-4 text-gray-700" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    Refreshing...
-                  </>
-                ) : (
-                  <>
-                    <svg className="-ml-0.5 mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                    </svg>
-                    Refresh
-                  </>
-                )}
-              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={handleBackfillActivities}
+                  disabled={backfillingActivities}
+                  className="inline-flex items-center px-3 py-2 border border-orange-300 shadow-sm text-sm leading-4 font-medium rounded-md text-orange-700 bg-white hover:bg-orange-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Download all activities from Strava since Jan 1, 2026"
+                >
+                  {backfillingActivities ? (
+                    <>
+                      <svg className="animate-spin -ml-0.5 mr-2 h-4 w-4 text-orange-700" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Backfilling...
+                    </>
+                  ) : (
+                    <>
+                      <svg className="-ml-0.5 mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                      </svg>
+                      Backfill
+                    </>
+                  )}
+                </button>
+                <button
+                  onClick={handleRefreshActivities}
+                  disabled={refreshingActivities}
+                  className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {refreshingActivities ? (
+                    <>
+                      <svg className="animate-spin -ml-0.5 mr-2 h-4 w-4 text-gray-700" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Refreshing...
+                    </>
+                  ) : (
+                    <>
+                      <svg className="-ml-0.5 mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                      </svg>
+                      Refresh
+                    </>
+                  )}
+                </button>
+              </div>
             )}
           </div>
           <div className="divide-y divide-gray-200 max-h-[600px] overflow-y-auto">
