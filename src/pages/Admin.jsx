@@ -114,7 +114,7 @@ function Admin() {
     const result = await deleteUser(deleteConfirmUser.athlete_id);
     
     if (result.success) {
-      setSuccessMessage(`User ${deleteConfirmUser.display_name} and all their data has been deleted successfully.`);
+      setSuccessMessage(`User ${deleteConfirmUser.display_name} and all their data have been deleted successfully.`);
       
       // Clear selection if the deleted user was selected
       if (selectedUser?.athlete_id === deleteConfirmUser.athlete_id) {

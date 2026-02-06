@@ -109,7 +109,7 @@ def handler(event, context):
             print(f"ERROR - User {athlete_id} is not an admin")
             admin_utils.audit_log_admin_action(
                 athlete_id,
-                "/admin/users/{athlete_id}",
+                "/admin/users",
                 "delete_denied",
                 {"reason": "not in admin allowlist"}
             )
