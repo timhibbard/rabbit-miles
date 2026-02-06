@@ -10,6 +10,8 @@ function Admin() {
   const [activities, setActivities] = useState([]);
   const [activitiesLoading, setActivitiesLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [refreshingUsers, setRefreshingUsers] = useState(false);
+  const [refreshingActivities, setRefreshingActivities] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -61,6 +63,39 @@ function Admin() {
       setActivities([]);
     }
     setActivitiesLoading(false);
+  };
+
+  const handleRefreshUsers = async () => {
+    setRefreshingUsers(true);
+    setError(null);
+
+    const usersResult = await fetchAllUsers();
+    if (usersResult.success) {
+      setUsers(usersResult.data.users || []);
+    } else {
+      setError(usersResult.error || 'Failed to refresh users');
+    }
+    setRefreshingUsers(false);
+  };
+
+  const handleRefreshActivities = async () => {
+    if (!selectedUser) return;
+    
+    setRefreshingActivities(true);
+    setError(null);
+
+    const result = await fetchUserActivities(selectedUser.athlete_id);
+    if (result.success) {
+      setActivities(result.data.activities || []);
+    } else {
+      setError(result.error || 'Failed to refresh activities');
+    }
+    setRefreshingActivities(false);
+  };
+
+  const handleActivityClick = (activity) => {
+    // Navigate to activity detail with debug mode enabled
+    navigate(`/activity/${activity.id}?debug=1`);
   };
 
   const formatDate = (dateString) => {
@@ -137,10 +172,32 @@ function Admin() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Users List */}
         <div className="bg-white shadow-md rounded-lg overflow-hidden">
-          <div className="px-6 py-4 bg-gray-50 border-b border-gray-200">
+          <div className="px-6 py-4 bg-gray-50 border-b border-gray-200 flex justify-between items-center">
             <h2 className="text-xl font-semibold text-gray-900">
               All Users ({users.length})
             </h2>
+            <button
+              onClick={handleRefreshUsers}
+              disabled={refreshingUsers}
+              className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {refreshingUsers ? (
+                <>
+                  <svg className="animate-spin -ml-0.5 mr-2 h-4 w-4 text-gray-700" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  Refreshing...
+                </>
+              ) : (
+                <>
+                  <svg className="-ml-0.5 mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  Refresh
+                </>
+              )}
+            </button>
           </div>
           <div className="divide-y divide-gray-200 max-h-[600px] overflow-y-auto">
             {users.length === 0 ? (
@@ -196,10 +253,34 @@ function Admin() {
 
         {/* Selected User's Activities */}
         <div className="bg-white shadow-md rounded-lg overflow-hidden">
-          <div className="px-6 py-4 bg-gray-50 border-b border-gray-200">
+          <div className="px-6 py-4 bg-gray-50 border-b border-gray-200 flex justify-between items-center">
             <h2 className="text-xl font-semibold text-gray-900">
-              {selectedUser ? `${selectedUser.display_name}'s Activities` : 'Select a User'}
+              {selectedUser ? `${selectedUser.display_name}'s Activities (${activities.length})` : 'Select a User'}
             </h2>
+            {selectedUser && (
+              <button
+                onClick={handleRefreshActivities}
+                disabled={refreshingActivities}
+                className="inline-flex items-center px-3 py-2 border border-gray-300 shadow-sm text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {refreshingActivities ? (
+                  <>
+                    <svg className="animate-spin -ml-0.5 mr-2 h-4 w-4 text-gray-700" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Refreshing...
+                  </>
+                ) : (
+                  <>
+                    <svg className="-ml-0.5 mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    Refresh
+                  </>
+                )}
+              </button>
+            )}
           </div>
           <div className="divide-y divide-gray-200 max-h-[600px] overflow-y-auto">
             {!selectedUser ? (
@@ -217,7 +298,11 @@ function Admin() {
               </div>
             ) : (
               activities.map((activity) => (
-                <div key={activity.id} className="px-6 py-4">
+                <button
+                  key={activity.id}
+                  onClick={() => handleActivityClick(activity)}
+                  className="w-full text-left px-6 py-4 hover:bg-gray-50 transition-colors cursor-pointer"
+                >
                   <div className="flex justify-between items-start">
                     <div className="flex-1">
                       <h3 className="font-medium text-gray-900">{activity.name}</h3>
@@ -226,13 +311,24 @@ function Admin() {
                         <p>Distance: {formatDistance(activity.distance)}</p>
                         <p>Duration: {formatDuration(activity.moving_time)}</p>
                         <p>Date: {formatDate(activity.start_date_local)}</p>
+                        {activity.distance_on_trail !== null && activity.distance_on_trail !== undefined && 
+                         activity.time_on_trail !== null && activity.time_on_trail !== undefined && (
+                          <p className="text-orange-600 font-medium">
+                            Trail: {formatDistance(activity.distance_on_trail)} / {formatDuration(activity.time_on_trail)}
+                          </p>
+                        )}
                       </div>
                     </div>
-                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                      {activity.strava_activity_id}
-                    </span>
+                    <div className="flex flex-col items-end gap-2">
+                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                        {activity.strava_activity_id}
+                      </span>
+                      <svg className="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5l7 7-7 7" />
+                      </svg>
+                    </div>
                   </div>
-                </div>
+                </button>
               ))
             )}
           </div>

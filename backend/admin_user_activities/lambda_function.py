@@ -174,10 +174,12 @@ def handler(event, context):
             start_date,
             start_date_local,
             created_at,
-            updated_at
+            updated_at,
+            time_on_trail,
+            distance_on_trail
         FROM activities
         WHERE athlete_id = :athlete_id
-        ORDER BY start_date DESC
+        ORDER BY start_date_local DESC
         LIMIT :limit OFFSET :offset
         """
         
@@ -194,11 +196,37 @@ def handler(event, context):
         # Transform records to JSON-friendly format
         activities = []
         for rec in records:
+            # Helper to parse numeric field that can be either doubleValue or stringValue
+            def parse_numeric(field_rec, default=None):
+                if field_rec.get("doubleValue") is not None:
+                    return float(field_rec.get("doubleValue"))
+                elif field_rec.get("stringValue"):
+                    try:
+                        return float(field_rec.get("stringValue"))
+                    except (ValueError, TypeError):
+                        return default
+                return default
+            
+            # Parse distance
+            distance = parse_numeric(rec[3])
+            
+            # Handle trail time (can be null)
+            time_on_trail = None
+            if not rec[12].get("isNull"):
+                time_on_trail_value = rec[12].get("longValue")
+                if time_on_trail_value is not None:
+                    time_on_trail = int(time_on_trail_value)
+            
+            # Parse trail distance (can be null)
+            distance_on_trail = None
+            if not rec[13].get("isNull"):
+                distance_on_trail = parse_numeric(rec[13])
+            
             activity = {
                 "id": rec[0].get("longValue") if rec[0].get("longValue") is not None else int(rec[0].get("stringValue", 0)),
                 "strava_activity_id": rec[1].get("longValue") if rec[1].get("longValue") is not None else int(rec[1].get("stringValue", 0)),
                 "name": rec[2].get("stringValue", ""),
-                "distance": float(rec[3].get("doubleValue", 0)) if rec[3].get("doubleValue") is not None else None,
+                "distance": distance,
                 "moving_time": int(rec[4].get("longValue", 0)) if rec[4].get("longValue") is not None else None,
                 "elapsed_time": int(rec[5].get("longValue", 0)) if rec[5].get("longValue") is not None else None,
                 "total_elevation_gain": float(rec[6].get("doubleValue", 0)) if rec[6].get("doubleValue") is not None else None,
@@ -207,6 +235,8 @@ def handler(event, context):
                 "start_date_local": rec[9].get("stringValue", ""),
                 "created_at": rec[10].get("stringValue", ""),
                 "updated_at": rec[11].get("stringValue", ""),
+                "time_on_trail": time_on_trail,
+                "distance_on_trail": distance_on_trail,
             }
             activities.append(activity)
         
