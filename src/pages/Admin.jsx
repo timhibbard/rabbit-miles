@@ -93,10 +93,7 @@ function Admin() {
     setRefreshingActivities(false);
   };
 
-  const handleActivityClick = (activity) => {
-    // Navigate to activity detail with debug mode enabled
-    navigate(`/activity/${activity.id}?debug=1`);
-  };
+
 
   const formatDate = (dateString) => {
     if (!dateString) return 'N/A';
@@ -298,10 +295,12 @@ function Admin() {
               </div>
             ) : (
               activities.map((activity) => (
-                <button
+                <a
                   key={activity.id}
-                  onClick={() => handleActivityClick(activity)}
-                  className="w-full text-left px-6 py-4 hover:bg-gray-50 transition-colors cursor-pointer"
+                  href={`/activity/${activity.id}?debug=1`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="block px-6 py-4 hover:bg-gray-50 transition-colors cursor-pointer"
                 >
                   <div className="flex justify-between items-start">
                     <div className="flex-1">
@@ -328,7 +327,7 @@ function Admin() {
                       </svg>
                     </div>
                   </div>
-                </button>
+                </a>
               ))
             )}
           </div>
