@@ -196,15 +196,19 @@ def handler(event, context):
         # Transform records to JSON-friendly format
         activities = []
         for rec in records:
-            # Handle distance field - check for both stringValue (older data) and doubleValue
-            distance = None
-            if rec[3].get("doubleValue") is not None:
-                distance = float(rec[3].get("doubleValue"))
-            elif rec[3].get("stringValue"):
-                try:
-                    distance = float(rec[3].get("stringValue"))
-                except (ValueError, TypeError):
-                    distance = None
+            # Helper to parse numeric field that can be either doubleValue or stringValue
+            def parse_numeric(field_rec, default=None):
+                if field_rec.get("doubleValue") is not None:
+                    return float(field_rec.get("doubleValue"))
+                elif field_rec.get("stringValue"):
+                    try:
+                        return float(field_rec.get("stringValue"))
+                    except (ValueError, TypeError):
+                        return default
+                return default
+            
+            # Parse distance
+            distance = parse_numeric(rec[3])
             
             # Handle trail time (can be null)
             time_on_trail = None
@@ -213,17 +217,10 @@ def handler(event, context):
                 if time_on_trail_value is not None:
                     time_on_trail = int(time_on_trail_value)
             
-            # Handle trail distance (can be null)
+            # Parse trail distance (can be null)
             distance_on_trail = None
             if not rec[13].get("isNull"):
-                dist_value = rec[13].get("doubleValue")
-                if dist_value is not None:
-                    distance_on_trail = float(dist_value)
-                elif rec[13].get("stringValue"):
-                    try:
-                        distance_on_trail = float(rec[13].get("stringValue"))
-                    except (ValueError, TypeError):
-                        distance_on_trail = None
+                distance_on_trail = parse_numeric(rec[13])
             
             activity = {
                 "id": rec[0].get("longValue") if rec[0].get("longValue") is not None else int(rec[0].get("stringValue", 0)),

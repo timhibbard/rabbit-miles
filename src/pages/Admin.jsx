@@ -311,7 +311,8 @@ function Admin() {
                         <p>Distance: {formatDistance(activity.distance)}</p>
                         <p>Duration: {formatDuration(activity.moving_time)}</p>
                         <p>Date: {formatDate(activity.start_date_local)}</p>
-                        {activity.distance_on_trail !== null && activity.distance_on_trail !== undefined && (
+                        {activity.distance_on_trail !== null && activity.distance_on_trail !== undefined && 
+                         activity.time_on_trail !== null && activity.time_on_trail !== undefined && (
                           <p className="text-orange-600 font-medium">
                             Trail: {formatDistance(activity.distance_on_trail)} / {formatDuration(activity.time_on_trail)}
                           </p>
