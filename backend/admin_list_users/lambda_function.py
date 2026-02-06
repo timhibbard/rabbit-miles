@@ -145,47 +145,63 @@ def handler(event, context):
         print(f"LOG - Found {len(records)} users")
         
         # Compute trail statistics for all athletes in a single query
+        # Using same time period logic as dashboard (current week starting Monday, current calendar month, current calendar year)
         print("LOG - Computing trail statistics for all athletes")
         stats_sql = """
+        WITH time_periods AS (
+            SELECT 
+                -- Start of week (Monday) - matches dashboard logic
+                -- If Sunday (DOW=0), go back 6 days; otherwise go back (DOW-1) days
+                DATE_TRUNC('day', NOW() - INTERVAL '1 day' * 
+                    CASE 
+                        WHEN EXTRACT(DOW FROM NOW()) = 0 THEN 6 
+                        ELSE EXTRACT(DOW FROM NOW()) - 1 
+                    END
+                ) as start_of_week,
+                -- Start of current month
+                DATE_TRUNC('month', NOW()) as start_of_month,
+                -- Start of current year
+                DATE_TRUNC('year', NOW()) as start_of_year
+        )
         SELECT 
             athlete_id,
             -- Total
             COALESCE(SUM(distance_on_trail), 0) as total_distance,
             COALESCE(SUM(time_on_trail), 0) as total_time,
-            -- This week (last 7 days)
+            -- This week (current week starting Monday)
             COALESCE(SUM(CASE 
-                WHEN start_date_local >= NOW() - INTERVAL '7 days' 
+                WHEN start_date_local >= (SELECT start_of_week FROM time_periods)
                 THEN distance_on_trail 
                 ELSE 0 
             END), 0) as week_distance,
             COALESCE(SUM(CASE 
-                WHEN start_date_local >= NOW() - INTERVAL '7 days' 
+                WHEN start_date_local >= (SELECT start_of_week FROM time_periods)
                 THEN time_on_trail 
                 ELSE 0 
             END), 0) as week_time,
-            -- This month (last 30 days)
+            -- This month (current calendar month)
             COALESCE(SUM(CASE 
-                WHEN start_date_local >= NOW() - INTERVAL '30 days' 
+                WHEN start_date_local >= (SELECT start_of_month FROM time_periods)
                 THEN distance_on_trail 
                 ELSE 0 
             END), 0) as month_distance,
             COALESCE(SUM(CASE 
-                WHEN start_date_local >= NOW() - INTERVAL '30 days' 
+                WHEN start_date_local >= (SELECT start_of_month FROM time_periods)
                 THEN time_on_trail 
                 ELSE 0 
             END), 0) as month_time,
-            -- This year (last 365 days)
+            -- This year (current calendar year)
             COALESCE(SUM(CASE 
-                WHEN start_date_local >= NOW() - INTERVAL '365 days' 
+                WHEN start_date_local >= (SELECT start_of_year FROM time_periods)
                 THEN distance_on_trail 
                 ELSE 0 
             END), 0) as year_distance,
             COALESCE(SUM(CASE 
-                WHEN start_date_local >= NOW() - INTERVAL '365 days' 
+                WHEN start_date_local >= (SELECT start_of_year FROM time_periods)
                 THEN time_on_trail 
                 ELSE 0 
             END), 0) as year_time
-        FROM activities
+        FROM activities, time_periods
         WHERE distance_on_trail IS NOT NULL
             AND time_on_trail IS NOT NULL
         GROUP BY athlete_id
