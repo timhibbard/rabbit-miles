@@ -35,6 +35,9 @@ The following Lambda functions will be auto-deployed:
 ### Admin (NEW)
 15. **admin_list_users** - Lists all users (admin only)
 16. **admin_user_activities** - Views user activities (admin only)
+17. **admin_delete_user** - Deletes users and their data (admin only)
+18. **admin_backfill_activities** - Backfills missing activities for users (admin only)
+19. **backfill_athlete_count** - Backfills athlete count data
 
 **Note**: Admin Lambdas require the `admin_utils.py` dependency, which is automatically included during deployment.
 
@@ -81,7 +84,10 @@ Create a policy with these permissions:
         "arn:aws:lambda:*:*:function:rabbitmiles-webhook",
         "arn:aws:lambda:*:*:function:rabbitmiles-webhook-processor",
         "arn:aws:lambda:*:*:function:rabbitmiles-admin-list-users",
-        "arn:aws:lambda:*:*:function:rabbitmiles-admin-user-activities"
+        "arn:aws:lambda:*:*:function:rabbitmiles-admin-user-activities",
+        "arn:aws:lambda:*:*:function:rabbitmiles-admin-delete-user",
+        "arn:aws:lambda:*:*:function:rabbitmiles-admin-backfill-activities",
+        "arn:aws:lambda:*:*:function:rabbitmiles-backfill-athlete-count"
       ]
     }
   ]
@@ -134,6 +140,9 @@ Add the following secrets to your GitHub repository:
 | `LAMBDA_WEBHOOK_PROCESSOR` | Name of webhook_processor Lambda function | `rabbitmiles-webhook-processor` |
 | `LAMBDA_ADMIN_LIST_USERS` | Name of admin_list_users Lambda function | `rabbitmiles-admin-list-users` |
 | `LAMBDA_ADMIN_USER_ACTIVITIES` | Name of admin_user_activities Lambda function | `rabbitmiles-admin-user-activities` |
+| `LAMBDA_ADMIN_DELETE_USER` | Name of admin_delete_user Lambda function | `rabbitmiles-admin-delete-user` |
+| `LAMBDA_ADMIN_BACKFILL_ACTIVITIES` | Name of admin_backfill_activities Lambda function | `rabbitmiles-admin-backfill-activities` |
+| `LAMBDA_BACKFILL_ATHLETE_COUNT` | Name of backfill_athlete_count Lambda function | `rabbitmiles-backfill-athlete-count` |
 
 ### Adding Secrets
 
