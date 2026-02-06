@@ -191,7 +191,7 @@ function Admin() {
     if (result.success) {
       const newActivities = result.data.activities || [];
       setActivities([...activities, ...newActivities]);
-      const newOffset = activitiesOffset + newActivities.length;
+      const newOffset = activitiesOffset + 50;
       setActivitiesOffset(newOffset);
       setHasMoreActivities(newOffset < (result.data.total_count || 0));
     } else {
