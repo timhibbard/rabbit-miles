@@ -53,6 +53,9 @@ jobs:
           - name: admin_user_activities
             secret: LAMBDA_ADMIN_USER_ACTIVITIES
             needs_utils: true
+          - name: admin_delete_user
+            secret: LAMBDA_ADMIN_DELETE_USER
+            needs_utils: true
           - name: backfill_athlete_count
             secret: LAMBDA_BACKFILL_ATHLETE_COUNT
     steps:
