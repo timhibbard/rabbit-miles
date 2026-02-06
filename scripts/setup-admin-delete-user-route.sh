@@ -169,15 +169,17 @@ echo ""
 
 # Add Lambda permission for API Gateway to invoke the function
 echo "🔐 Adding Lambda permission for API Gateway..."
-STATEMENT_ID="apigateway-delete-admin-user-$(date +%s)"
 
-# Remove existing permissions if any (ignore errors)
+# Use a consistent statement ID
+STATEMENT_ID="apigateway-admin-delete-user"
+
+# Remove existing permission if any (ignore errors if it doesn't exist)
 aws lambda remove-permission \
     --function-name "$LAMBDA_FUNCTION_NAME" \
-    --statement-id "apigateway-delete-admin-user" \
+    --statement-id "$STATEMENT_ID" \
     &> /dev/null || true
 
-# Add the permission
+# Add the permission with consistent statement ID
 aws lambda add-permission \
     --function-name "$LAMBDA_FUNCTION_NAME" \
     --statement-id "$STATEMENT_ID" \

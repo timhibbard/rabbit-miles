@@ -71,6 +71,18 @@ echo ""
 
 # Define expected routes based on Lambda functions
 # Format: "METHOD /path|lambda-function-name|description"
+#
+# NOTE: This list is hardcoded for simplicity. As the project grows, consider
+# externalizing this to a configuration file (e.g., routes.json) to make it
+# easier to maintain without modifying the script.
+#
+# Example routes.json structure:
+# {
+#   "routes": [
+#     {"method": "GET", "path": "/auth/start", "lambda": "auth_start", "description": "OAuth start"},
+#     ...
+#   ]
+# }
 declare -a EXPECTED_ROUTES=(
     "GET /auth/start|auth_start|OAuth start"
     "GET /auth/callback|auth_callback|OAuth callback"
