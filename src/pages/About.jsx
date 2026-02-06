@@ -34,8 +34,8 @@ function About() {
     },
     openDataHub: "https://data.openupstate.org/map-layers",
     geoJsonSources: [
-      { label: "Swamp Rabbit Ways", fileUrl: "https://greenvilleopenmap.info/SwampRabbitWays.geojson" },
-      { label: "Swamp Rabbit Connectors", fileUrl: "https://greenvilleopenmap.info/SwampRabbitConnectors.geojson" }
+      { label: "SRT Main", fileUrl: "https://greenvilleopenmap.info/SwampRabbitWays.geojson" },
+      { label: "SRT Spurs", fileUrl: "https://greenvilleopenmap.info/SwampRabbitConnectors.geojson" }
     ]
   };
 
