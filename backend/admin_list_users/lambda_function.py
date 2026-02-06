@@ -144,15 +144,84 @@ def handler(event, context):
         records = result.get("records", [])
         print(f"LOG - Found {len(records)} users")
         
-        # Transform records to JSON-friendly format
+        # Transform records to JSON-friendly format and compute stats for each user
         users = []
         for rec in records:
+            athlete_id = rec[0].get("longValue") if rec[0].get("longValue") is not None else int(rec[0].get("stringValue", 0))
+            
+            # Compute trail statistics for this athlete
+            stats_sql = """
+            SELECT 
+                -- Total
+                COALESCE(SUM(distance_on_trail), 0) as total_distance,
+                COALESCE(SUM(time_on_trail), 0) as total_time,
+                -- This week (last 7 days)
+                COALESCE(SUM(CASE 
+                    WHEN start_date_local >= NOW() - INTERVAL '7 days' 
+                    THEN distance_on_trail 
+                    ELSE 0 
+                END), 0) as week_distance,
+                COALESCE(SUM(CASE 
+                    WHEN start_date_local >= NOW() - INTERVAL '7 days' 
+                    THEN time_on_trail 
+                    ELSE 0 
+                END), 0) as week_time,
+                -- This month (last 30 days)
+                COALESCE(SUM(CASE 
+                    WHEN start_date_local >= NOW() - INTERVAL '30 days' 
+                    THEN distance_on_trail 
+                    ELSE 0 
+                END), 0) as month_distance,
+                COALESCE(SUM(CASE 
+                    WHEN start_date_local >= NOW() - INTERVAL '30 days' 
+                    THEN time_on_trail 
+                    ELSE 0 
+                END), 0) as month_time,
+                -- This year (last 365 days)
+                COALESCE(SUM(CASE 
+                    WHEN start_date_local >= NOW() - INTERVAL '365 days' 
+                    THEN distance_on_trail 
+                    ELSE 0 
+                END), 0) as year_distance,
+                COALESCE(SUM(CASE 
+                    WHEN start_date_local >= NOW() - INTERVAL '365 days' 
+                    THEN time_on_trail 
+                    ELSE 0 
+                END), 0) as year_time
+            FROM activities
+            WHERE athlete_id = :athlete_id
+                AND distance_on_trail IS NOT NULL
+                AND time_on_trail IS NOT NULL
+            """
+            
+            stats_result = exec_sql(stats_sql, [
+                {"name": "athlete_id", "value": {"longValue": athlete_id}}
+            ])
+            
+            stats = {"total_distance": 0, "total_time": 0, "week_distance": 0, "week_time": 0, 
+                     "month_distance": 0, "month_time": 0, "year_distance": 0, "year_time": 0}
+            
+            if stats_result.get("records") and len(stats_result.get("records")) > 0:
+                stats_rec = stats_result["records"][0]
+                # Extract values from RDS Data API format
+                stats = {
+                    "total_distance": float(stats_rec[0].get("stringValue", 0)) if stats_rec[0].get("stringValue") else 0,
+                    "total_time": stats_rec[1].get("longValue", 0) if stats_rec[1].get("longValue") is not None else 0,
+                    "week_distance": float(stats_rec[2].get("stringValue", 0)) if stats_rec[2].get("stringValue") else 0,
+                    "week_time": stats_rec[3].get("longValue", 0) if stats_rec[3].get("longValue") is not None else 0,
+                    "month_distance": float(stats_rec[4].get("stringValue", 0)) if stats_rec[4].get("stringValue") else 0,
+                    "month_time": stats_rec[5].get("longValue", 0) if stats_rec[5].get("longValue") is not None else 0,
+                    "year_distance": float(stats_rec[6].get("stringValue", 0)) if stats_rec[6].get("stringValue") else 0,
+                    "year_time": stats_rec[7].get("longValue", 0) if stats_rec[7].get("longValue") is not None else 0,
+                }
+            
             user = {
-                "athlete_id": rec[0].get("longValue") if rec[0].get("longValue") is not None else int(rec[0].get("stringValue", 0)),
+                "athlete_id": athlete_id,
                 "display_name": rec[1].get("stringValue", ""),
                 "profile_picture": rec[2].get("stringValue") if rec[2].get("stringValue") else None,
                 "created_at": rec[3].get("stringValue", ""),
                 "updated_at": rec[4].get("stringValue", ""),
+                "stats": stats
             }
             users.append(user)
         
