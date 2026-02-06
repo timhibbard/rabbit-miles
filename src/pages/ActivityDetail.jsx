@@ -4,7 +4,6 @@ import { MapContainer, TileLayer, Polyline, Marker, useMap } from 'react-leaflet
 import { fetchActivityDetail, resetActivityTrailMatching } from '../utils/api';
 import { decodePolyline } from '../utils/polyline';
 import { loadTrailData, calculateTrailSegments, haversineDistance } from '../utils/trailMatching';
-import Footer from '../components/Footer';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
@@ -218,15 +217,12 @@ function ActivityDetail() {
 
   if (loading) {
     return (
-      <>
-        <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-          <div className="text-center">
-            <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-orange-600 mb-4"></div>
-            <p className="text-gray-600">Loading activity...</p>
-          </div>
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-orange-600 mb-4"></div>
+          <p className="text-gray-600">Loading activity...</p>
         </div>
-        <Footer />
-      </>
+      </div>
     );
   }
 
@@ -262,7 +258,6 @@ function ActivityDetail() {
             </div>
           </div>
         </div>
-        <Footer />
       </>
     );
   }
@@ -576,8 +571,6 @@ function ActivityDetail() {
           </div>
         )}
       </div>
-
-      <Footer />
     </div>
   );
 }
