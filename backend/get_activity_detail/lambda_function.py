@@ -25,6 +25,9 @@ APP_SECRET_STR = os.environ.get("APP_SECRET", "")
 APP_SECRET = APP_SECRET_STR.encode() if APP_SECRET_STR else b""
 FRONTEND_URL = os.environ.get("FRONTEND_URL", "").rstrip("/")
 
+# Load admin IDs once at module initialization
+ADMIN_ATHLETE_IDS = set()
+
 
 def load_admin_athlete_ids():
     """Load admin athlete IDs from environment variable"""
@@ -42,6 +45,10 @@ def load_admin_athlete_ids():
                 print(f"WARNING - Invalid athlete_id in ADMIN_ATHLETE_IDS: {id_str}")
     
     return admin_ids
+
+
+# Initialize admin IDs at module load time
+ADMIN_ATHLETE_IDS = load_admin_athlete_ids()
 
 
 def get_cors_origin():
@@ -227,9 +234,8 @@ def handler(event, context):
         # 11=time_on_trail, 12=distance_on_trail, 13=polyline, 14=athlete_id, 15=last_matched
         activity_athlete_id = int(record[14].get("longValue", 0))
         
-        # Load admin IDs to check if user has admin privileges
-        admin_ids = load_admin_athlete_ids()
-        is_admin = aid in admin_ids
+        # Check if user has admin privileges (using cached admin IDs)
+        is_admin = aid in ADMIN_ATHLETE_IDS
         
         # Allow access if user owns the activity OR user is an admin
         if activity_athlete_id != aid and not is_admin:
