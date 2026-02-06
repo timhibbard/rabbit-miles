@@ -71,12 +71,11 @@ def get_user_tokens():
 
 
 def get_activities_missing_athlete_count(athlete_id, limit=100):
-    """Get activities that are missing athlete_count (NULL values only)"""
+    """Get all activities to update athlete_count from Strava API"""
     sql = """
     SELECT strava_activity_id
     FROM activities
     WHERE athlete_id = :aid
-    AND athlete_count IS NULL
     ORDER BY start_date DESC
     LIMIT :limit
     """

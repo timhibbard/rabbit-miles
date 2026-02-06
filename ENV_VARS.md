@@ -308,7 +308,7 @@ All backend Lambdas require environment variables set in AWS Lambda console or v
 - Supports two modes:
   - Batch mode: Process all users (invoke with empty payload `{}`)
   - Single user mode: Process specific user (invoke with `{"athlete_id": 123456}`)
-- Only processes activities where `athlete_count IS NULL` to avoid unnecessary Strava API calls
+- Updates all activities with the latest values from Strava API, overwriting existing data
 
 **Usage Examples**:
 ```bash

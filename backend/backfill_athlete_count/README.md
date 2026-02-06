@@ -6,9 +6,9 @@ This Lambda function backfills the `athlete_count` field for existing activities
 
 When new fields are added to the activities table (like `athlete_count`), existing activities don't have this data populated. This function:
 
-1. Fetches activities from the database that are missing `athlete_count` or have the default value
-2. Queries the Strava API for each activity to get the correct `athlete_count` value
-3. Updates the database with the correct values
+1. Fetches all activities from the database
+2. Queries the Strava API for each activity to get the current `athlete_count` value
+3. Updates the database with the values from Strava, overwriting any existing data
 
 ## Usage
 
@@ -58,6 +58,6 @@ The function returns a JSON response with:
 ## Notes
 
 - The function processes up to 100 activities per user by default
-- Activities with `athlete_count = 1` are re-checked in case they were actually group activities
+- All activities are updated with the latest value from Strava, regardless of current database value
 - Rate limiting: Be aware of Strava API rate limits (100 requests per 15 minutes, 1000 per day)
 - For large backlogs, you may need to run this multiple times or increase the limit
