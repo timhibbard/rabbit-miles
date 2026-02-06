@@ -201,7 +201,8 @@ def handler(event, context):
                 THEN time_on_trail 
                 ELSE 0 
             END), 0) as year_time
-        FROM activities, time_periods
+        FROM activities
+        CROSS JOIN time_periods
         WHERE distance_on_trail IS NOT NULL
             AND time_on_trail IS NOT NULL
         GROUP BY athlete_id
