@@ -112,6 +112,7 @@ function Admin() {
     return `${miles.toFixed(2)} mi`;
   };
 
+  // Format duration for activity list (returns N/A for missing data)
   const formatDuration = (seconds) => {
     if (!seconds) return 'N/A';
     const hours = Math.floor(seconds / 3600);
@@ -122,12 +123,14 @@ function Admin() {
     return `${minutes}m`;
   };
 
+  // Format distance for trail statistics (returns 0 mi for zero values)
   const formatTrailDistance = (meters) => {
     if (!meters || meters === 0) return '0 mi';
     const miles = meters / 1609.34;
     return `${miles.toFixed(2)} mi`;
   };
 
+  // Format duration for trail statistics (returns 0h for zero values)
   const formatTrailDuration = (seconds) => {
     if (!seconds || seconds === 0) return '0h';
     const hours = Math.floor(seconds / 3600);
