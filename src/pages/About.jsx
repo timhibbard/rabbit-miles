@@ -27,6 +27,18 @@ function About() {
     }
   };
 
+  const trailDataCredits = {
+    maintainer: {
+      displayName: "Mike Nice",
+      websiteUrl: "https://greenvilleopenmap.info/"
+    },
+    openDataHub: "https://data.openupstate.org/map-layers",
+    geoJsonSources: [
+      { label: "Swamp Rabbit Ways", fileUrl: "https://greenvilleopenmap.info/SwampRabbitWays.geojson" },
+      { label: "Swamp Rabbit Connectors", fileUrl: "https://greenvilleopenmap.info/SwampRabbitConnectors.geojson" }
+    ]
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
@@ -161,6 +173,60 @@ function About() {
                         </svg>
                       </a>
                     </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section className="mb-10">
+              <h2 className="text-2xl font-semibold text-gray-900 mb-4 flex items-center">
+                <span className="text-3xl mr-3">🗺️</span>
+                Trail Mapping Data
+              </h2>
+              <div className="bg-blue-50 border-l-4 border-blue-600 p-6">
+                <p className="mb-4 leading-relaxed">
+                  All trail mapping information powering RabbitMiles is created and maintained by{' '}
+                  <a 
+                    href={trailDataCredits.maintainer.websiteUrl}
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="text-blue-600 hover:text-blue-700 underline font-medium"
+                  >
+                    {trailDataCredits.maintainer.displayName}
+                  </a>
+                  , who generously provides this data at no cost to enable projects like this.
+                </p>
+                <div className="space-y-3">
+                  <div>
+                    <p className="text-sm font-semibold text-gray-900 mb-2">GeoJSON Data Files:</p>
+                    <ul className="list-disc list-inside space-y-1 ml-2">
+                      {trailDataCredits.geoJsonSources.map((sourceItem, idx) => (
+                        <li key={idx} className="text-gray-700">
+                          <a 
+                            href={sourceItem.fileUrl}
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="text-blue-600 hover:text-blue-700 underline"
+                          >
+                            {sourceItem.label}
+                          </a>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                  <div className="pt-2">
+                    <p className="text-sm text-gray-700">
+                      Additional open source datasets for the Greenville area can be explored at{' '}
+                      <a 
+                        href={trailDataCredits.openDataHub}
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="text-blue-600 hover:text-blue-700 underline"
+                      >
+                        OpenUpstate Map Layers
+                      </a>
+                      .
+                    </p>
                   </div>
                 </div>
               </div>
