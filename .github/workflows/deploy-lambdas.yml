@@ -26,6 +26,7 @@ jobs:
             secret: LAMBDA_AUTH_DISCONNECT_NAME
           - name: me
             secret: LAMBDA_ME_NAME
+            needs_utils: true
           - name: get_activities
             secret: LAMBDA_GET_ACTIVITIES
           - name: get_activity_detail
