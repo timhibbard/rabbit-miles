@@ -71,12 +71,12 @@ def get_user_tokens():
 
 
 def get_activities_missing_athlete_count(athlete_id, limit=100):
-    """Get activities that are missing athlete_count or have default value"""
+    """Get activities that are missing athlete_count (NULL values only)"""
     sql = """
     SELECT strava_activity_id
     FROM activities
     WHERE athlete_id = :aid
-    AND (athlete_count IS NULL OR athlete_count = 1)
+    AND athlete_count IS NULL
     ORDER BY start_date DESC
     LIMIT :limit
     """
