@@ -14,7 +14,7 @@ import json
 import base64
 import hmac
 import hashlib
-from typing import Optional, Set
+from typing import Optional, Set, Tuple
 
 
 def load_admin_athlete_ids() -> Set[int]:
@@ -124,7 +124,7 @@ def parse_session_cookie(event: dict) -> Optional[str]:
     return None
 
 
-def verify_admin_session(event: dict, app_secret: bytes, admin_ids: Optional[Set[int]] = None) -> tuple[Optional[int], bool]:
+def verify_admin_session(event: dict, app_secret: bytes, admin_ids: Optional[Set[int]] = None) -> Tuple[Optional[int], bool]:
     """
     Verify session and check if the authenticated user is an admin.
     

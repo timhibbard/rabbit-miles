@@ -195,8 +195,8 @@ def handler(event, context):
         activities = []
         for rec in records:
             activity = {
-                "id": int(rec[0].get("longValue") or rec[0].get("stringValue")),
-                "strava_activity_id": int(rec[1].get("longValue") or rec[1].get("stringValue")),
+                "id": rec[0].get("longValue") if rec[0].get("longValue") is not None else int(rec[0].get("stringValue", 0)),
+                "strava_activity_id": rec[1].get("longValue") if rec[1].get("longValue") is not None else int(rec[1].get("stringValue", 0)),
                 "name": rec[2].get("stringValue", ""),
                 "distance": float(rec[3].get("doubleValue", 0)) if rec[3].get("doubleValue") is not None else None,
                 "moving_time": int(rec[4].get("longValue", 0)) if rec[4].get("longValue") is not None else None,

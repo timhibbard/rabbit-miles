@@ -148,7 +148,7 @@ def handler(event, context):
         users = []
         for rec in records:
             user = {
-                "athlete_id": int(rec[0].get("longValue") or rec[0].get("stringValue")),
+                "athlete_id": rec[0].get("longValue") if rec[0].get("longValue") is not None else int(rec[0].get("stringValue", 0)),
                 "display_name": rec[1].get("stringValue", ""),
                 "profile_picture": rec[2].get("stringValue") if rec[2].get("stringValue") else None,
                 "created_at": rec[3].get("stringValue", ""),

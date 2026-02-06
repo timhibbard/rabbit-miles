@@ -166,7 +166,7 @@ function Admin() {
                     ) : (
                       <div className="h-10 w-10 rounded-full bg-gray-200 flex items-center justify-center">
                         <span className="text-gray-500 font-medium">
-                          {user.display_name.charAt(0).toUpperCase()}
+                          {user.display_name ? user.display_name.charAt(0).toUpperCase() : '?'}
                         </span>
                       </div>
                     )}
