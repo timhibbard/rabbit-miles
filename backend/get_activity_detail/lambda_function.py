@@ -5,6 +5,7 @@
 # DB_CLUSTER_ARN, DB_SECRET_ARN, DB_NAME=postgres
 # APP_SECRET (for session verification)
 # FRONTEND_URL (for CORS)
+# ADMIN_ATHLETE_IDS (comma-separated list of admin athlete IDs)
 
 import os
 import json
@@ -23,6 +24,31 @@ DB_NAME = os.environ.get("DB_NAME", "postgres")
 APP_SECRET_STR = os.environ.get("APP_SECRET", "")
 APP_SECRET = APP_SECRET_STR.encode() if APP_SECRET_STR else b""
 FRONTEND_URL = os.environ.get("FRONTEND_URL", "").rstrip("/")
+
+# Load admin IDs once at module initialization
+ADMIN_ATHLETE_IDS = set()
+
+
+def load_admin_athlete_ids():
+    """Load admin athlete IDs from environment variable"""
+    admin_ids_str = os.environ.get("ADMIN_ATHLETE_IDS", "")
+    if not admin_ids_str:
+        return set()
+    
+    admin_ids = set()
+    for id_str in admin_ids_str.split(","):
+        id_str = id_str.strip()
+        if id_str:
+            try:
+                admin_ids.add(int(id_str))
+            except ValueError:
+                print(f"WARNING - Invalid athlete_id in ADMIN_ATHLETE_IDS: {id_str}")
+    
+    return admin_ids
+
+
+# Initialize admin IDs at module load time
+ADMIN_ATHLETE_IDS = load_admin_athlete_ids()
 
 
 def get_cors_origin():
@@ -201,13 +227,19 @@ def handler(event, context):
         
         record = records[0]
         
-        # Verify the activity belongs to the authenticated user
+        # Verify the activity belongs to the authenticated user OR user is an admin
         # Column indices correspond to SELECT statement above:
         # 0=id, 1=strava_activity_id, 2=name, 3=distance, 4=moving_time, 5=elapsed_time,
         # 6=total_elevation_gain, 7=type, 8=start_date, 9=start_date_local, 10=timezone,
         # 11=time_on_trail, 12=distance_on_trail, 13=polyline, 14=athlete_id, 15=last_matched
         activity_athlete_id = int(record[14].get("longValue", 0))
-        if activity_athlete_id != aid:
+        
+        # Check if user has admin privileges (using cached admin IDs)
+        is_admin = aid in ADMIN_ATHLETE_IDS
+        
+        # Allow access if user owns the activity OR user is an admin
+        if activity_athlete_id != aid and not is_admin:
+            print(f"Access denied: athlete_id={aid}, activity_athlete_id={activity_athlete_id}, is_admin={is_admin}")
             return {
                 "statusCode": 403,
                 "headers": cors_headers,

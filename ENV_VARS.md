@@ -250,6 +250,37 @@ All backend Lambdas require environment variables set in AWS Lambda console or v
 
 ---
 
+### 8. get_activity_detail Lambda
+
+**Purpose**: Returns detailed activity information including polyline and trail segments. Regular users can only view their own activities; admin users can view any activity.
+
+**Function Name**: `rabbitmiles-get-activity-detail` (adjust to your naming)
+
+**Handler**: `lambda_function.handler`
+
+| Variable | Required | Example | Description |
+|----------|----------|---------|-------------|
+| `APP_SECRET` | ✅ Yes | `<long-random-string>` | Secret key for verifying session tokens. **Must match auth_callback and me**. |
+| `FRONTEND_URL` | ✅ Yes | `https://rabbitmiles.com` | Frontend URL for CORS headers. |
+| `DB_CLUSTER_ARN` | ✅ Yes | `arn:aws:rds:us-east-1:123456789012:cluster:rabbitmiles-db` | Aurora Serverless cluster ARN. |
+| `DB_SECRET_ARN` | ✅ Yes | `arn:aws:secretsmanager:us-east-1:123456789012:secret:rabbitmiles-db-abc123` | Secrets Manager ARN containing DB credentials. |
+| `DB_NAME` | ⚠️ Optional | `postgres` | Database name. Defaults to `postgres` if not set. |
+| `ADMIN_ATHLETE_IDS` | ⚠️ Optional | `3519964,12345,67890` | Comma-separated list of Strava athlete IDs with admin access. Admins can view any user's activities. |
+
+**IAM Permissions Required**:
+- `rds-data:ExecuteStatement`
+- `secretsmanager:GetSecretValue`
+
+**Database Requirements**:
+- `activities` table must exist
+
+**Authorization Logic**:
+- Regular users can only view their own activities (403 if they try to access another user's activity)
+- Admin users (listed in `ADMIN_ATHLETE_IDS`) can view any user's activities
+- If `ADMIN_ATHLETE_IDS` is not set, all users are treated as regular users
+
+---
+
 ### Other Backend Lambdas
 
 For completeness, other Lambdas in the system (activities, trails, webhooks) require similar database and API configuration:
