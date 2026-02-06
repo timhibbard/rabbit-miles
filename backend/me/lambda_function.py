@@ -1,7 +1,13 @@
 # lambda_me.py
-import os, json, base64, hmac, hashlib
+import os, json, base64, hmac, hashlib, sys
 from urllib.parse import urlparse
 import boto3
+
+# Add parent directory to path to import admin_utils
+parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, parent_dir)
+
+import admin_utils
 
 rds = boto3.client("rds-data")
 # Get environment variables safely - validation happens in handler
@@ -313,10 +319,15 @@ def handler(event, context):
         print(f"LOG -   display_name: {display_name}")
         print(f"LOG -   profile_picture: {bool(profile_picture)}")
         
+        # Check if user is an admin
+        is_user_admin = admin_utils.is_admin(athlete_id)
+        print(f"LOG -   is_admin: {is_user_admin}")
+        
         response_data = {
             "athlete_id": athlete_id,
             "display_name": display_name,
-            "profile_picture": profile_picture
+            "profile_picture": profile_picture,
+            "is_admin": is_user_admin
         }
         
         print(f"LOG - Returning success response")

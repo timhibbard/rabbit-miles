@@ -124,6 +124,57 @@ This script automatically checks:
 
 **Important:** No secrets or API keys should be stored in the frontend. All authentication is handled by the backend using secure httpOnly cookies.
 
+## Admin Features
+
+RabbitMiles includes admin endpoints for managing and viewing user data. Admin access is controlled by an allowlist of athlete IDs.
+
+### Admin Endpoints
+
+The following admin-only endpoints are available:
+
+- **GET /admin/users** - List all users in the system
+  - Returns: Array of user objects (excluding sensitive tokens)
+  - Response includes: athlete_id, display_name, profile_picture, created_at, updated_at
+
+- **GET /admin/users/{athlete_id}/activities** - List activities for a specific user
+  - Path parameter: `athlete_id` - The Strava athlete ID
+  - Query parameters: `limit` (default: 50, max: 100), `offset` (default: 0)
+  - Returns: Array of activity objects for the specified user
+
+### Admin Access Control
+
+Admin access is controlled via the `ADMIN_ATHLETE_IDS` environment variable in the backend Lambda functions:
+
+```bash
+# Example: Multiple admin athlete IDs (comma-separated)
+ADMIN_ATHLETE_IDS="3519964,12345,67890"
+```
+
+**Security Features:**
+- Authentication derived from session cookie only (no client-provided athlete_id accepted)
+- Admin endpoints return 403 Forbidden if user is not in allowlist
+- All admin responses include `Cache-Control: no-store` header
+- Access/refresh tokens are never exposed in API responses
+- All admin actions are audit logged to CloudWatch
+
+**Frontend Access:**
+- Admin navigation link only appears for authorized users
+- Admin page checks authorization and redirects if not authenticated
+- Non-admin users cannot discover or access admin endpoints
+
+### Setting Up Admin Access
+
+1. Add the `ADMIN_ATHLETE_IDS` environment variable to your admin Lambda functions:
+   - `admin_list_users`
+   - `admin_user_activities`
+   - `me` (for is_admin flag)
+
+2. Set the value to a comma-separated list of Strava athlete IDs that should have admin access
+
+3. Deploy the Lambda functions with the updated environment variables
+
+4. Admin users will see the "Admin" link in the navigation after logging in
+
 ## Project Structure
 
 ```

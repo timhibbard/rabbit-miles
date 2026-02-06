@@ -114,6 +114,7 @@ All backend Lambdas require environment variables set in AWS Lambda console or v
 | `DB_CLUSTER_ARN` | ✅ Yes | `arn:aws:rds:us-east-1:123456789012:cluster:rabbitmiles-db` | Aurora Serverless cluster ARN. |
 | `DB_SECRET_ARN` | ✅ Yes | `arn:aws:secretsmanager:us-east-1:123456789012:secret:rabbitmiles-db-abc123` | Secrets Manager ARN containing DB credentials. |
 | `DB_NAME` | ⚠️ Optional | `postgres` | Database name. Defaults to `postgres` if not set. |
+| `ADMIN_ATHLETE_IDS` | ⚠️ Optional | `3519964,12345,67890` | Comma-separated list of Strava athlete IDs that have admin access. Used to set `is_admin` flag in response. |
 
 **IAM Permissions Required**:
 - `rds-data:ExecuteStatement`
@@ -183,6 +184,69 @@ All backend Lambdas require environment variables set in AWS Lambda console or v
 **Critical Configuration**:
 - Lambda must NOT be in a VPC (RDS Data API doesn't require VPC)
 - If MATCH_UNMATCHED_ACTIVITIES_LAMBDA_ARN is set, trail matching will run automatically after activities are fetched
+
+---
+
+### 6. admin_list_users Lambda
+
+**Purpose**: Admin-only endpoint that lists all users in the system (excluding sensitive tokens).
+
+**Function Name**: `rabbitmiles-admin-list-users` (adjust to your naming)
+
+**Handler**: `lambda_function.handler`
+
+| Variable | Required | Example | Description |
+|----------|----------|---------|-------------|
+| `APP_SECRET` | ✅ Yes | `<long-random-string>` | Secret key for verifying session tokens. **Must match auth_callback and me**. |
+| `FRONTEND_URL` | ✅ Yes | `https://rabbitmiles.com` | Frontend URL for CORS headers. |
+| `DB_CLUSTER_ARN` | ✅ Yes | `arn:aws:rds:us-east-1:123456789012:cluster:rabbitmiles-db` | Aurora Serverless cluster ARN. |
+| `DB_SECRET_ARN` | ✅ Yes | `arn:aws:secretsmanager:us-east-1:123456789012:secret:rabbitmiles-db-abc123` | Secrets Manager ARN containing DB credentials. |
+| `DB_NAME` | ⚠️ Optional | `postgres` | Database name. Defaults to `postgres` if not set. |
+| `ADMIN_ATHLETE_IDS` | ✅ Yes | `3519964,12345,67890` | Comma-separated list of Strava athlete IDs with admin access. Only these users can access this endpoint. |
+
+**IAM Permissions Required**:
+- `rds-data:ExecuteStatement`
+- `secretsmanager:GetSecretValue`
+
+**Database Requirements**:
+- `users` table must exist
+
+**Security Notes**:
+- Returns 403 Forbidden if authenticated user is not in admin allowlist
+- Access/refresh tokens are NOT included in response
+- All responses include `Cache-Control: no-store` header
+- All access attempts are audit logged to CloudWatch
+
+---
+
+### 7. admin_user_activities Lambda
+
+**Purpose**: Admin-only endpoint that lists activities for a specific user.
+
+**Function Name**: `rabbitmiles-admin-user-activities` (adjust to your naming)
+
+**Handler**: `lambda_function.handler`
+
+| Variable | Required | Example | Description |
+|----------|----------|---------|-------------|
+| `APP_SECRET` | ✅ Yes | `<long-random-string>` | Secret key for verifying session tokens. **Must match auth_callback and me**. |
+| `FRONTEND_URL` | ✅ Yes | `https://rabbitmiles.com` | Frontend URL for CORS headers. |
+| `DB_CLUSTER_ARN` | ✅ Yes | `arn:aws:rds:us-east-1:123456789012:cluster:rabbitmiles-db` | Aurora Serverless cluster ARN. |
+| `DB_SECRET_ARN` | ✅ Yes | `arn:aws:secretsmanager:us-east-1:123456789012:secret:rabbitmiles-db-abc123` | Secrets Manager ARN containing DB credentials. |
+| `DB_NAME` | ⚠️ Optional | `postgres` | Database name. Defaults to `postgres` if not set. |
+| `ADMIN_ATHLETE_IDS` | ✅ Yes | `3519964,12345,67890` | Comma-separated list of Strava athlete IDs with admin access. Only these users can access this endpoint. |
+
+**IAM Permissions Required**:
+- `rds-data:ExecuteStatement`
+- `secretsmanager:GetSecretValue`
+
+**Database Requirements**:
+- `activities` table must exist
+
+**Security Notes**:
+- Returns 403 Forbidden if authenticated user is not in admin allowlist
+- All responses include `Cache-Control: no-store` header
+- All access attempts are audit logged to CloudWatch
 
 ---
 
