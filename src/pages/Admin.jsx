@@ -112,8 +112,27 @@ function Admin() {
     return `${miles.toFixed(2)} mi`;
   };
 
+  // Format duration for activity list (returns N/A for missing data)
   const formatDuration = (seconds) => {
     if (!seconds) return 'N/A';
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    if (hours > 0) {
+      return `${hours}h ${minutes}m`;
+    }
+    return `${minutes}m`;
+  };
+
+  // Format distance for trail statistics (returns 0 mi for zero values)
+  const formatTrailDistance = (meters) => {
+    if (!meters || meters === 0) return '0 mi';
+    const miles = meters / 1609.34;
+    return `${miles.toFixed(2)} mi`;
+  };
+
+  // Format duration for trail statistics (returns 0h for zero values)
+  const formatTrailDuration = (seconds) => {
+    if (!seconds || seconds === 0) return '0h';
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
     if (hours > 0) {
@@ -210,26 +229,63 @@ function Admin() {
                     selectedUser?.athlete_id === user.athlete_id ? 'bg-orange-50' : ''
                   }`}
                 >
-                  <div className="flex items-center">
+                  <div className="flex items-start">
                     {user.profile_picture ? (
                       <img
                         src={user.profile_picture}
                         alt={user.display_name}
-                        className="h-10 w-10 rounded-full"
+                        className="h-10 w-10 rounded-full flex-shrink-0"
                       />
                     ) : (
-                      <div className="h-10 w-10 rounded-full bg-gray-200 flex items-center justify-center">
+                      <div className="h-10 w-10 rounded-full bg-gray-200 flex items-center justify-center flex-shrink-0">
                         <span className="text-gray-500 font-medium">
                           {user.display_name ? user.display_name.charAt(0).toUpperCase() : '?'}
                         </span>
                       </div>
                     )}
-                    <div className="ml-4 flex-1">
+                    <div className="ml-4 flex-1 min-w-0">
                       <p className="font-medium text-gray-900">{user.display_name}</p>
                       <p className="text-sm text-gray-500">ID: {user.athlete_id}</p>
+                      
+                      {user.stats && (
+                        <div className="mt-2 space-y-1 text-xs">
+                          <div className="grid grid-cols-2 gap-x-2">
+                            <p className="text-gray-600">
+                              <span className="font-semibold">Total:</span> {formatTrailDistance(user.stats.total_distance)}
+                            </p>
+                            <p className="text-gray-600">
+                              {formatTrailDuration(user.stats.total_time)}
+                            </p>
+                          </div>
+                          <div className="grid grid-cols-2 gap-x-2">
+                            <p className="text-gray-600">
+                              <span className="font-semibold">This week:</span> {formatTrailDistance(user.stats.week_distance)}
+                            </p>
+                            <p className="text-gray-600">
+                              {formatTrailDuration(user.stats.week_time)}
+                            </p>
+                          </div>
+                          <div className="grid grid-cols-2 gap-x-2">
+                            <p className="text-gray-600">
+                              <span className="font-semibold">This month:</span> {formatTrailDistance(user.stats.month_distance)}
+                            </p>
+                            <p className="text-gray-600">
+                              {formatTrailDuration(user.stats.month_time)}
+                            </p>
+                          </div>
+                          <div className="grid grid-cols-2 gap-x-2">
+                            <p className="text-gray-600">
+                              <span className="font-semibold">This year:</span> {formatTrailDistance(user.stats.year_distance)}
+                            </p>
+                            <p className="text-gray-600">
+                              {formatTrailDuration(user.stats.year_time)}
+                            </p>
+                          </div>
+                        </div>
+                      )}
                     </div>
                     <svg
-                      className="h-5 w-5 text-gray-400"
+                      className="h-5 w-5 text-gray-400 flex-shrink-0 ml-2"
                       fill="none"
                       viewBox="0 0 24 24"
                       stroke="currentColor"

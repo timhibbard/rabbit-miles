@@ -144,15 +144,107 @@ def handler(event, context):
         records = result.get("records", [])
         print(f"LOG - Found {len(records)} users")
         
-        # Transform records to JSON-friendly format
+        # Compute trail statistics for all athletes in a single query
+        # Using same time period logic as dashboard (current week starting Monday, current calendar month, current calendar year)
+        print("LOG - Computing trail statistics for all athletes")
+        stats_sql = """
+        WITH time_periods AS (
+            SELECT 
+                -- Start of week (Monday) - matches dashboard logic
+                -- If Sunday (DOW=0), go back 6 days; otherwise go back (DOW-1) days
+                DATE_TRUNC('day', NOW() - INTERVAL '1 day' * 
+                    CASE 
+                        WHEN EXTRACT(DOW FROM NOW()) = 0 THEN 6 
+                        ELSE EXTRACT(DOW FROM NOW()) - 1 
+                    END
+                ) as start_of_week,
+                -- Start of current month
+                DATE_TRUNC('month', NOW()) as start_of_month,
+                -- Start of current year
+                DATE_TRUNC('year', NOW()) as start_of_year
+        )
+        SELECT 
+            athlete_id,
+            -- Total
+            COALESCE(SUM(distance_on_trail), 0) as total_distance,
+            COALESCE(SUM(time_on_trail), 0) as total_time,
+            -- This week (current week starting Monday)
+            COALESCE(SUM(CASE 
+                WHEN start_date_local >= (SELECT start_of_week FROM time_periods)
+                THEN distance_on_trail 
+                ELSE 0 
+            END), 0) as week_distance,
+            COALESCE(SUM(CASE 
+                WHEN start_date_local >= (SELECT start_of_week FROM time_periods)
+                THEN time_on_trail 
+                ELSE 0 
+            END), 0) as week_time,
+            -- This month (current calendar month)
+            COALESCE(SUM(CASE 
+                WHEN start_date_local >= (SELECT start_of_month FROM time_periods)
+                THEN distance_on_trail 
+                ELSE 0 
+            END), 0) as month_distance,
+            COALESCE(SUM(CASE 
+                WHEN start_date_local >= (SELECT start_of_month FROM time_periods)
+                THEN time_on_trail 
+                ELSE 0 
+            END), 0) as month_time,
+            -- This year (current calendar year)
+            COALESCE(SUM(CASE 
+                WHEN start_date_local >= (SELECT start_of_year FROM time_periods)
+                THEN distance_on_trail 
+                ELSE 0 
+            END), 0) as year_distance,
+            COALESCE(SUM(CASE 
+                WHEN start_date_local >= (SELECT start_of_year FROM time_periods)
+                THEN time_on_trail 
+                ELSE 0 
+            END), 0) as year_time
+        FROM activities
+        CROSS JOIN time_periods
+        WHERE distance_on_trail IS NOT NULL
+            AND time_on_trail IS NOT NULL
+        GROUP BY athlete_id
+        """
+        
+        stats_result = exec_sql(stats_sql)
+        stats_records = stats_result.get("records", [])
+        print(f"LOG - Computed statistics for {len(stats_records)} athletes")
+        
+        # Build a map of athlete_id to stats
+        stats_map = {}
+        for stats_rec in stats_records:
+            athlete_id = stats_rec[0].get("longValue") if stats_rec[0].get("longValue") is not None else int(stats_rec[0].get("stringValue", 0))
+            stats_map[athlete_id] = {
+                "total_distance": float(stats_rec[1].get("stringValue", 0)) if stats_rec[1].get("stringValue") else 0,
+                "total_time": stats_rec[2].get("longValue", 0) if stats_rec[2].get("longValue") is not None else 0,
+                "week_distance": float(stats_rec[3].get("stringValue", 0)) if stats_rec[3].get("stringValue") else 0,
+                "week_time": stats_rec[4].get("longValue", 0) if stats_rec[4].get("longValue") is not None else 0,
+                "month_distance": float(stats_rec[5].get("stringValue", 0)) if stats_rec[5].get("stringValue") else 0,
+                "month_time": stats_rec[6].get("longValue", 0) if stats_rec[6].get("longValue") is not None else 0,
+                "year_distance": float(stats_rec[7].get("stringValue", 0)) if stats_rec[7].get("stringValue") else 0,
+                "year_time": stats_rec[8].get("longValue", 0) if stats_rec[8].get("longValue") is not None else 0,
+            }
+        
+        # Transform records to JSON-friendly format and attach stats
         users = []
         for rec in records:
+            athlete_id = rec[0].get("longValue") if rec[0].get("longValue") is not None else int(rec[0].get("stringValue", 0))
+            
+            # Get stats for this athlete (default to zeros if none found)
+            stats = stats_map.get(athlete_id, {
+                "total_distance": 0, "total_time": 0, "week_distance": 0, "week_time": 0, 
+                "month_distance": 0, "month_time": 0, "year_distance": 0, "year_time": 0
+            })
+            
             user = {
-                "athlete_id": rec[0].get("longValue") if rec[0].get("longValue") is not None else int(rec[0].get("stringValue", 0)),
+                "athlete_id": athlete_id,
                 "display_name": rec[1].get("stringValue", ""),
                 "profile_picture": rec[2].get("stringValue") if rec[2].get("stringValue") else None,
                 "created_at": rec[3].get("stringValue", ""),
                 "updated_at": rec[4].get("stringValue", ""),
+                "stats": stats
             }
             users.append(user)
         
