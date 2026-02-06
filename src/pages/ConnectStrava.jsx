@@ -2,7 +2,6 @@ import { useEffect, useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { fetchMe } from '../utils/api';
 import debug, { showDebugInfo } from '../utils/debug';
-import Footer from '../components/Footer';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
@@ -459,9 +458,6 @@ function ConnectStrava() {
       </div>
         </>
       )}
-
-      {/* Footer */}
-      <Footer />
     </div>
   );
 }
