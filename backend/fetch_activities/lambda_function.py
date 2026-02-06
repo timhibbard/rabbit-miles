@@ -236,6 +236,7 @@ def store_activities(athlete_id, activities):
         start_date = activity.get("start_date", "")
         start_date_local = activity.get("start_date_local", "")
         timezone = activity.get("timezone", "")
+        athlete_count = activity.get("athlete_count", 1)  # Default to 1 for solo activities
         
         # Get polyline from map - prefer full polyline over summary_polyline
         polyline = ""
@@ -251,9 +252,9 @@ def store_activities(athlete_id, activities):
         INSERT INTO activities (
             athlete_id, strava_activity_id, name, distance, moving_time, elapsed_time,
             total_elevation_gain, type, start_date, start_date_local, timezone, polyline,
-            time_on_trail, distance_on_trail, updated_at
+            athlete_count, time_on_trail, distance_on_trail, updated_at
         )
-        VALUES (:aid, :sid, :name, :dist, :mt, :et, :elev, :type, CAST(:sd AS TIMESTAMP), CAST(:sdl AS TIMESTAMP), :tz, :poly, NULL, NULL, now())
+        VALUES (:aid, :sid, :name, :dist, :mt, :et, :elev, :type, CAST(:sd AS TIMESTAMP), CAST(:sdl AS TIMESTAMP), :tz, :poly, :ac, NULL, NULL, now())
         ON CONFLICT (athlete_id, strava_activity_id) 
         DO UPDATE SET
             name = EXCLUDED.name,
@@ -266,6 +267,7 @@ def store_activities(athlete_id, activities):
             start_date_local = EXCLUDED.start_date_local,
             timezone = EXCLUDED.timezone,
             polyline = EXCLUDED.polyline,
+            athlete_count = EXCLUDED.athlete_count,
             time_on_trail = COALESCE(activities.time_on_trail, EXCLUDED.time_on_trail),
             distance_on_trail = COALESCE(activities.distance_on_trail, EXCLUDED.distance_on_trail),
             updated_at = now()
@@ -284,6 +286,7 @@ def store_activities(athlete_id, activities):
             {"name": "sdl", "value": {"stringValue": start_date_local} if start_date_local else {"isNull": True}},
             {"name": "tz", "value": {"stringValue": timezone}},
             {"name": "poly", "value": {"stringValue": polyline} if polyline else {"isNull": True}},
+            {"name": "ac", "value": {"longValue": athlete_count}},
         ]
         
         try:

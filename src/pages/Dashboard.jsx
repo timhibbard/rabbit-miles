@@ -608,9 +608,19 @@ function Dashboard() {
                         <h3 className="font-semibold text-gray-900">{activity.name}</h3>
                         <p className="text-sm text-gray-500">{activityDate}</p>
                       </div>
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
-                        {activity.type}
-                      </span>
+                      <div className="flex gap-2">
+                        {activity.athlete_count && activity.athlete_count > 1 && (
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                            <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 20 20">
+                              <path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z" />
+                            </svg>
+                            {activity.athlete_count}
+                          </span>
+                        )}
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
+                          {activity.type}
+                        </span>
+                      </div>
                     </div>
                     
                     <div className="grid grid-cols-3 gap-4 text-sm">

@@ -169,7 +169,7 @@ def handler(event, context):
         SELECT 
             id, strava_activity_id, name, distance, moving_time, elapsed_time,
             total_elevation_gain, type, start_date, start_date_local, timezone,
-            time_on_trail, distance_on_trail
+            time_on_trail, distance_on_trail, athlete_count
         FROM activities
         WHERE athlete_id = :aid
         ORDER BY start_date DESC
@@ -216,6 +216,13 @@ def handler(event, context):
                 if time_on_trail_value is not None:
                     time_on_trail = int(time_on_trail_value)
             
+            # Get athlete_count, checking for null first
+            athlete_count = 1  # Default to 1 for solo activities
+            if not record[13].get("isNull"):
+                athlete_count_value = record[13].get("longValue")
+                if athlete_count_value is not None:
+                    athlete_count = int(athlete_count_value)
+            
             activity = {
                 "id": int(record[0].get("longValue", 0)),
                 "strava_activity_id": int(record[1].get("longValue", 0)),
@@ -230,6 +237,7 @@ def handler(event, context):
                 "timezone": record[10].get("stringValue", ""),
                 "time_on_trail": time_on_trail,
                 "distance_on_trail": distance_on_trail,
+                "athlete_count": athlete_count,
             }
             activities.append(activity)
         
