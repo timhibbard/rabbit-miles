@@ -2,6 +2,12 @@
 
 This guide covers the deployment of the `admin_delete_user` Lambda function that enables admins to delete users and all their associated data.
 
+## ⚠️ Important: API Gateway Route Required
+
+**If you're experiencing 404 errors when trying to delete users**, the API Gateway route is likely missing. See:
+- **[TROUBLESHOOTING_DELETE_USER.md](TROUBLESHOOTING_DELETE_USER.md)** - Complete troubleshooting guide with automated setup script
+- Quick fix: Run `./scripts/setup-admin-delete-user-route.sh` to automatically configure the route
+
 ## New Lambda Function
 
 **admin_delete_user** - Deletes a user and all their activities (admin only)
@@ -96,6 +102,27 @@ The admin_delete_user Lambda function needs:
 
 ## API Gateway Setup
 
+⚠️ **This is a critical step!** Without the API Gateway route, you'll get 404 errors.
+
+### Quick Setup (Recommended)
+
+Use the automated setup script:
+
+```bash
+cd /path/to/rabbit-miles
+./scripts/setup-admin-delete-user-route.sh
+```
+
+The script will automatically:
+- Find your API Gateway and Lambda function
+- Create the DELETE and OPTIONS routes
+- Add necessary permissions
+- Verify the setup
+
+### Manual Setup
+
+If you prefer manual setup, see [TROUBLESHOOTING_DELETE_USER.md](TROUBLESHOOTING_DELETE_USER.md) for detailed instructions.
+
 ### Create Route
 
 Add this route to your API Gateway:
@@ -118,6 +145,22 @@ aws apigatewayv2 create-route \
   --route-key "DELETE /admin/users/{athlete_id}" \
   --target "integrations/your-integration-id"
 ```
+
+### Verify Setup
+
+After creating the route, verify it exists:
+
+```bash
+aws apigatewayv2 get-routes --api-id $API_ID \
+  --query 'Items[?contains(RouteKey, `admin/users`)].[RouteKey,RouteId]' \
+  --output table
+```
+
+You should see:
+- `DELETE /admin/users/{athlete_id}`
+- `OPTIONS /admin/users/{athlete_id}` (for CORS)
+- `GET /admin/users` (from admin_list_users)
+- `GET /admin/users/{athlete_id}/activities` (from admin_user_activities)
 
 ## Testing
 
@@ -218,6 +261,21 @@ All delete operations are logged to CloudWatch with this format:
 Search CloudWatch logs for `AUDIT -` to find all admin actions including deletions.
 
 ## Troubleshooting
+
+### 404 Error When Deleting Users
+
+**Error**: `Preflight response is not successful. Status code: 404`
+
+**Solution**: The API Gateway route is missing. See **[TROUBLESHOOTING_DELETE_USER.md](TROUBLESHOOTING_DELETE_USER.md)** for:
+- Automated setup script
+- Step-by-step manual instructions
+- Verification commands
+- Common issues and solutions
+
+Quick fix:
+```bash
+./scripts/setup-admin-delete-user-route.sh
+```
 
 ### Lambda Function Not Found
 
