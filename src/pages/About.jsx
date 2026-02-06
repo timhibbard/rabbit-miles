@@ -67,7 +67,10 @@ function About() {
                   >
                     {originStory.challenge} of {originStory.year}
                   </a>
-                  , a group of 5-6 runners were acting as sherpa for{' '}
+                  , a group of runners decided to spend hours running the same .25-mile burrito segment on the Swamp Rabbit Trail. No regrets. Some regrets.
+                </p>
+                <p className="mb-4 leading-relaxed">
+                  We were all running.{' '}
                   <a 
                     href={originStory.sherpaTarget.stravaUrl}
                     target="_blank" 
@@ -76,10 +79,10 @@ function About() {
                   >
                     {originStory.sherpaTarget.name}
                   </a>
-                  {' '}through what would become a legendary run.
+                  {' '}was on a mission to log the most miles on that segment so he could win free burritos for a year. Stakes were high. The segment was short. The laps were endless.
                 </p>
                 <p className="mb-4 leading-relaxed">
-                  Somewhere around lap {originStory.lapNumber},{' '}
+                  Somewhere around lap {originStory.lapNumber}, after doing the same math wrong multiple times,{' '}
                   <a 
                     href={originStory.conceptCreator.stravaUrl}
                     target="_blank" 
@@ -88,10 +91,10 @@ function About() {
                   >
                     {originStory.conceptCreator.name}
                   </a>
-                  {' '}voiced a thought that would change everything:
+                  {' '}finally asked the question that broke us all:
                 </p>
                 <blockquote className="border-l-4 border-orange-400 pl-4 italic text-gray-800 text-lg">
-                  &ldquo;I wish there was an app that showed me how many miles I&apos;ve ran on the trail&rdquo;
+                  &ldquo;I wish there was an app that showed me how many miles I&apos;ve run on the Swamp Rabbit Trail.&rdquo;
                 </blockquote>
                 <p className="mt-4 leading-relaxed font-medium text-gray-900">
                   And just like that, RabbitMiles was born. 🐰
