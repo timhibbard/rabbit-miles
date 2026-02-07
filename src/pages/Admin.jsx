@@ -361,10 +361,13 @@ function Admin() {
                       </div>
                     )}
                     <div className="ml-4 flex-1 min-w-0">
-                      <p className="font-medium text-gray-900" title={`ID: ${user.athlete_id}`}>{user.display_name}</p>
+                      <p className="font-medium text-gray-900" title={`ID: ${user.athlete_id}`}>
+                        {user.display_name}
+                        <span className="sr-only"> (ID: {user.athlete_id})</span>
+                      </p>
                       
                       {user.stats && (
-                        <p className="mt-1 text-xs text-gray-600">
+                        <p className="mt-1 text-xs text-gray-600" aria-label={`This week: ${formatTrailDistance(user.stats.week_distance)}, This month: ${formatTrailDistance(user.stats.month_distance)}, This year: ${formatTrailDistance(user.stats.year_distance)}, Total: ${formatTrailDistance(user.stats.total_distance)}`}>
                           {formatTrailDistance(user.stats.week_distance)} | {formatTrailDistance(user.stats.month_distance)} | {formatTrailDistance(user.stats.year_distance)} | {formatTrailDistance(user.stats.total_distance)}
                         </p>
                       )}
