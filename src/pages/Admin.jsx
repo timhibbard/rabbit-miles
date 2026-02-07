@@ -353,7 +353,7 @@ function Admin() {
                 <button
                   key={user.athlete_id}
                   onClick={() => handleUserSelect(user)}
-                  className={`w-full text-left px-6 py-4 hover:bg-gray-50 transition-colors ${
+                  className={`w-full text-left px-6 py-2 hover:bg-gray-50 transition-colors ${
                     selectedUser?.athlete_id === user.athlete_id ? 'bg-orange-50' : ''
                   }`}
                 >
@@ -376,7 +376,7 @@ function Admin() {
                       <p className="text-sm text-gray-500">ID: {user.athlete_id}</p>
                       
                       {user.stats && (
-                        <div className="mt-2 space-y-1 text-xs">
+                        <div className="mt-1 space-y-0.5 text-xs">
                           <div className="grid grid-cols-2 gap-x-2">
                             <p className="text-gray-600">
                               <span className="font-semibold">Total:</span> {formatTrailDistance(user.stats.total_distance)}
