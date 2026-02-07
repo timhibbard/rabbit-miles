@@ -252,17 +252,6 @@ function Admin() {
     return `${miles.toFixed(2)} mi`;
   };
 
-  // Format duration for trail statistics (returns 0h for zero values)
-  const formatTrailDuration = (seconds) => {
-    if (!seconds || seconds === 0) return '0h';
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    if (hours > 0) {
-      return `${hours}h ${minutes}m`;
-    }
-    return `${minutes}m`;
-  };
-
   if (loading) {
     return (
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -372,44 +361,15 @@ function Admin() {
                       </div>
                     )}
                     <div className="ml-4 flex-1 min-w-0">
-                      <p className="font-medium text-gray-900">{user.display_name}</p>
-                      <p className="text-sm text-gray-500">ID: {user.athlete_id}</p>
+                      <p className="font-medium text-gray-900" title={`ID: ${user.athlete_id}`}>
+                        {user.display_name}
+                        <span className="sr-only"> (ID: {user.athlete_id})</span>
+                      </p>
                       
                       {user.stats && (
-                        <div className="mt-1 space-y-0.5 text-xs">
-                          <div className="grid grid-cols-2 gap-x-2">
-                            <p className="text-gray-600">
-                              <span className="font-semibold">Total:</span> {formatTrailDistance(user.stats.total_distance)}
-                            </p>
-                            <p className="text-gray-600">
-                              {formatTrailDuration(user.stats.total_time)}
-                            </p>
-                          </div>
-                          <div className="grid grid-cols-2 gap-x-2">
-                            <p className="text-gray-600">
-                              <span className="font-semibold">This week:</span> {formatTrailDistance(user.stats.week_distance)}
-                            </p>
-                            <p className="text-gray-600">
-                              {formatTrailDuration(user.stats.week_time)}
-                            </p>
-                          </div>
-                          <div className="grid grid-cols-2 gap-x-2">
-                            <p className="text-gray-600">
-                              <span className="font-semibold">This month:</span> {formatTrailDistance(user.stats.month_distance)}
-                            </p>
-                            <p className="text-gray-600">
-                              {formatTrailDuration(user.stats.month_time)}
-                            </p>
-                          </div>
-                          <div className="grid grid-cols-2 gap-x-2">
-                            <p className="text-gray-600">
-                              <span className="font-semibold">This year:</span> {formatTrailDistance(user.stats.year_distance)}
-                            </p>
-                            <p className="text-gray-600">
-                              {formatTrailDuration(user.stats.year_time)}
-                            </p>
-                          </div>
-                        </div>
+                        <p className="mt-1 text-xs text-gray-600" aria-label={`This week: ${formatTrailDistance(user.stats.week_distance)}, This month: ${formatTrailDistance(user.stats.month_distance)}, This year: ${formatTrailDistance(user.stats.year_distance)}, Total: ${formatTrailDistance(user.stats.total_distance)}`}>
+                          {formatTrailDistance(user.stats.week_distance)} | {formatTrailDistance(user.stats.month_distance)} | {formatTrailDistance(user.stats.year_distance)} | {formatTrailDistance(user.stats.total_distance)}
+                        </p>
                       )}
                     </div>
                     <div className="flex items-center gap-2 flex-shrink-0 ml-2">
