@@ -186,6 +186,19 @@ def handler(event, context):
                         return default
                 return default
             
+            # Helper to parse integer field that can be either longValue or stringValue
+            def parse_integer(field_rec, default=None):
+                long_val = field_rec.get("longValue")
+                if long_val is not None:
+                    return int(long_val)
+                string_val = field_rec.get("stringValue")
+                if string_val:
+                    try:
+                        return int(string_val)
+                    except (ValueError, TypeError):
+                        return default
+                return default
+            
             # Parse distance
             distance = parse_numeric(rec[4])
             
@@ -201,15 +214,20 @@ def handler(event, context):
             if not rec[14].get("isNull"):
                 distance_on_trail = parse_numeric(rec[14])
             
+            # Parse other numeric fields
+            moving_time_val = rec[5].get("longValue")
+            elapsed_time_val = rec[6].get("longValue")
+            elevation_val = rec[7].get("doubleValue")
+            
             activity = {
-                "id": rec[0].get("longValue") if rec[0].get("longValue") is not None else int(rec[0].get("stringValue", 0)),
-                "athlete_id": rec[1].get("longValue") if rec[1].get("longValue") is not None else int(rec[1].get("stringValue", 0)),
-                "strava_activity_id": rec[2].get("longValue") if rec[2].get("longValue") is not None else int(rec[2].get("stringValue", 0)),
+                "id": parse_integer(rec[0], 0),
+                "athlete_id": parse_integer(rec[1], 0),
+                "strava_activity_id": parse_integer(rec[2], 0),
                 "name": rec[3].get("stringValue", ""),
                 "distance": distance,
-                "moving_time": int(rec[5].get("longValue", 0)) if rec[5].get("longValue") is not None else None,
-                "elapsed_time": int(rec[6].get("longValue", 0)) if rec[6].get("longValue") is not None else None,
-                "total_elevation_gain": float(rec[7].get("doubleValue", 0)) if rec[7].get("doubleValue") is not None else None,
+                "moving_time": int(moving_time_val) if moving_time_val is not None else None,
+                "elapsed_time": int(elapsed_time_val) if elapsed_time_val is not None else None,
+                "total_elevation_gain": float(elevation_val) if elevation_val is not None else None,
                 "type": rec[8].get("stringValue", ""),
                 "start_date": rec[9].get("stringValue", ""),
                 "start_date_local": rec[10].get("stringValue", ""),
