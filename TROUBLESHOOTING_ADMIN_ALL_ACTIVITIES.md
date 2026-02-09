@@ -6,15 +6,76 @@ On the Admin page, "All Athletes' Activities (50)" is showing only your activiti
 
 ![image](https://github.com/user-attachments/assets/36fd6e5a-0268-4148-8889-8bc2961a39d8)
 
+## Quick Diagnosis
+
+**🔍 Key symptom**: If you DON'T see "Athlete: [name]" displayed on each activity (like in the screenshot above), the API Gateway integration is pointing to the wrong Lambda function.
+
+**✅ Route exists (confirmed)**: The route `GET /admin/activities` exists in API Gateway  
+**❌ Wrong integration**: The route is calling `get_activities` instead of `admin_all_activities`
+
+### Why This Happens
+
+There are two Lambda functions with similar purposes:
+- **`get_activities`**: Returns activities for the logged-in user only (no athlete_name field)
+- **`admin_all_activities`**: Returns activities from ALL users (with athlete_name field)
+
+The API Gateway route exists, but it's integrated with the wrong function.
+
 ## Root Cause
 
-The `/admin/activities` API Gateway route is not configured, missing, or pointing to the wrong Lambda function. When the frontend calls `/admin/activities`, one of these is happening:
+The `/admin/activities` API Gateway route is pointing to the wrong Lambda function. When the frontend calls `/admin/activities`, the integration calls:
 
-1. API Gateway returns 404 (route doesn't exist)
-2. API Gateway routes to the wrong Lambda (e.g., `/activities` which shows only your activities)
-3. The Lambda `admin_all_activities` was never deployed to AWS
+- ❌ `rabbitmiles-get-activities` (filters to your activities only)
+instead of:
+- ✅ `rabbitmiles-admin-all-activities` (shows all users' activities)
 
-## Diagnosis
+## Quick Fix
+
+### Step 1: Verify the Current Integration
+
+```bash
+# Get your API ID from the screenshot or run:
+aws apigatewayv2 get-apis --query 'Items[?Name==`rabbitmiles`].ApiId' --output text
+
+# Check which Lambda is being called (use your API ID)
+aws apigatewayv2 get-integration \
+  --api-id 9zke9jame0 \
+  --integration-id vgjpa5n \
+  --query 'IntegrationUri' \
+  --output text
+```
+
+**If the output contains `get-activities`**, that's the problem!
+
+### Step 2: Fix the Integration
+
+```bash
+# Update the integration to point to the correct Lambda
+aws apigatewayv2 update-integration \
+  --api-id 9zke9jame0 \
+  --integration-id vgjpa5n \
+  --integration-uri "arn:aws:lambda:us-east-1:ACCOUNT_ID:function:rabbitmiles-admin-all-activities"
+
+# Replace ACCOUNT_ID with your AWS account ID
+```
+
+### Step 3: Verify the Fix
+
+Refresh the admin page. You should now see:
+
+```
+Afternoon Run
+Athlete: Tim Hibbard      ← This line should now appear
+Type: Run
+Distance: 6.35 mi
+
+Dog walk
+Athlete: Alyssa Smith     ← Different athletes should appear
+Type: Walk
+Distance: 1.70 mi
+```
+
+## Detailed Diagnosis
 
 ### Step 1: Check if the Lambda exists
 
