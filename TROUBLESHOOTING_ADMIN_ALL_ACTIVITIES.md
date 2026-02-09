@@ -37,7 +37,9 @@ instead of:
 # Get your API ID from the screenshot or run:
 aws apigatewayv2 get-apis --query 'Items[?Name==`rabbitmiles`].ApiId' --output text
 
-# Check which Lambda is being called (use your API ID)
+# Check which Lambda is being called
+# NOTE: Use YOUR actual API ID and integration ID from your AWS console
+# The values below (9zke9jame0, vgjpa5n) are from the screenshot - replace if different
 aws apigatewayv2 get-integration \
   --api-id 9zke9jame0 \
   --integration-id vgjpa5n \
@@ -51,12 +53,14 @@ aws apigatewayv2 get-integration \
 
 ```bash
 # Update the integration to point to the correct Lambda
+# NOTE: Replace API_ID, INTEGRATION_ID, and ACCOUNT_ID with your values
 aws apigatewayv2 update-integration \
   --api-id 9zke9jame0 \
   --integration-id vgjpa5n \
   --integration-uri "arn:aws:lambda:us-east-1:ACCOUNT_ID:function:rabbitmiles-admin-all-activities"
 
-# Replace ACCOUNT_ID with your AWS account ID
+# Get your AWS account ID if needed:
+# aws sts get-caller-identity --query Account --output text
 ```
 
 ### Step 3: Verify the Fix

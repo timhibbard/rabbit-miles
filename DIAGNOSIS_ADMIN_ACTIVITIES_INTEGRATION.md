@@ -63,15 +63,22 @@ Update the API Gateway integration for route `GET /admin/activities` to point to
 
 ```bash
 # 1. Get the current integration details
+# NOTE: The IDs below are from your API Gateway screenshot
+# API ID: 9zke9jame0, Integration ID: vgjpa5n
+# Use these values or check your AWS console for your actual values
 aws apigatewayv2 get-integration \
   --api-id 9zke9jame0 \
   --integration-id vgjpa5n
 
 # 2. Update to point to admin_all_activities
+# Replace ACCOUNT_ID with your AWS account ID
 aws apigatewayv2 update-integration \
   --api-id 9zke9jame0 \
   --integration-id vgjpa5n \
   --integration-uri "arn:aws:lambda:us-east-1:ACCOUNT_ID:function:rabbitmiles-admin-all-activities"
+
+# Get your AWS account ID:
+# aws sts get-caller-identity --query Account --output text
 ```
 
 ### Option 2: Via AWS Console
@@ -106,6 +113,8 @@ Distance: 1.70 mi
 
 1. **Check which Lambda is being called:**
    ```bash
+   # NOTE: Use the actual API ID and integration ID from your screenshot
+   # API ID: 9zke9jame0, Integration ID: vgjpa5n (from your setup)
    aws apigatewayv2 get-integration \
      --api-id 9zke9jame0 \
      --integration-id vgjpa5n \
@@ -113,7 +122,7 @@ Distance: 1.70 mi
      --output text
    ```
    
-   Should show: `...function:rabbitmiles-admin-all-activities`
+   Should show: `...function:rabbitmiles-admin-all-activities`  
    If it shows: `...function:rabbitmiles-get-activities` ← **This is the problem!**
 
 2. **Test the endpoint after fix:**
