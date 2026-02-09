@@ -8,6 +8,7 @@ This Lambda function provides an endpoint for admin users to fetch activities fr
 - Access to AWS Lambda console or CLI
 - Access to API Gateway console or CLI
 - Existing admin infrastructure (admin_utils.py, database tables)
+- **GitHub Actions Secret**: After deploying the Lambda, add the secret `LAMBDA_ADMIN_ALL_ACTIVITIES` to GitHub repository settings (see step 6 below)
 
 ## Lambda Function Details
 - **Name**: `rabbitmiles-admin-all-activities`
@@ -161,7 +162,22 @@ aws lambda add-permission \
   --source-arn "arn:aws:execute-api:us-east-1:ACCOUNT:YOUR_API_ID/*/*/admin/activities"
 ```
 
-### 6. Deploy API Gateway Changes
+### 6. Configure GitHub Actions Secret
+
+To enable automatic deployments via GitHub Actions:
+
+1. Navigate to your GitHub repository: `https://github.com/timhibbard/rabbit-miles`
+2. Go to **Settings** → **Secrets and variables** → **Actions**
+3. Click **New repository secret**
+4. Add the secret:
+   - **Name**: `LAMBDA_ADMIN_ALL_ACTIVITIES`
+   - **Value**: The exact Lambda function name (e.g., `rabbitmiles-admin-all-activities`)
+
+This allows the GitHub Actions workflow to automatically deploy code updates when changes are pushed to the `main` branch.
+
+**Note**: The workflow file (`.github/workflows/deploy-lambdas.yml`) has already been updated to include this Lambda in the deployment matrix.
+
+### 7. Deploy API Gateway Changes
 
 If using stages:
 ```bash

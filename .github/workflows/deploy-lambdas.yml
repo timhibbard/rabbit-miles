@@ -59,6 +59,9 @@ jobs:
           - name: admin_backfill_activities
             secret: LAMBDA_ADMIN_BACKFILL_ACTIVITIES
             needs_utils: true
+          - name: admin_all_activities
+            secret: LAMBDA_ADMIN_ALL_ACTIVITIES
+            needs_utils: true
           - name: backfill_athlete_count
             secret: LAMBDA_BACKFILL_ATHLETE_COUNT
     steps:

@@ -47,6 +47,12 @@ After deploying the trail matching Lambda functions to AWS, you need to add the 
 - **Used by**: GitHub Actions workflow to deploy code updates to this Lambda
 - **Note**: This Lambda requires the admin_utils.py dependency (automatically included in deployment)
 
+#### LAMBDA_ADMIN_ALL_ACTIVITIES
+- **Description**: The AWS Lambda function name for the admin_all_activities function
+- **Example value**: `admin_all_activities` or `prod-admin-all-activities`
+- **Used by**: GitHub Actions workflow to deploy code updates to this Lambda
+- **Note**: This Lambda requires the admin_utils.py dependency (automatically included in deployment)
+
 ## Deployment Flow
 
 Once these secrets are configured:
@@ -92,10 +98,12 @@ For reference, here's the complete list of Lambda secrets used in the workflow:
 - `LAMBDA_UPDATE_ACTIVITIES`
 - `LAMBDA_MATCH_ACTIVITY_TRAIL`
 - `LAMBDA_MATCH_UNMATCHED_ACTIVITIES`
-- **`LAMBDA_ADMIN_LIST_USERS`** ← NEW (Admin endpoint)
-- **`LAMBDA_ADMIN_USER_ACTIVITIES`** ← NEW (Admin endpoint)
-- **`LAMBDA_ADMIN_DELETE_USER`** ← NEW (Admin endpoint)
-- **`LAMBDA_ADMIN_BACKFILL_ACTIVITIES`** ← NEW (Admin endpoint)
+- **`LAMBDA_ADMIN_LIST_USERS`** ← Admin endpoint
+- **`LAMBDA_ADMIN_USER_ACTIVITIES`** ← Admin endpoint
+- **`LAMBDA_ADMIN_DELETE_USER`** ← Admin endpoint
+- **`LAMBDA_ADMIN_BACKFILL_ACTIVITIES`** ← Admin endpoint
+- **`LAMBDA_ADMIN_ALL_ACTIVITIES`** ← NEW (Admin endpoint)
+- `LAMBDA_BACKFILL_ATHLETE_COUNT`
 
 ## Additional AWS Secrets
 
