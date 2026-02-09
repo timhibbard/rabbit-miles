@@ -136,6 +136,12 @@ The following admin-only endpoints are available:
   - Returns: Array of user objects (excluding sensitive tokens)
   - Response includes: athlete_id, display_name, profile_picture, created_at, updated_at
 
+- **GET /admin/activities** - List recent activities from ALL users
+  - Query parameters: `limit` (default: 50, max: 100), `offset` (default: 0)
+  - Returns: Array of activity objects from all users, sorted by most recent
+  - Each activity includes `athlete_name` field showing which user created it
+  - **Note**: Requires Lambda deployment and API Gateway route configuration (see `ADMIN_ALL_ACTIVITIES_DEPLOYMENT.md`)
+
 - **GET /admin/users/{athlete_id}/activities** - List activities for a specific user
   - Path parameter: `athlete_id` - The Strava athlete ID
   - Query parameters: `limit` (default: 50, max: 100), `offset` (default: 0)
@@ -166,7 +172,10 @@ ADMIN_ATHLETE_IDS="3519964,12345,67890"
 
 1. Add the `ADMIN_ATHLETE_IDS` environment variable to your admin Lambda functions:
    - `admin_list_users`
+   - `admin_all_activities`
    - `admin_user_activities`
+   - `admin_delete_user`
+   - `admin_backfill_activities`
    - `me` (for is_admin flag)
 
 2. Set the value to a comma-separated list of Strava athlete IDs that should have admin access
