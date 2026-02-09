@@ -220,6 +220,29 @@ export const fetchAllUsers = async () => {
   }
 };
 
+// Fetch activities for all users (admin only)
+export const fetchAllActivities = async (limit = 50, offset = 0) => {
+  try {
+    debug.log(`Calling /admin/activities endpoint (limit=${limit}, offset=${offset})...`);
+    const response = await api.get('/admin/activities', {
+      params: { limit, offset },
+    });
+    debug.log('/admin/activities response received:', response.data);
+    return { success: true, data: response.data };
+  } catch (error) {
+    console.error('/admin/activities endpoint error:', error.message);
+    if (error.response?.status === 401) {
+      debug.log('User not authenticated (401)');
+      return { success: false, notConnected: true };
+    }
+    if (error.response?.status === 403) {
+      debug.log('User not authorized for admin access (403)');
+      return { success: false, error: 'Access denied - admin privileges required' };
+    }
+    return { success: false, error: error.message };
+  }
+};
+
 // Fetch activities for a specific user (admin only)
 export const fetchUserActivities = async (athleteId, limit = 50, offset = 0) => {
   try {
