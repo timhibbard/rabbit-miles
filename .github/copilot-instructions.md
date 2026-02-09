@@ -23,10 +23,12 @@ All backend code lives under the `backend/` directory.
 - Each `lambda_function.py` file must expose a `handler(event, context)` function.
 - Lambda handler configuration is always `lambda_function.handler`.
 
+- Any time a new lambda is created, the github action and action secrets must be updated
+
 ### Runtime and Platform
 - Runtime: Python (AWS Lambda managed runtime)
 - Invocation: API Gateway HTTP API (v2 payload format)
-- Deployment: Lambdas are deployed individually
+- Deployment: Lambdas are deployed with Github actions
 
 ---
 
