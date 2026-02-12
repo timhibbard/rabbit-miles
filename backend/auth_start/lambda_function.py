@@ -7,7 +7,7 @@
 # FRONTEND_URL (ex: https://timhibbard.github.io/rabbit-miles)
 # STRAVA_CLIENT_ID
 
-import os, secrets, time
+import os, secrets, time, json
 from urllib.parse import urlencode, urlparse
 import boto3
 
@@ -148,6 +148,51 @@ def handler(event, context):
         "state": state,
         "approval_prompt": "force",  # Force re-authorization to ensure correct scope
     }
+    
+    # Check if this is a mobile request (for iOS Strava app deep linking)
+    query_params = event.get("queryStringParameters") or {}
+    is_mobile = query_params.get("mobile") == "1"
+    
+    if is_mobile:
+        print(f"LOG - Mobile request detected - will return OAuth URL for deep linking")
+        url = "https://www.strava.com/oauth/authorize?" + urlencode(params)
+        print(f"LOG - Strava OAuth URL: {url[:100]}...")
+        
+        # For mobile requests, return JSON with the OAuth URL
+        # The frontend will construct the strava:// deep link URL
+        # We still need to set the cookie for the callback
+        cookie_val = f"rm_state={state}; HttpOnly; Secure; SameSite=None; Path={COOKIE_PATH}; Max-Age=600"
+        print(f"LOG - Setting rm_state cookie (mobile request):")
+        print(f"LOG -   Name: rm_state")
+        print(f"LOG -   Value: {state[:10]}...{state[-10:]}")
+        print(f"LOG -   HttpOnly: Yes")
+        print(f"LOG -   Secure: Yes")
+        print(f"LOG -   SameSite: None")
+        print(f"LOG -   Path: {COOKIE_PATH}")
+        print(f"LOG -   Max-Age: 600 seconds (10 minutes)")
+        
+        print(f"LOG - Returning OAuth parameters for mobile deep linking")
+        print("=" * 80)
+        print("AUTH START LAMBDA - SUCCESS (MOBILE)")
+        print("=" * 80)
+        
+        response_body = {
+            "oauth_url": url,
+            "params": params
+        }
+        
+        return {
+            "statusCode": 200,
+            "headers": {
+                "Content-Type": "application/json",
+                "Access-Control-Allow-Origin": FRONTEND,
+                "Access-Control-Allow-Credentials": "true",
+            },
+            "cookies": [ cookie_val ],
+            "body": json.dumps(response_body)
+        }
+    
+    # Standard web OAuth flow - redirect to Strava
     url = "https://www.strava.com/oauth/authorize?" + urlencode(params)
     print(f"LOG - Strava OAuth URL length: {len(url)} chars")
     print(f"LOG - Strava OAuth URL: {url[:100]}...")

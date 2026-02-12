@@ -2,6 +2,7 @@ import { useEffect, useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { fetchMe } from '../utils/api';
 import debug, { showDebugInfo } from '../utils/debug';
+import { isIOS, openWithFallback } from '../utils/device';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
@@ -68,11 +69,56 @@ function ConnectStrava() {
     checkAuth();
   }, []);
 
-  const handleConnectStrava = () => {
+  const handleConnectStrava = async () => {
     setIsConnecting(true);
     
+    // Check if user is on iOS - if so, try to use the Strava app
+    const isIOSDevice = isIOS();
+    debug.log('ConnectStrava: Device is iOS:', isIOSDevice);
+    
+    if (isIOSDevice) {
+      try {
+        // For iOS, call the backend with mobile=1 to get OAuth parameters
+        // instead of being redirected directly
+        const mobileUrl = `${API_BASE_URL}/auth/start?mobile=1`;
+        debug.log('ConnectStrava: Fetching mobile OAuth URL from:', mobileUrl);
+        
+        const response = await fetch(mobileUrl, {
+          credentials: 'include', // Important: include cookies
+        });
+        
+        if (!response.ok) {
+          throw new Error('Failed to get OAuth parameters');
+        }
+        
+        const data = await response.json();
+        debug.log('ConnectStrava: Received OAuth data:', data);
+        
+        // Construct the Strava mobile app deep link
+        // Replace https://www.strava.com/oauth/authorize with strava://oauth/mobile/authorize
+        const mobileDeepLink = data.oauth_url.replace(
+          'https://www.strava.com/oauth/authorize',
+          'strava://oauth/mobile/authorize'
+        );
+        debug.log('ConnectStrava: Mobile deep link:', mobileDeepLink);
+        
+        // Try to open the Strava app, fall back to web OAuth if not installed
+        const webFallback = data.oauth_url;
+        debug.log('ConnectStrava: Attempting to open Strava app with fallback to web');
+        openWithFallback(mobileDeepLink, webFallback, 2500);
+        
+        // Note: We don't reset isConnecting here because the page will navigate away
+        return;
+      } catch (error) {
+        console.error('ConnectStrava: Error with mobile OAuth, falling back to web:', error);
+        // Fall through to standard web OAuth flow below
+      }
+    }
+    
+    // Standard web OAuth flow (non-iOS or iOS fallback)
     // Redirect to backend OAuth endpoint
     // The backend will handle the OAuth flow and redirect to Strava
+    debug.log('ConnectStrava: Using standard web OAuth flow');
     const oauthUrl = `${API_BASE_URL}/auth/start`;
     window.location.href = oauthUrl;
   };
