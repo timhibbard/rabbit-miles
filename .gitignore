@@ -34,3 +34,6 @@ __pycache__/
 *.njsproj
 *.sln
 *.sw?
+
+# Icon generation script
+generate-icons.mjs

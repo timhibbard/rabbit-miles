@@ -1,0 +1,21 @@
+{
+  "name": "RabbitMiles",
+  "short_name": "RabbitMiles",
+  "description": "Track your running activities with Strava integration",
+  "icons": [
+    {
+      "src": "/rabbit-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/rabbit-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ],
+  "theme_color": "#7cb342",
+  "background_color": "#ffffff",
+  "display": "standalone",
+  "start_url": "/"
+}
