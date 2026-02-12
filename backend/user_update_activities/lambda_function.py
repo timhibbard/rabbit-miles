@@ -366,6 +366,10 @@ def handler(event, context):
     """
     print(f"user_update_activities handler invoked")
     print(f"Event: {json.dumps(event, default=str)}")
+    print(f"Environment check: DB_CLUSTER_ARN={'set' if DB_CLUSTER_ARN else 'NOT SET'}, "
+          f"DB_SECRET_ARN={'set' if DB_SECRET_ARN else 'NOT SET'}, "
+          f"APP_SECRET={'set' if APP_SECRET else 'NOT SET'}, "
+          f"FRONTEND_URL={FRONTEND_URL or 'NOT SET'}")
     
     # Handle OPTIONS preflight requests for CORS
     if event.get("requestContext", {}).get("http", {}).get("method") == "OPTIONS":
@@ -418,9 +422,12 @@ def handler(event, context):
                 "body": json.dumps({"error": "invalid or expired session"})
             }
         
+        print(f"Authenticated user: athlete_id={athlete_id}")
+        
         # Update activities for authenticated user
         result = update_user_activities(athlete_id)
         
+        print(f"Update completed: {result}")
         return {
             "statusCode": 200,
             "headers": get_cors_headers(),
@@ -428,18 +435,20 @@ def handler(event, context):
         }
         
     except ValueError as e:
-        print(f"Validation error: {e}")
+        error_msg = str(e)
+        print(f"Validation error: {error_msg}")
         return {
             "statusCode": 404,
             "headers": get_cors_headers(),
-            "body": json.dumps({"error": str(e)})
+            "body": json.dumps({"error": error_msg})
         }
     except Exception as e:
-        print(f"Error in user_update_activities handler: {e}")
+        error_msg = str(e)
+        print(f"Error in user_update_activities handler: {error_msg}")
         import traceback
         traceback.print_exc()
         return {
             "statusCode": 500,
             "headers": get_cors_headers(),
-            "body": json.dumps({"error": "internal server error"})
+            "body": json.dumps({"error": "internal server error", "details": error_msg})
         }
