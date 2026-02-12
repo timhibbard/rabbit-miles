@@ -367,9 +367,31 @@ def handler(event, context):
     print(f"user_update_activities handler invoked")
     print(f"Event: {json.dumps(event, default=str)}")
     
+    # Handle OPTIONS preflight requests for CORS
+    if event.get("requestContext", {}).get("http", {}).get("method") == "OPTIONS":
+        print("OPTIONS preflight request - returning CORS headers")
+        return {
+            "statusCode": 200,
+            "headers": {
+                **get_cors_headers(),
+                "Access-Control-Allow-Methods": "POST, OPTIONS",
+                "Access-Control-Allow-Headers": "Content-Type, Cookie",
+                "Access-Control-Max-Age": "86400"
+            },
+            "body": ""
+        }
+    
     # Validate required environment variables
     if not DB_CLUSTER_ARN or not DB_SECRET_ARN:
         print("ERROR: Missing DB_CLUSTER_ARN or DB_SECRET_ARN")
+        return {
+            "statusCode": 500,
+            "headers": get_cors_headers(),
+            "body": json.dumps({"error": "server configuration error"})
+        }
+    
+    if not APP_SECRET:
+        print("ERROR: Missing APP_SECRET")
         return {
             "statusCode": 500,
             "headers": get_cors_headers(),
