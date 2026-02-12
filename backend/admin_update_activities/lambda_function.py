@@ -10,6 +10,7 @@
 # ADMIN_ATHLETE_IDS (comma-separated list of admin athlete IDs)
 
 import os
+import sys
 import json
 import time
 import base64
@@ -18,6 +19,11 @@ import hashlib
 from urllib.request import Request, urlopen
 from urllib.parse import urlencode, urlparse
 import boto3
+
+# Add parent directory to path to import admin_utils
+parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, parent_dir)
+
 from admin_utils import is_admin, audit_log_admin_action
 
 rds = boto3.client("rds-data")
