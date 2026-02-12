@@ -64,6 +64,13 @@ jobs:
             needs_utils: true
           - name: backfill_athlete_count
             secret: LAMBDA_BACKFILL_ATHLETE_COUNT
+          - name: scheduled_activity_update
+            secret: LAMBDA_SCHEDULED_ACTIVITY_UPDATE
+          - name: admin_update_activities
+            secret: LAMBDA_ADMIN_UPDATE_ACTIVITIES
+            needs_utils: true
+          - name: user_update_activities
+            secret: LAMBDA_USER_UPDATE_ACTIVITIES
     steps:
       - name: Checkout code
         uses: actions/checkout@v4

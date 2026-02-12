@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { fetchMe, fetchAllUsers, fetchAllActivities, fetchUserActivities, deleteUser, backfillUserActivities } from '../utils/api';
+import { fetchMe, fetchAllUsers, fetchAllActivities, fetchUserActivities, deleteUser, backfillUserActivities, updateUserActivities } from '../utils/api';
 import { useNavigate } from 'react-router-dom';
 
 function Admin() {
@@ -17,6 +17,7 @@ function Admin() {
   const [refreshingUsers, setRefreshingUsers] = useState(false);
   const [refreshingActivities, setRefreshingActivities] = useState(false);
   const [backfillingActivities, setBackfillingActivities] = useState(false);
+  const [updatingActivities, setUpdatingActivities] = useState(false);
   const [deleteConfirmUser, setDeleteConfirmUser] = useState(null);
   const [deleting, setDeleting] = useState(false);
   const [successMessage, setSuccessMessage] = useState(null);
@@ -197,6 +198,32 @@ function Admin() {
       setError(result.error || 'Failed to backfill activities');
     }
     setBackfillingActivities(false);
+  };
+
+  const handleUpdateActivities = async () => {
+    if (!selectedUser) return;
+    
+    setUpdatingActivities(true);
+    setError(null);
+    setSuccessMessage(null);
+
+    const result = await updateUserActivities(selectedUser.athlete_id);
+    if (result.success) {
+      const { stored, failed, total_activities } = result.data;
+      setSuccessMessage(`Successfully updated ${stored} activities for ${selectedUser.display_name} (${total_activities} fetched from Strava${failed > 0 ? `, ${failed} failed` : ''})`);
+      // Refresh activities list to show updated activities
+      setActivitiesOffset(0);
+      const activitiesResult = await fetchUserActivities(selectedUser.athlete_id, 50, 0);
+      if (activitiesResult.success) {
+        setActivities(activitiesResult.data.activities || []);
+        setTotalActivitiesCount(activitiesResult.data.total_count || 0);
+        setHasMoreActivities((activitiesResult.data.activities || []).length < (activitiesResult.data.total_count || 0));
+        setActivitiesOffset(50);
+      }
+    } else {
+      setError(result.error || 'Failed to update activities');
+    }
+    setUpdatingActivities(false);
   };
 
   const loadMoreActivities = async () => {
@@ -441,29 +468,54 @@ function Admin() {
             </h2>
             <div className="flex gap-2">
               {selectedUser && (
-                <button
-                  onClick={handleBackfillActivities}
-                  disabled={backfillingActivities}
-                  className="inline-flex items-center px-3 py-2 border border-orange-300 shadow-sm text-sm leading-4 font-medium rounded-md text-orange-700 bg-white hover:bg-orange-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                  title="Download all activities from Strava since Jan 1, 2026"
-                >
-                  {backfillingActivities ? (
-                    <>
-                      <svg className="animate-spin -ml-0.5 mr-2 h-4 w-4 text-orange-700" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                      </svg>
-                      Backfilling...
-                    </>
-                  ) : (
-                    <>
-                      <svg className="-ml-0.5 mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                      </svg>
-                      Backfill
-                    </>
-                  )}
-                </button>
+                <>
+                  <button
+                    onClick={handleUpdateActivities}
+                    disabled={updatingActivities}
+                    className="inline-flex items-center px-3 py-2 border border-blue-300 shadow-sm text-sm leading-4 font-medium rounded-md text-blue-700 bg-white hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                    title="Refresh recent activities from Strava (updates athlete_count)"
+                  >
+                    {updatingActivities ? (
+                      <>
+                        <svg className="animate-spin -ml-0.5 mr-2 h-4 w-4 text-blue-700" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Updating...
+                      </>
+                    ) : (
+                      <>
+                        <svg className="-ml-0.5 mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                        Update
+                      </>
+                    )}
+                  </button>
+                  <button
+                    onClick={handleBackfillActivities}
+                    disabled={backfillingActivities}
+                    className="inline-flex items-center px-3 py-2 border border-orange-300 shadow-sm text-sm leading-4 font-medium rounded-md text-orange-700 bg-white hover:bg-orange-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                    title="Download all activities from Strava since Jan 1, 2026"
+                  >
+                    {backfillingActivities ? (
+                      <>
+                        <svg className="animate-spin -ml-0.5 mr-2 h-4 w-4 text-orange-700" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Backfilling...
+                      </>
+                    ) : (
+                      <>
+                        <svg className="-ml-0.5 mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                        </svg>
+                        Backfill
+                      </>
+                    )}
+                  </button>
+                </>
               )}
               <button
                 onClick={handleRefreshActivities}

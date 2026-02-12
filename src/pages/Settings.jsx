@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { fetchMe, resetTrailMatching } from '../utils/api';
+import { fetchMe, resetTrailMatching, updateActivities } from '../utils/api';
 
 function Settings() {
   const [authState, setAuthState] = useState({
@@ -7,6 +7,7 @@ function Settings() {
     isConnected: false,
   });
   const [resetting, setResetting] = useState(false);
+  const [updatingActivities, setUpdatingActivities] = useState(false);
 
   useEffect(() => {
     // Check if user is connected via /me endpoint
@@ -47,6 +48,28 @@ function Settings() {
       alert('An unexpected error occurred. Please try again.');
     } finally {
       setResetting(false);
+    }
+  };
+
+  const handleUpdateActivities = async () => {
+    if (!window.confirm('This will refresh all your activities from Strava. This may take a few moments. Continue?')) {
+      return;
+    }
+
+    setUpdatingActivities(true);
+    try {
+      const result = await updateActivities();
+      if (result.success) {
+        const { stored, failed, total_activities } = result.data;
+        alert(`Success! Updated ${stored} activities out of ${total_activities} fetched from Strava.${failed > 0 ? ` (${failed} failed)` : ''}`);
+      } else {
+        alert(`Failed to update activities: ${result.error || 'Unknown error'}`);
+      }
+    } catch (error) {
+      console.error('Error updating activities:', error);
+      alert('An unexpected error occurred. Please try again.');
+    } finally {
+      setUpdatingActivities(false);
     }
   };
 
@@ -139,6 +162,32 @@ function Settings() {
               </div>
             </div>
           </div>
+
+          {/* Activities Section */}
+          {authState.isConnected && (
+            <div className="p-6 border-b border-gray-200">
+              <h2 className="text-xl font-semibold text-gray-900 mb-4">
+                Activities
+              </h2>
+              <div className="space-y-4">
+                <div>
+                  <h3 className="text-sm font-medium text-gray-900 mb-2">
+                    Refresh Activities from Strava
+                  </h3>
+                  <p className="text-sm text-gray-600 mb-4">
+                    Fetch the latest activities from Strava and update your database with any changes (including athlete count for group activities).
+                  </p>
+                  <button
+                    onClick={handleUpdateActivities}
+                    disabled={updatingActivities}
+                    className="px-4 py-2 bg-orange-600 text-white rounded-md hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {updatingActivities ? 'Updating...' : 'Refresh Activities'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Trail Matching Section */}
           {authState.isConnected && (

@@ -1,39 +1,64 @@
-# update_activities Lambda function
-# Updates activities in the database from Strava
+# admin_update_activities Lambda function
+# Admin endpoint to refresh activities for a specific user
+# Ensures the correct user's Strava tokens are used (not the admin's)
 # 
-# Accepts either:
-# - Single Strava activity ID (requires athlete_id in request)
-# - Single athlete ID (fetches recent activities for that athlete)
-#
 # Env vars required:
 # DB_CLUSTER_ARN, DB_SECRET_ARN, DB_NAME=postgres
 # STRAVA_CLIENT_ID, STRAVA_CLIENT_SECRET (or STRAVA_SECRET_ARN)
+# APP_SECRET (for session verification)
+# FRONTEND_URL (for CORS)
+# ADMIN_ATHLETE_IDS (comma-separated list of admin athlete IDs)
 
 import os
 import json
 import time
+import base64
+import hmac
+import hashlib
 from urllib.request import Request, urlopen
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 import boto3
+from admin_utils import is_admin, audit_log_admin_action
 
 rds = boto3.client("rds-data")
 sm = boto3.client("secretsmanager")
 
-# Get environment variables safely - they are checked in handler
-DB_CLUSTER_ARN = None
-DB_SECRET_ARN = None
-DB_NAME = None
+# Get environment variables safely
+DB_CLUSTER_ARN = os.environ.get("DB_CLUSTER_ARN", "")
+DB_SECRET_ARN = os.environ.get("DB_SECRET_ARN", "")
+DB_NAME = os.environ.get("DB_NAME", "postgres")
+APP_SECRET_STR = os.environ.get("APP_SECRET", "")
+APP_SECRET = APP_SECRET_STR.encode() if APP_SECRET_STR else b""
+FRONTEND_URL = os.environ.get("FRONTEND_URL", "").rstrip("/")
 
 STRAVA_TOKEN_URL = "https://www.strava.com/oauth/token"
-STRAVA_ACTIVITY_URL = "https://www.strava.com/api/v3/activities"
 STRAVA_ACTIVITIES_URL = "https://www.strava.com/api/v3/athlete/activities"
 
 # Filter activities starting from Jan 1, 2026 00:00:00 UTC
-# Unix timestamp: 1767225600
 ACTIVITIES_START_DATE = 1767225600
 
 # Token refresh buffer - refresh tokens 5 minutes before expiry
 TOKEN_REFRESH_BUFFER_SECONDS = 300
+
+
+def get_cors_origin():
+    """Extract origin (scheme + host) from FRONTEND_URL for CORS headers"""
+    if not FRONTEND_URL:
+        return None
+    parsed = urlparse(FRONTEND_URL)
+    if not parsed.scheme or not parsed.netloc:
+        return None
+    return f"{parsed.scheme}://{parsed.netloc}"
+
+
+def get_cors_headers():
+    """Return CORS headers for cross-origin requests"""
+    headers = {"Content-Type": "application/json"}
+    origin = get_cors_origin()
+    if origin:
+        headers["Access-Control-Allow-Origin"] = origin
+        headers["Access-Control-Allow-Credentials"] = "true"
+    return headers
 
 
 def _get_strava_creds():
@@ -56,15 +81,6 @@ def _get_strava_creds():
 
 def _exec_sql(sql, parameters=None):
     """Execute SQL statement using RDS Data API"""
-    global DB_CLUSTER_ARN, DB_SECRET_ARN, DB_NAME
-    
-    if DB_CLUSTER_ARN is None:
-        DB_CLUSTER_ARN = os.environ.get("DB_CLUSTER_ARN", "")
-    if DB_SECRET_ARN is None:
-        DB_SECRET_ARN = os.environ.get("DB_SECRET_ARN", "")
-    if DB_NAME is None:
-        DB_NAME = os.environ.get("DB_NAME", "postgres")
-    
     kwargs = {
         "resourceArn": DB_CLUSTER_ARN,
         "secretArn": DB_SECRET_ARN,
@@ -74,6 +90,54 @@ def _exec_sql(sql, parameters=None):
     if parameters:
         kwargs["parameters"] = parameters
     return rds.execute_statement(**kwargs)
+
+
+def verify_session_token(tok):
+    """Verify session token and return athlete_id"""
+    try:
+        b, sig = tok.rsplit(".", 1)
+        expected = hmac.new(APP_SECRET, b.encode(), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(sig, expected):
+            return None
+        data = json.loads(base64.urlsafe_b64decode(b + "=" * (-len(b) % 4)).decode())
+        if data.get("exp", 0) < time.time():
+            return None
+        return int(data.get("aid"))
+    except Exception:
+        return None
+
+
+def parse_session_cookie(event):
+    """Parse rm_session cookie from API Gateway event"""
+    headers = event.get("headers") or {}
+    
+    # API Gateway HTTP API v2 provides cookies in event['cookies'] array
+    cookies_array = event.get("cookies") or []
+    cookie_header = headers.get("cookie") or headers.get("Cookie")
+    
+    # Try cookies array first (API Gateway HTTP API v2 format)
+    for cookie_str in cookies_array:
+        if not cookie_str or "=" not in cookie_str:
+            continue
+        for part in cookie_str.split(";"):
+            part = part.strip()
+            if not part or "=" not in part:
+                continue
+            k, v = part.split("=", 1)
+            if k == "rm_session":
+                return v
+    
+    # Fallback to cookie header
+    if cookie_header:
+        for part in cookie_header.split(";"):
+            part = part.strip()
+            if not part or "=" not in part:
+                continue
+            k, v = part.split("=", 1)
+            if k == "rm_session":
+                return v
+    
+    return None
 
 
 def refresh_access_token(athlete_id, refresh_token):
@@ -121,6 +185,18 @@ def refresh_access_token(athlete_id, refresh_token):
         raise
 
 
+def ensure_valid_token(athlete_id, access_token, refresh_token, expires_at):
+    """Ensure access token is valid, refresh if needed"""
+    current_time = int(time.time())
+    
+    # Check if token needs refresh
+    if expires_at < current_time + TOKEN_REFRESH_BUFFER_SECONDS:
+        print(f"Access token expired or expiring soon for athlete {athlete_id}, refreshing...")
+        access_token = refresh_access_token(athlete_id, refresh_token)
+    
+    return access_token
+
+
 def get_user_tokens(athlete_id):
     """Get user's tokens from database"""
     sql = "SELECT access_token, refresh_token, expires_at FROM users WHERE athlete_id = :aid"
@@ -140,42 +216,7 @@ def get_user_tokens(athlete_id):
     return access_token, refresh_token, expires_at
 
 
-def ensure_valid_token(athlete_id, access_token, refresh_token, expires_at):
-    """Ensure access token is valid, refresh if needed"""
-    current_time = int(time.time())
-    
-    # Check if token needs refresh
-    if expires_at < current_time + TOKEN_REFRESH_BUFFER_SECONDS:
-        print(f"Access token expired or expiring soon for athlete {athlete_id}, refreshing...")
-        access_token = refresh_access_token(athlete_id, refresh_token)
-    
-    return access_token
-
-
-def fetch_activity_details(access_token, activity_id):
-    """Fetch detailed activity data from Strava API"""
-    url = f"{STRAVA_ACTIVITY_URL}/{activity_id}"
-    req = Request(url, headers={"Authorization": f"Bearer {access_token}"})
-    
-    try:
-        with urlopen(req, timeout=30) as resp:
-            activity = json.loads(resp.read().decode())
-        print(f"Fetched activity {activity_id} from Strava API")
-        return activity
-    except Exception as e:
-        print(f"Failed to fetch activity {activity_id} from Strava: {e}")
-        if hasattr(e, 'code'):
-            print(f"HTTP status code: {e.code}")
-        if hasattr(e, 'read'):
-            try:
-                error_body = e.read().decode()
-                print(f"Error response body: {error_body}")
-            except Exception:
-                pass
-        raise
-
-
-def fetch_strava_activities(access_token, per_page=30, page=1):
+def fetch_strava_activities(access_token, per_page=200, page=1):
     """Fetch activities from Strava API"""
     url = f"{STRAVA_ACTIVITIES_URL}?per_page={per_page}&page={page}&after={ACTIVITIES_START_DATE}"
     req = Request(url, headers={"Authorization": f"Bearer {access_token}"})
@@ -278,49 +319,20 @@ def store_activity(athlete_id, activity):
         return False
 
 
-def update_single_activity(athlete_id, activity_id):
-    """Update a single activity by its Strava activity ID"""
-    print(f"Updating single activity {activity_id} for athlete {athlete_id}")
+def update_user_activities(target_athlete_id, per_page=200):
+    """Update activities for a specific user"""
+    print(f"Updating activities for user {target_athlete_id}")
     
-    # Get user tokens
-    access_token, refresh_token, expires_at = get_user_tokens(athlete_id)
-    
-    if not access_token or not refresh_token:
-        raise ValueError(f"User {athlete_id} not found or not connected to Strava")
-    
-    # Ensure token is valid
-    access_token = ensure_valid_token(athlete_id, access_token, refresh_token, expires_at)
-    
-    # Fetch activity details from Strava
-    activity = fetch_activity_details(access_token, activity_id)
-    
-    # Store activity in database
-    success = store_activity(athlete_id, activity)
-    
-    if not success:
-        raise RuntimeError(f"Failed to store activity {activity_id}")
-    
-    return {
-        "message": "Activity updated successfully",
-        "activity_id": activity_id,
-        "athlete_id": athlete_id
-    }
-
-
-def update_athlete_activities(athlete_id, per_page=30):
-    """Update recent activities for an athlete"""
-    print(f"Updating recent activities for athlete {athlete_id}")
-    
-    # Get user tokens
-    access_token, refresh_token, expires_at = get_user_tokens(athlete_id)
+    # Get user tokens - use TARGET user's tokens, not admin's
+    access_token, refresh_token, expires_at = get_user_tokens(target_athlete_id)
     
     if not access_token or not refresh_token:
-        raise ValueError(f"User {athlete_id} not found or not connected to Strava")
+        raise ValueError(f"User {target_athlete_id} not found or not connected to Strava")
     
     # Ensure token is valid
-    access_token = ensure_valid_token(athlete_id, access_token, refresh_token, expires_at)
+    access_token = ensure_valid_token(target_athlete_id, access_token, refresh_token, expires_at)
     
-    # Fetch activities from Strava
+    # Fetch activities from Strava - get first page only
     activities = fetch_strava_activities(access_token, per_page=per_page, page=1)
     
     if not isinstance(activities, list):
@@ -331,14 +343,14 @@ def update_athlete_activities(athlete_id, per_page=30):
     failed_count = 0
     
     for activity in activities:
-        if store_activity(athlete_id, activity):
+        if store_activity(target_athlete_id, activity):
             stored_count += 1
         else:
             failed_count += 1
     
     return {
         "message": "Activities updated successfully",
-        "athlete_id": athlete_id,
+        "athlete_id": target_athlete_id,
         "total_activities": len(activities),
         "stored": stored_count,
         "failed": failed_count
@@ -347,76 +359,89 @@ def update_athlete_activities(athlete_id, per_page=30):
 
 def handler(event, context):
     """
-    Lambda handler for updating activities in the database.
+    Lambda handler for admin activity updates.
     
-    Accepts JSON body with either:
-    - {"athlete_id": 123456} - updates recent activities for athlete
-    - {"athlete_id": 123456, "activity_id": 789012} - updates single activity
+    Admin endpoint to refresh activities for a specific user.
+    Requires admin privileges. Uses the target user's Strava tokens, not the admin's.
     
-    Or query string parameters:
-    - ?athlete_id=123456
-    - ?athlete_id=123456&activity_id=789012
+    Path: POST /admin/users/{athlete_id}/update-activities
     """
-    print(f"update_activities handler invoked")
+    print(f"admin_update_activities handler invoked")
     print(f"Event: {json.dumps(event, default=str)}")
     
-    # Get environment variables
-    db_cluster_arn = os.environ.get("DB_CLUSTER_ARN", "")
-    db_secret_arn = os.environ.get("DB_SECRET_ARN", "")
-    
     # Validate required environment variables
-    if not db_cluster_arn or not db_secret_arn:
+    if not DB_CLUSTER_ARN or not DB_SECRET_ARN:
         print("ERROR: Missing DB_CLUSTER_ARN or DB_SECRET_ARN")
         return {
             "statusCode": 500,
+            "headers": get_cors_headers(),
             "body": json.dumps({"error": "server configuration error"})
         }
     
     try:
-        # Parse input from JSON body or query string
-        body = {}
-        if event.get("body"):
-            try:
-                body = json.loads(event["body"])
-            except json.JSONDecodeError:
-                return {
-                    "statusCode": 400,
-                    "body": json.dumps({"error": "invalid JSON body"})
-                }
-        
-        # Check query string parameters as fallback
-        query_params = event.get("queryStringParameters") or {}
-        
-        # Get athlete_id and activity_id
-        athlete_id = body.get("athlete_id") or query_params.get("athlete_id")
-        activity_id = body.get("activity_id") or query_params.get("activity_id")
-        
-        # Validate athlete_id is provided
-        if not athlete_id:
+        # Verify admin authentication
+        session_token = parse_session_cookie(event)
+        if not session_token:
+            print("No session cookie found")
             return {
-                "statusCode": 400,
-                "body": json.dumps({"error": "athlete_id is required"})
+                "statusCode": 401,
+                "headers": get_cors_headers(),
+                "body": json.dumps({"error": "authentication required"})
             }
         
-        # Convert to integers
+        admin_athlete_id = verify_session_token(session_token)
+        if not admin_athlete_id:
+            print("Invalid session token")
+            return {
+                "statusCode": 401,
+                "headers": get_cors_headers(),
+                "body": json.dumps({"error": "invalid or expired session"})
+            }
+        
+        # Check if user is admin
+        if not is_admin(admin_athlete_id):
+            print(f"User {admin_athlete_id} attempted admin action without privileges")
+            return {
+                "statusCode": 403,
+                "headers": get_cors_headers(),
+                "body": json.dumps({"error": "admin privileges required"})
+            }
+        
+        # Get target athlete ID from path parameters
+        path_params = event.get("pathParameters") or {}
+        target_athlete_id = path_params.get("id")
+        
+        if not target_athlete_id:
+            return {
+                "statusCode": 400,
+                "headers": get_cors_headers(),
+                "body": json.dumps({"error": "athlete_id is required in path"})
+            }
+        
+        # Convert to integer
         try:
-            athlete_id = int(athlete_id)
-            if activity_id:
-                activity_id = int(activity_id)
+            target_athlete_id = int(target_athlete_id)
         except (ValueError, TypeError):
             return {
                 "statusCode": 400,
-                "body": json.dumps({"error": "athlete_id and activity_id must be integers"})
+                "headers": get_cors_headers(),
+                "body": json.dumps({"error": "athlete_id must be an integer"})
             }
         
-        # Update single activity or all activities for athlete
-        if activity_id:
-            result = update_single_activity(athlete_id, activity_id)
-        else:
-            result = update_athlete_activities(athlete_id)
+        # Update activities for target user
+        result = update_user_activities(target_athlete_id)
+        
+        # Audit log
+        audit_log_admin_action(
+            admin_athlete_id,
+            "update_activities",
+            target_athlete_id,
+            {"activities_updated": result.get("stored", 0)}
+        )
         
         return {
             "statusCode": 200,
+            "headers": get_cors_headers(),
             "body": json.dumps(result)
         }
         
@@ -424,13 +449,15 @@ def handler(event, context):
         print(f"Validation error: {e}")
         return {
             "statusCode": 404,
+            "headers": get_cors_headers(),
             "body": json.dumps({"error": str(e)})
         }
     except Exception as e:
-        print(f"Error in update_activities handler: {e}")
+        print(f"Error in admin_update_activities handler: {e}")
         import traceback
         traceback.print_exc()
         return {
             "statusCode": 500,
+            "headers": get_cors_headers(),
             "body": json.dumps({"error": "internal server error"})
         }
