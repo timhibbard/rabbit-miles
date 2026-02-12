@@ -5,7 +5,9 @@
 set -e
 
 LAMBDA_NAME="rabbitmiles-user-update-activities"
-EXPECTED_MIN_SIZE=16000
+EXPECTED_MIN_SIZE=4000  # Compressed size (17KB uncompressed becomes ~4.8KB compressed)
+EXPECTED_TIMEOUT=60     # Should be 60 seconds
+EXPECTED_MEMORY=256     # Should be 256 MB
 
 echo "========================================"
 echo "Verifying Lambda Deployment"
@@ -36,8 +38,24 @@ CODE_SIZE=$(aws lambda get-function \
   --query 'Configuration.CodeSize' \
   --output text)
 
-echo "📦 Code Size: $CODE_SIZE bytes"
-echo "✓ Expected: >$EXPECTED_MIN_SIZE bytes"
+# Get timeout
+TIMEOUT=$(aws lambda get-function \
+  --function-name "$LAMBDA_NAME" \
+  --query 'Configuration.Timeout' \
+  --output text)
+
+# Get memory
+MEMORY=$(aws lambda get-function \
+  --function-name "$LAMBDA_NAME" \
+  --query 'Configuration.MemorySize' \
+  --output text)
+
+echo "📦 Code Size: $CODE_SIZE bytes (compressed)"
+echo "   Expected: >$EXPECTED_MIN_SIZE bytes"
+echo "⏱️  Timeout: ${TIMEOUT}s"
+echo "   Expected: ${EXPECTED_TIMEOUT}s"
+echo "💾 Memory: ${MEMORY}MB"
+echo "   Expected: ${EXPECTED_MEMORY}MB"
 echo ""
 
 # Verify code size
@@ -45,7 +63,7 @@ if [ "$CODE_SIZE" -lt "$EXPECTED_MIN_SIZE" ]; then
     echo "❌ DEPLOYMENT ISSUE DETECTED!"
     echo ""
     echo "The deployed code size ($CODE_SIZE bytes) is significantly smaller than expected (>$EXPECTED_MIN_SIZE bytes)."
-    echo "This indicates the Lambda is running old code that predates PR #217."
+    echo "This indicates the Lambda may be running old code."
     echo ""
     echo "🔧 To fix:"
     echo "  1. Deploy the Lambda using GitHub Actions:"
@@ -62,6 +80,49 @@ if [ "$CODE_SIZE" -lt "$EXPECTED_MIN_SIZE" ]; then
     exit 1
 else
     echo "✅ Code size looks correct!"
+fi
+
+# Verify timeout
+if [ "$TIMEOUT" -lt "$EXPECTED_TIMEOUT" ]; then
+    echo "⚠️  WARNING: Timeout is too low!"
+    echo ""
+    echo "   Current: ${TIMEOUT}s"
+    echo "   Expected: ${EXPECTED_TIMEOUT}s"
+    echo ""
+    echo "   A low timeout can cause 500 errors when the Lambda times out during:"
+    echo "   - Strava token refresh"
+    echo "   - Fetching activities from Strava API"
+    echo "   - Storing activities in the database"
+    echo ""
+    echo "🔧 To fix:"
+    echo "  Run: ./scripts/configure-user-update-activities-lambda.sh"
+    echo "  Or manually:"
+    echo "    aws lambda update-function-configuration \\"
+    echo "      --function-name $LAMBDA_NAME \\"
+    echo "      --timeout $EXPECTED_TIMEOUT"
+    echo ""
+    exit 1
+else
+    echo "✅ Timeout configuration looks correct!"
+fi
+
+# Verify memory
+if [ "$MEMORY" -lt "$EXPECTED_MEMORY" ]; then
+    echo "⚠️  WARNING: Memory is too low!"
+    echo ""
+    echo "   Current: ${MEMORY}MB"
+    echo "   Expected: ${EXPECTED_MEMORY}MB"
+    echo ""
+    echo "🔧 To fix:"
+    echo "  Run: ./scripts/configure-user-update-activities-lambda.sh"
+    echo "  Or manually:"
+    echo "    aws lambda update-function-configuration \\"
+    echo "      --function-name $LAMBDA_NAME \\"
+    echo "      --memory-size $EXPECTED_MEMORY"
+    echo ""
+    exit 1
+else
+    echo "✅ Memory configuration looks correct!"
 fi
 
 echo ""
