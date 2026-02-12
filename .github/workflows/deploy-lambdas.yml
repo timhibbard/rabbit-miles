@@ -100,7 +100,7 @@ jobs:
             --zip-file fileb://backend/${{ matrix.lambda.name }}/function.zip
 
       - name: Configure ${{ matrix.lambda.name }} Lambda
-        if: matrix.lambda.timeout || matrix.lambda.memory
+        if: matrix.lambda.timeout != '' || matrix.lambda.memory != ''
         run: |
           TIMEOUT_ARG=""
           MEMORY_ARG=""
@@ -110,9 +110,7 @@ jobs:
           if [ -n "${{ matrix.lambda.memory }}" ]; then
             MEMORY_ARG="--memory-size ${{ matrix.lambda.memory }}"
           fi
-          if [ -n "$TIMEOUT_ARG" ] || [ -n "$MEMORY_ARG" ]; then
-            aws lambda update-function-configuration \
-              --function-name ${{ secrets[matrix.lambda.secret] }} \
-              $TIMEOUT_ARG \
-              $MEMORY_ARG
-          fi
+          aws lambda update-function-configuration \
+            --function-name ${{ secrets[matrix.lambda.secret] }} \
+            $TIMEOUT_ARG \
+            $MEMORY_ARG
