@@ -1,10 +1,7 @@
-# update_activities Lambda function
-# Updates activities in the database from Strava
+# scheduled_activity_update Lambda function
+# Runs every 12 hours to update recent activities for all connected users
+# Updates activities from the last 24 hours from Strava API
 # 
-# Accepts either:
-# - Single Strava activity ID (requires athlete_id in request)
-# - Single athlete ID (fetches recent activities for that athlete)
-#
 # Env vars required:
 # DB_CLUSTER_ARN, DB_SECRET_ARN, DB_NAME=postgres
 # STRAVA_CLIENT_ID, STRAVA_CLIENT_SECRET (or STRAVA_SECRET_ARN)
@@ -25,7 +22,6 @@ DB_SECRET_ARN = None
 DB_NAME = None
 
 STRAVA_TOKEN_URL = "https://www.strava.com/oauth/token"
-STRAVA_ACTIVITY_URL = "https://www.strava.com/api/v3/activities"
 STRAVA_ACTIVITIES_URL = "https://www.strava.com/api/v3/athlete/activities"
 
 # Filter activities starting from Jan 1, 2026 00:00:00 UTC
@@ -34,6 +30,9 @@ ACTIVITIES_START_DATE = 1767225600
 
 # Token refresh buffer - refresh tokens 5 minutes before expiry
 TOKEN_REFRESH_BUFFER_SECONDS = 300
+
+# Update activities from the last 24 hours
+UPDATE_WINDOW_SECONDS = 24 * 60 * 60
 
 
 def _get_strava_creds():
@@ -121,25 +120,6 @@ def refresh_access_token(athlete_id, refresh_token):
         raise
 
 
-def get_user_tokens(athlete_id):
-    """Get user's tokens from database"""
-    sql = "SELECT access_token, refresh_token, expires_at FROM users WHERE athlete_id = :aid"
-    params = [{"name": "aid", "value": {"longValue": athlete_id}}]
-    result = _exec_sql(sql, params)
-    
-    records = result.get("records", [])
-    if not records:
-        print(f"User {athlete_id} not found in database")
-        return None, None, 0
-    
-    record = records[0]
-    access_token = record[0].get("stringValue", "")
-    refresh_token = record[1].get("stringValue", "")
-    expires_at = int(record[2].get("longValue", 0))
-    
-    return access_token, refresh_token, expires_at
-
-
 def ensure_valid_token(athlete_id, access_token, refresh_token, expires_at):
     """Ensure access token is valid, refresh if needed"""
     current_time = int(time.time())
@@ -152,32 +132,9 @@ def ensure_valid_token(athlete_id, access_token, refresh_token, expires_at):
     return access_token
 
 
-def fetch_activity_details(access_token, activity_id):
-    """Fetch detailed activity data from Strava API"""
-    url = f"{STRAVA_ACTIVITY_URL}/{activity_id}"
-    req = Request(url, headers={"Authorization": f"Bearer {access_token}"})
-    
-    try:
-        with urlopen(req, timeout=30) as resp:
-            activity = json.loads(resp.read().decode())
-        print(f"Fetched activity {activity_id} from Strava API")
-        return activity
-    except Exception as e:
-        print(f"Failed to fetch activity {activity_id} from Strava: {e}")
-        if hasattr(e, 'code'):
-            print(f"HTTP status code: {e.code}")
-        if hasattr(e, 'read'):
-            try:
-                error_body = e.read().decode()
-                print(f"Error response body: {error_body}")
-            except Exception:
-                pass
-        raise
-
-
-def fetch_strava_activities(access_token, per_page=30, page=1):
-    """Fetch activities from Strava API"""
-    url = f"{STRAVA_ACTIVITIES_URL}?per_page={per_page}&page={page}&after={ACTIVITIES_START_DATE}"
+def fetch_strava_activities(access_token, after_timestamp, per_page=200):
+    """Fetch activities from Strava API after a given timestamp"""
+    url = f"{STRAVA_ACTIVITIES_URL}?per_page={per_page}&page=1&after={after_timestamp}"
     req = Request(url, headers={"Authorization": f"Bearer {access_token}"})
     
     try:
@@ -278,86 +235,94 @@ def store_activity(athlete_id, activity):
         return False
 
 
-def update_single_activity(athlete_id, activity_id):
-    """Update a single activity by its Strava activity ID"""
-    print(f"Updating single activity {activity_id} for athlete {athlete_id}")
+def get_all_connected_users():
+    """Get all users with valid Strava tokens"""
+    sql = """
+    SELECT athlete_id, access_token, refresh_token, expires_at 
+    FROM users 
+    WHERE access_token IS NOT NULL 
+      AND refresh_token IS NOT NULL
+    ORDER BY athlete_id
+    """
+    result = _exec_sql(sql)
     
-    # Get user tokens
-    access_token, refresh_token, expires_at = get_user_tokens(athlete_id)
+    users = []
+    records = result.get("records", [])
+    for record in records:
+        athlete_id = int(record[0].get("longValue", 0))
+        access_token = record[1].get("stringValue", "")
+        refresh_token = record[2].get("stringValue", "")
+        expires_at = int(record[3].get("longValue", 0))
+        
+        if athlete_id and access_token and refresh_token:
+            users.append({
+                "athlete_id": athlete_id,
+                "access_token": access_token,
+                "refresh_token": refresh_token,
+                "expires_at": expires_at
+            })
     
-    if not access_token or not refresh_token:
-        raise ValueError(f"User {athlete_id} not found or not connected to Strava")
-    
-    # Ensure token is valid
-    access_token = ensure_valid_token(athlete_id, access_token, refresh_token, expires_at)
-    
-    # Fetch activity details from Strava
-    activity = fetch_activity_details(access_token, activity_id)
-    
-    # Store activity in database
-    success = store_activity(athlete_id, activity)
-    
-    if not success:
-        raise RuntimeError(f"Failed to store activity {activity_id}")
-    
-    return {
-        "message": "Activity updated successfully",
-        "activity_id": activity_id,
-        "athlete_id": athlete_id
-    }
+    return users
 
 
-def update_athlete_activities(athlete_id, per_page=30):
-    """Update recent activities for an athlete"""
-    print(f"Updating recent activities for athlete {athlete_id}")
+def update_recent_activities_for_user(user):
+    """Update recent activities for a single user"""
+    athlete_id = user["athlete_id"]
+    access_token = user["access_token"]
+    refresh_token = user["refresh_token"]
+    expires_at = user["expires_at"]
     
-    # Get user tokens
-    access_token, refresh_token, expires_at = get_user_tokens(athlete_id)
-    
-    if not access_token or not refresh_token:
-        raise ValueError(f"User {athlete_id} not found or not connected to Strava")
-    
-    # Ensure token is valid
-    access_token = ensure_valid_token(athlete_id, access_token, refresh_token, expires_at)
-    
-    # Fetch activities from Strava
-    activities = fetch_strava_activities(access_token, per_page=per_page, page=1)
-    
-    if not isinstance(activities, list):
-        raise RuntimeError(f"Unexpected response from Strava API: {type(activities)}")
-    
-    # Store activities in database
-    stored_count = 0
-    failed_count = 0
-    
-    for activity in activities:
-        if store_activity(athlete_id, activity):
-            stored_count += 1
-        else:
-            failed_count += 1
-    
-    return {
-        "message": "Activities updated successfully",
-        "athlete_id": athlete_id,
-        "total_activities": len(activities),
-        "stored": stored_count,
-        "failed": failed_count
-    }
+    try:
+        print(f"Processing user {athlete_id}...")
+        
+        # Ensure token is valid
+        access_token = ensure_valid_token(athlete_id, access_token, refresh_token, expires_at)
+        
+        # Calculate timestamp for 24 hours ago
+        current_time = int(time.time())
+        after_timestamp = max(ACTIVITIES_START_DATE, current_time - UPDATE_WINDOW_SECONDS)
+        
+        # Fetch recent activities
+        activities = fetch_strava_activities(access_token, after_timestamp)
+        
+        if not isinstance(activities, list):
+            print(f"ERROR: Unexpected response from Strava API for user {athlete_id}: {type(activities)}")
+            return {"athlete_id": athlete_id, "success": False, "error": "Invalid API response"}
+        
+        # Store activities
+        stored_count = 0
+        failed_count = 0
+        
+        for activity in activities:
+            if store_activity(athlete_id, activity):
+                stored_count += 1
+            else:
+                failed_count += 1
+        
+        print(f"User {athlete_id}: Stored {stored_count}, Failed {failed_count} out of {len(activities)} activities")
+        
+        return {
+            "athlete_id": athlete_id,
+            "success": True,
+            "total_activities": len(activities),
+            "stored": stored_count,
+            "failed": failed_count
+        }
+        
+    except Exception as e:
+        print(f"ERROR processing user {athlete_id}: {e}")
+        import traceback
+        traceback.print_exc()
+        return {"athlete_id": athlete_id, "success": False, "error": str(e)}
 
 
 def handler(event, context):
     """
-    Lambda handler for updating activities in the database.
+    Lambda handler for scheduled activity updates.
     
-    Accepts JSON body with either:
-    - {"athlete_id": 123456} - updates recent activities for athlete
-    - {"athlete_id": 123456, "activity_id": 789012} - updates single activity
-    
-    Or query string parameters:
-    - ?athlete_id=123456
-    - ?athlete_id=123456&activity_id=789012
+    Runs every 12 hours to update activities from the last 24 hours for all connected users.
     """
-    print(f"update_activities handler invoked")
+    print(f"scheduled_activity_update handler invoked")
     print(f"Event: {json.dumps(event, default=str)}")
     
     # Get environment variables
@@ -373,64 +338,54 @@ def handler(event, context):
         }
     
     try:
-        # Parse input from JSON body or query string
-        body = {}
-        if event.get("body"):
-            try:
-                body = json.loads(event["body"])
-            except json.JSONDecodeError:
-                return {
-                    "statusCode": 400,
-                    "body": json.dumps({"error": "invalid JSON body"})
-                }
+        # Get all connected users
+        print("Fetching all connected users...")
+        users = get_all_connected_users()
+        print(f"Found {len(users)} connected users")
         
-        # Check query string parameters as fallback
-        query_params = event.get("queryStringParameters") or {}
-        
-        # Get athlete_id and activity_id
-        athlete_id = body.get("athlete_id") or query_params.get("athlete_id")
-        activity_id = body.get("activity_id") or query_params.get("activity_id")
-        
-        # Validate athlete_id is provided
-        if not athlete_id:
+        if not users:
+            print("No connected users found, nothing to update")
             return {
-                "statusCode": 400,
-                "body": json.dumps({"error": "athlete_id is required"})
+                "statusCode": 200,
+                "body": json.dumps({
+                    "message": "No connected users found",
+                    "total_users": 0,
+                    "results": []
+                })
             }
         
-        # Convert to integers
-        try:
-            athlete_id = int(athlete_id)
-            if activity_id:
-                activity_id = int(activity_id)
-        except (ValueError, TypeError):
-            return {
-                "statusCode": 400,
-                "body": json.dumps({"error": "athlete_id and activity_id must be integers"})
-            }
+        # Update activities for each user
+        results = []
+        for user in users:
+            result = update_recent_activities_for_user(user)
+            results.append(result)
         
-        # Update single activity or all activities for athlete
-        if activity_id:
-            result = update_single_activity(athlete_id, activity_id)
-        else:
-            result = update_athlete_activities(athlete_id)
+        # Summary
+        successful_updates = sum(1 for r in results if r.get("success"))
+        failed_updates = len(results) - successful_updates
+        total_activities_stored = sum(r.get("stored", 0) for r in results)
+        
+        summary = {
+            "message": "Scheduled activity update completed",
+            "total_users": len(users),
+            "successful_updates": successful_updates,
+            "failed_updates": failed_updates,
+            "total_activities_stored": total_activities_stored,
+            "results": results
+        }
+        
+        print(f"Summary: {json.dumps(summary)}")
         
         return {
             "statusCode": 200,
-            "body": json.dumps(result)
+            "body": json.dumps(summary)
         }
         
-    except ValueError as e:
-        print(f"Validation error: {e}")
-        return {
-            "statusCode": 404,
-            "body": json.dumps({"error": str(e)})
-        }
     except Exception as e:
-        print(f"Error in update_activities handler: {e}")
+        print(f"Error in scheduled_activity_update handler: {e}")
         import traceback
         traceback.print_exc()
         return {
             "statusCode": 500,
-            "body": json.dumps({"error": "internal server error"})
+            "body": json.dumps({"error": "internal server error", "details": str(e)})
         }

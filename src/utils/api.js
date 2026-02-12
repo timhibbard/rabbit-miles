@@ -314,4 +314,45 @@ export const backfillUserActivities = async (athleteId) => {
   }
 };
 
+// Update activities for current user (user endpoint)
+export const updateActivities = async () => {
+  try {
+    debug.log('Calling POST /activities/update endpoint...');
+    const response = await api.post('/activities/update');
+    debug.log('POST /activities/update response received:', response.data);
+    return { success: true, data: response.data };
+  } catch (error) {
+    console.error('POST /activities/update endpoint error:', error.message);
+    if (error.response?.status === 401) {
+      debug.log('User not authenticated (401)');
+      return { success: false, notConnected: true };
+    }
+    return { success: false, error: error.response?.data?.error || error.message };
+  }
+};
+
+// Update activities for a specific user (admin only)
+export const updateUserActivities = async (athleteId) => {
+  try {
+    debug.log(`Calling POST /admin/users/${athleteId}/update-activities endpoint...`);
+    const response = await api.post(`/admin/users/${athleteId}/update-activities`);
+    debug.log(`POST /admin/users/${athleteId}/update-activities response received:`, response.data);
+    return { success: true, data: response.data };
+  } catch (error) {
+    console.error(`POST /admin/users/${athleteId}/update-activities endpoint error:`, error.message);
+    if (error.response?.status === 401) {
+      debug.log('User not authenticated (401)');
+      return { success: false, notConnected: true };
+    }
+    if (error.response?.status === 403) {
+      debug.log('User not authorized for admin access (403)');
+      return { success: false, error: 'Access denied - admin privileges required' };
+    }
+    if (error.response?.status === 404) {
+      return { success: false, error: 'User not found' };
+    }
+    return { success: false, error: error.response?.data?.error || error.message };
+  }
+};
+
 export default api;
