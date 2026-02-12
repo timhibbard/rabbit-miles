@@ -71,8 +71,6 @@ jobs:
             needs_utils: true
           - name: user_update_activities
             secret: LAMBDA_USER_UPDATE_ACTIVITIES
-            timeout: 60
-            memory: 256
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -98,19 +96,3 @@ jobs:
           aws lambda update-function-code \
             --function-name ${{ secrets[matrix.lambda.secret] }} \
             --zip-file fileb://backend/${{ matrix.lambda.name }}/function.zip
-
-      - name: Configure ${{ matrix.lambda.name }} Lambda
-        if: matrix.lambda.timeout != '' || matrix.lambda.memory != ''
-        run: |
-          TIMEOUT_ARG=""
-          MEMORY_ARG=""
-          if [ -n "${{ matrix.lambda.timeout }}" ]; then
-            TIMEOUT_ARG="--timeout ${{ matrix.lambda.timeout }}"
-          fi
-          if [ -n "${{ matrix.lambda.memory }}" ]; then
-            MEMORY_ARG="--memory-size ${{ matrix.lambda.memory }}"
-          fi
-          aws lambda update-function-configuration \
-            --function-name ${{ secrets[matrix.lambda.secret] }} \
-            $TIMEOUT_ARG \
-            $MEMORY_ARG
