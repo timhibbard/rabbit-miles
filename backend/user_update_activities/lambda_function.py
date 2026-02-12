@@ -447,8 +447,9 @@ def handler(event, context):
         print(f"Error in user_update_activities handler: {error_msg}")
         import traceback
         traceback.print_exc()
+        # Don't expose internal error details to client
         return {
             "statusCode": 500,
             "headers": get_cors_headers(),
-            "body": json.dumps({"error": "internal server error", "details": error_msg})
+            "body": json.dumps({"error": "internal server error"})
         }
