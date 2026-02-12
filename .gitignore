@@ -24,6 +24,9 @@ __pycache__/
 *.pyo
 *.pyd
 
+# Test files
+**/test_*.py
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
