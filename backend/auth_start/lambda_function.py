@@ -162,6 +162,14 @@ def handler(event, context):
         # The frontend will construct the strava:// deep link URL
         # We still need to set the cookie for the callback
         cookie_val = f"rm_state={state}; HttpOnly; Secure; SameSite=None; Path={COOKIE_PATH}; Max-Age=600"
+        print(f"LOG - Setting rm_state cookie (mobile request):")
+        print(f"LOG -   Name: rm_state")
+        print(f"LOG -   Value: {state[:10]}...{state[-10:]}")
+        print(f"LOG -   HttpOnly: Yes")
+        print(f"LOG -   Secure: Yes")
+        print(f"LOG -   SameSite: None")
+        print(f"LOG -   Path: {COOKIE_PATH}")
+        print(f"LOG -   Max-Age: 600 seconds (10 minutes)")
         
         print(f"LOG - Returning OAuth parameters for mobile deep linking")
         print("=" * 80)

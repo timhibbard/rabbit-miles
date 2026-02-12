@@ -47,13 +47,17 @@ export function openWithFallback(primaryUrl, fallbackUrl, timeoutMs = 2000) {
     if (document.hidden) {
       clearTimeout(fallbackTimer);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('pagehide', handlePageHide);
     }
   };
   
-  document.addEventListener('visibilitychange', handleVisibilityChange);
-  
   // Also cancel if the page is about to unload (app is opening)
-  window.addEventListener('pagehide', () => {
+  const handlePageHide = () => {
     clearTimeout(fallbackTimer);
-  });
+    document.removeEventListener('visibilitychange', handleVisibilityChange);
+    window.removeEventListener('pagehide', handlePageHide);
+  };
+  
+  document.addEventListener('visibilitychange', handleVisibilityChange);
+  window.addEventListener('pagehide', handlePageHide);
 }
