@@ -160,6 +160,11 @@ def handler(event, context):
         limit = int(qs.get("limit", 10))
         offset = int(qs.get("offset", 0))
         
+        # Set a reasonable upper limit to prevent abuse while allowing large datasets
+        # Most users will have < 1000 activities, but power users may have more
+        if limit > 10000:
+            limit = 10000
+        
         # Fetch activities for the authenticated user
         sql = """
         SELECT 
