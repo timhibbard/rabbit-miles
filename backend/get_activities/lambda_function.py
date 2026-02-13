@@ -160,10 +160,6 @@ def handler(event, context):
         limit = int(qs.get("limit", 10))
         offset = int(qs.get("offset", 0))
         
-        # Limit max results per request
-        if limit > 100:
-            limit = 100
-        
         # Fetch activities for the authenticated user
         sql = """
         SELECT 
