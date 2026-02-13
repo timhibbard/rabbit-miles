@@ -40,7 +40,7 @@ print_status() {
 
 # Function to check if required command exists
 check_command() {
-    if ! command -v $1 &> /dev/null; then
+    if ! command -v "$1" &> /dev/null; then
         print_status "error" "$1 is not installed"
         return 1
     fi
@@ -146,6 +146,9 @@ if [ -z "$STRAVA_CLIENT_ID" ] || [ -z "$STRAVA_CLIENT_SECRET" ]; then
 else
     print_status "info" "Checking Strava subscription..."
     
+    # Note: Strava API requires client_secret in GET request parameters
+    # This is the documented API endpoint - credentials may appear in server logs
+    # For production, consider using AWS Secrets Manager to fetch credentials
     SUBSCRIPTION_RESPONSE=$(curl -s -G https://www.strava.com/api/v3/push_subscriptions \
         -d "client_id=$STRAVA_CLIENT_ID" \
         -d "client_secret=$STRAVA_CLIENT_SECRET")
@@ -182,9 +185,7 @@ if [ -n "$QUEUE_URL" ]; then
     print_status "info" "Checking SQS queue..."
     
     # Get queue attributes
-    QUEUE_ATTRS=$(aws sqs get-queue-attributes --queue-url "$QUEUE_URL" --attribute-names All 2>/dev/null)
-    
-    if [ $? -eq 0 ]; then
+    if QUEUE_ATTRS=$(aws sqs get-queue-attributes --queue-url "$QUEUE_URL" --attribute-names All 2>/dev/null); then
         print_status "ok" "Queue is accessible"
         
         # Check queue depth
