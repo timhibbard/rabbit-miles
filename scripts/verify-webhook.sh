@@ -3,6 +3,10 @@
 # Strava Webhook Verification Script
 # This script verifies that the Strava webhook subscription is properly configured
 # and working for all users (including new signups)
+#
+# SECURITY NOTE: This script uses Strava's API which requires credentials in GET parameters.
+# Credentials may appear in command history or logs. Use for verification only.
+# For production monitoring, use AWS Lambda with Secrets Manager instead.
 
 set -e
 
@@ -143,15 +147,27 @@ if [ -z "$STRAVA_CLIENT_ID" ] || [ -z "$STRAVA_CLIENT_SECRET" ]; then
     echo "  export STRAVA_CLIENT_ID=your_client_id"
     echo "  export STRAVA_CLIENT_SECRET=your_client_secret"
     echo ""
+    print_status "warn" "SECURITY NOTE: Strava API requires credentials in GET request parameters"
+    print_status "warn" "Credentials may appear in logs. Use this script for verification only."
+    echo ""
 else
     print_status "info" "Checking Strava subscription..."
+    print_status "warn" "SECURITY: Strava API requires credentials in GET parameters (may appear in logs)"
     
-    # Note: Strava API requires client_secret in GET request parameters
-    # This is the documented API endpoint - credentials may appear in server logs
-    # For production, consider using AWS Secrets Manager to fetch credentials
+    # Note: This uses Strava's documented API endpoint which requires GET with credentials
+    # The credentials are passed as URL parameters as required by Strava's API design
+    # For production monitoring, consider using AWS Secrets Manager and restricting script access
+    # Alternative: Use AWS Lambda with Secrets Manager to query subscription status
+    
+    # Temporarily disable command history for this command
+    set +o history 2>/dev/null || true
+    
     SUBSCRIPTION_RESPONSE=$(curl -s -G https://www.strava.com/api/v3/push_subscriptions \
         -d "client_id=$STRAVA_CLIENT_ID" \
         -d "client_secret=$STRAVA_CLIENT_SECRET")
+    
+    # Re-enable command history
+    set -o history 2>/dev/null || true
     
     if echo "$SUBSCRIPTION_RESPONSE" | jq -e '. | length > 0' &> /dev/null; then
         SUBSCRIPTION_COUNT=$(echo "$SUBSCRIPTION_RESPONSE" | jq '. | length')
