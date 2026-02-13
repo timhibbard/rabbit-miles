@@ -5,8 +5,15 @@
 # and working for all users (including new signups)
 #
 # SECURITY NOTE: This script uses Strava's API which requires credentials in GET parameters.
-# Credentials may appear in command history or logs. Use for verification only.
+# Credentials may appear in command history, process listings (ps), or logs.
+# This is a VERIFICATION/DEBUGGING tool only - not for production monitoring.
 # For production monitoring, use AWS Lambda with Secrets Manager instead.
+#
+# Configuration (can be overridden via environment variables):
+# - WEBHOOK_LAMBDA: webhook Lambda function name (default: rabbitmiles-webhook)
+# - PROCESSOR_LAMBDA: webhook_processor Lambda function name (default: rabbitmiles-webhook-processor)
+# - QUEUE_DEPTH_ERROR: Queue depth threshold for errors (default: 100)
+# - QUEUE_DEPTH_WARN: Queue depth threshold for warnings (default: 10)
 
 set -e
 
@@ -74,6 +81,10 @@ echo ""
 # Get Lambda function names
 WEBHOOK_LAMBDA=${WEBHOOK_LAMBDA:-"rabbitmiles-webhook"}
 PROCESSOR_LAMBDA=${PROCESSOR_LAMBDA:-"rabbitmiles-webhook-processor"}
+
+# Queue depth thresholds (configurable via environment)
+QUEUE_DEPTH_ERROR=${QUEUE_DEPTH_ERROR:-100}
+QUEUE_DEPTH_WARN=${QUEUE_DEPTH_WARN:-10}
 
 echo "========================================"
 echo "1. Checking Lambda Functions"
@@ -156,10 +167,11 @@ else
     
     # Note: This uses Strava's documented API endpoint which requires GET with credentials
     # The credentials are passed as URL parameters as required by Strava's API design
-    # For production monitoring, consider using AWS Secrets Manager and restricting script access
-    # Alternative: Use AWS Lambda with Secrets Manager to query subscription status
+    # Limitations: Credentials may appear in process listings, command history, and logs
+    # For production monitoring, use AWS Lambda with Secrets Manager to query subscription status
+    # This script is intended for verification/debugging only, not production use
     
-    # Temporarily disable command history for this command
+    # Temporarily disable command history for this command (bash-specific)
     set +o history 2>/dev/null || true
     
     SUBSCRIPTION_RESPONSE=$(curl -s -G https://www.strava.com/api/v3/push_subscriptions \
@@ -211,9 +223,9 @@ if [ -n "$QUEUE_URL" ]; then
         echo "  Messages available: $MSG_AVAILABLE"
         echo "  Messages in flight: $MSG_IN_FLIGHT"
         
-        if [ "$MSG_AVAILABLE" -gt 100 ]; then
+        if [ "$MSG_AVAILABLE" -gt "$QUEUE_DEPTH_ERROR" ]; then
             print_status "warn" "Queue has $MSG_AVAILABLE messages - may indicate processing issues"
-        elif [ "$MSG_AVAILABLE" -gt 10 ]; then
+        elif [ "$MSG_AVAILABLE" -gt "$QUEUE_DEPTH_WARN" ]; then
             print_status "info" "Queue has $MSG_AVAILABLE messages - normal during high activity"
         else
             print_status "ok" "Queue depth is healthy"
