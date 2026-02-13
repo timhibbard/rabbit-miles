@@ -167,7 +167,10 @@ else
     
     # Note: This uses Strava's documented API endpoint which requires GET with credentials
     # The credentials are passed as URL parameters as required by Strava's API design
-    # Limitations: Credentials may appear in process listings, command history, and logs
+    # Limitations:
+    # - Credentials appear in process listings (`ps aux`) while curl is running
+    # - Credentials may appear in command history (we disable history temporarily)
+    # - Credentials may appear in system logs
     # For production monitoring, use AWS Lambda with Secrets Manager to query subscription status
     # This script is intended for verification/debugging only, not production use
     
@@ -177,9 +180,25 @@ else
     SUBSCRIPTION_RESPONSE=$(curl -s -G https://www.strava.com/api/v3/push_subscriptions \
         -d "client_id=$STRAVA_CLIENT_ID" \
         -d "client_secret=$STRAVA_CLIENT_SECRET")
+    CURL_EXIT_CODE=$?
     
     # Re-enable command history
     set -o history 2>/dev/null || true
+    
+    # Check if curl succeeded
+    if [ $CURL_EXIT_CODE -ne 0 ]; then
+        print_status "error" "Failed to connect to Strava API (curl exit code: $CURL_EXIT_CODE)"
+        print_status "info" "Check network connectivity and Strava API status"
+        echo ""
+    elif ! echo "$SUBSCRIPTION_RESPONSE" | jq empty 2>/dev/null; then
+        print_status "error" "Strava API returned invalid JSON response"
+        print_status "info" "Response: $SUBSCRIPTION_RESPONSE"
+        echo ""
+    elif echo "$SUBSCRIPTION_RESPONSE" | jq -e '.message' &> /dev/null; then
+        ERROR_MSG=$(echo "$SUBSCRIPTION_RESPONSE" | jq -r '.message')
+        print_status "error" "Strava API error: $ERROR_MSG"
+        print_status "info" "Check your STRAVA_CLIENT_ID and STRAVA_CLIENT_SECRET"
+        echo ""
     
     if echo "$SUBSCRIPTION_RESPONSE" | jq -e '. | length > 0' &> /dev/null; then
         SUBSCRIPTION_COUNT=$(echo "$SUBSCRIPTION_RESPONSE" | jq '. | length')

@@ -41,11 +41,12 @@ Strava webhooks operate at the **application level**, not per user:
      "object_type": "activity",
      "aspect_type": "create",
      "object_id": 123456789,
-     "owner_id": 999999,  ← This identifies the athlete
+     "owner_id": 999999,
      "subscription_id": 12345,
      "event_time": 1234567890
    }
    ```
+   The `owner_id` field identifies which athlete the activity belongs to.
 
 4. **Event processing**
    - webhook_processor Lambda receives event
