@@ -92,6 +92,7 @@ AWS Lambda functions automatically deploy when changes are pushed to the `backen
 For setup instructions, see:
 - [LAMBDA_DEPLOYMENT.md](LAMBDA_DEPLOYMENT.md) - General Lambda deployment
 - [WEBHOOK_SETUP.md](WEBHOOK_SETUP.md) - Strava webhook configuration
+- [WEBHOOK_NEW_USERS.md](WEBHOOK_NEW_USERS.md) - How webhooks work for new users
 - [ENV_VARS.md](ENV_VARS.md) - Complete environment variables reference
 
 ## Troubleshooting
