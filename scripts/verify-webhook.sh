@@ -224,9 +224,10 @@ if [ -n "$QUEUE_URL" ]; then
         echo "  Messages in flight: $MSG_IN_FLIGHT"
         
         if [ "$MSG_AVAILABLE" -gt "$QUEUE_DEPTH_ERROR" ]; then
-            print_status "warn" "Queue has $MSG_AVAILABLE messages - may indicate processing issues"
+            print_status "error" "Queue depth exceeds error threshold ($QUEUE_DEPTH_ERROR) - processing may be stalled"
+            print_status "info" "Check webhook_processor Lambda logs for errors"
         elif [ "$MSG_AVAILABLE" -gt "$QUEUE_DEPTH_WARN" ]; then
-            print_status "info" "Queue has $MSG_AVAILABLE messages - normal during high activity"
+            print_status "warn" "Queue has $MSG_AVAILABLE messages - monitor for continued growth"
         else
             print_status "ok" "Queue depth is healthy"
         fi
