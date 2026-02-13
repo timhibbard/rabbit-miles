@@ -224,7 +224,7 @@ if [ -n "$QUEUE_URL" ]; then
         echo "  Messages in flight: $MSG_IN_FLIGHT"
         
         if [ "$MSG_AVAILABLE" -gt "$QUEUE_DEPTH_ERROR" ]; then
-            print_status "error" "Queue depth exceeds error threshold ($QUEUE_DEPTH_ERROR) - processing may be stalled"
+            print_status "error" "Queue depth ($MSG_AVAILABLE) exceeds error threshold ($QUEUE_DEPTH_ERROR) - processing may be stalled"
             print_status "info" "Check webhook_processor Lambda logs for errors"
         elif [ "$MSG_AVAILABLE" -gt "$QUEUE_DEPTH_WARN" ]; then
             print_status "warn" "Queue has $MSG_AVAILABLE messages - monitor for continued growth"
@@ -276,7 +276,18 @@ if echo "$EVENT_MAPPINGS" | jq -e '.EventSourceMappings | length > 0' &> /dev/nu
 else
     print_status "error" "No event source mappings found"
     print_status "info" "webhook_processor will not be triggered by SQS events"
-    print_status "info" "Create mapping using AWS Console or CLI"
+    print_status "info" "Create mapping using:"
+    if [ -n "$QUEUE_URL" ]; then
+        # Extract queue ARN from URL for the example command
+        # Queue URL format: https://sqs.region.amazonaws.com/account/queue-name.fifo
+        QUEUE_ARN=$(aws sqs get-queue-attributes --queue-url "$QUEUE_URL" --attribute-names QueueArn --query 'Attributes.QueueArn' --output text 2>/dev/null || echo "QUEUE_ARN")
+        echo "  aws lambda create-event-source-mapping \\"
+        echo "    --function-name $PROCESSOR_LAMBDA \\"
+        echo "    --event-source-arn $QUEUE_ARN \\"
+        echo "    --batch-size 10"
+    else
+        echo "  See WEBHOOK_SETUP.md section 5 for complete setup instructions"
+    fi
 fi
 echo ""
 
