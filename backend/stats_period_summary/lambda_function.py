@@ -260,7 +260,7 @@ def aggregate_distance(athlete_id, start_date, end_date):
         # Debug: Check what activities ARE in the database for this athlete
         debug_sql = """
             SELECT 
-                activity_id,
+                id,
                 start_date_local,
                 distance_on_trail
             FROM activities
@@ -424,7 +424,7 @@ def handler(event, context):
         print(f"\n--- ACTIVITY DATA DEBUG ---")
         activity_check_query = """
             SELECT 
-                activity_id, 
+                id, 
                 start_date_local, 
                 timezone, 
                 distance_on_trail
