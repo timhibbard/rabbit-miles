@@ -246,11 +246,51 @@ def aggregate_distance(athlete_id, start_date, end_date):
         {"name": "end_date", "value": {"stringValue": end_str}}
     ]
     
+    print(f"    Executing SQL: {sql.strip()}")
+    print(f"    With parameters: athlete_id={athlete_id}, start_date='{start_str}', end_date='{end_str}'")
+    
     result = exec_sql(sql, parameters)
+    
+    print(f"    Raw query result: {result}")
     records = result.get("records", [])
     
     if not records or not records[0]:
         print(f"    No records returned from query")
+        
+        # Debug: Check what activities ARE in the database for this athlete
+        debug_sql = """
+            SELECT 
+                activity_id,
+                start_date_local,
+                distance_on_trail
+            FROM activities
+            WHERE athlete_id = :athlete_id
+              AND distance_on_trail IS NOT NULL
+            ORDER BY start_date_local DESC
+            LIMIT 10
+        """
+        debug_params = [{"name": "athlete_id", "value": {"longValue": athlete_id}}]
+        debug_result = exec_sql(debug_sql, debug_params)
+        
+        print(f"    DEBUG: All activities with distance for athlete {athlete_id}:")
+        if debug_result.get("records"):
+            for rec in debug_result["records"]:
+                act_id = rec[0].get("longValue", "N/A")
+                start = rec[1].get("stringValue", "N/A")
+                dist = rec[2].get("doubleValue") or rec[2].get("longValue", 0)
+                print(f"      Activity {act_id}: start_date_local={start}, distance={dist}m")
+                # Check if this activity falls within our date range
+                if start != "N/A":
+                    try:
+                        activity_date = datetime.strptime(start, "%Y-%m-%d %H:%M:%S")
+                        if activity_date >= start_date and activity_date <= end_date:
+                            print(f"        ^ This activity SHOULD match the query range!")
+                    except (ValueError, TypeError) as e:
+                        print(f"        (Could not parse date for comparison: {e})")
+                        pass
+        else:
+            print(f"      No activities with distance found for this athlete")
+        
         return 0.0
     
     # Extract distance value (could be longValue or doubleValue)
@@ -380,6 +420,34 @@ def handler(event, context):
         
         # Query the athlete's timezone from their most recent activity
         # This ensures period calculations match the athlete's local timezone
+        # First, check what activities exist for this athlete
+        print(f"\n--- ACTIVITY DATA DEBUG ---")
+        activity_check_query = """
+            SELECT 
+                activity_id, 
+                start_date_local, 
+                timezone, 
+                distance_on_trail
+            FROM activities
+            WHERE athlete_id = :athlete_id
+            ORDER BY start_date_local DESC
+            LIMIT 5
+        """
+        activity_check_params = [{"name": "athlete_id", "value": {"longValue": athlete_id}}]
+        activity_check_result = exec_sql(activity_check_query, activity_check_params)
+        
+        print(f"Recent activities for athlete {athlete_id}:")
+        if activity_check_result.get("records"):
+            for idx, record in enumerate(activity_check_result["records"], 1):
+                activity_id = record[0].get("longValue", "N/A")
+                start_date = record[1].get("stringValue", "N/A")
+                tz = record[2].get("stringValue", "N/A") if record[2] else "NULL"
+                distance = record[3].get("doubleValue") or record[3].get("longValue", 0) if record[3] else 0
+                print(f"  {idx}. Activity {activity_id}: start_date_local={start_date}, timezone={tz}, distance_on_trail={distance}m")
+        else:
+            print(f"  No activities found for athlete {athlete_id}")
+        print("--- END ACTIVITY DATA DEBUG ---\n")
+        
         timezone_query = """
             SELECT timezone
             FROM activities
@@ -389,14 +457,22 @@ def handler(event, context):
             LIMIT 1
         """
         timezone_params = [{"name": "athlete_id", "value": {"longValue": athlete_id}}]
+        print(f"Executing timezone query for athlete_id={athlete_id}")
         timezone_result = exec_sql(timezone_query, timezone_params)
+        
+        print(f"Timezone query raw result: {timezone_result}")
         
         athlete_timezone = None
         if timezone_result.get("records") and timezone_result["records"][0]:
             tz_field = timezone_result["records"][0][0]
+            print(f"Timezone field from result: {tz_field}")
             if "stringValue" in tz_field:
                 athlete_timezone = tz_field["stringValue"]
                 print(f"Athlete timezone from recent activity: {athlete_timezone}")
+            else:
+                print(f"No stringValue in timezone field")
+        else:
+            print(f"No timezone records found in query result")
         
         # Get current time
         # If we have the athlete's timezone, use it; otherwise fall back to UTC
