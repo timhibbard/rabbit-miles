@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { fetchMe, fetchActivities, refreshActivities } from '../utils/api';
+import { fetchMe, fetchActivities, refreshActivities, fetchPeriodSummary } from '../utils/api';
 import debug from '../utils/debug';
 
 // Constants
@@ -9,6 +9,83 @@ const ACTIVITY_POLL_INTERVAL = 30000; // Poll every 30 seconds
 const INITIAL_ACTIVITIES_TO_SHOW = 15; // Initial number of activities to display
 const ACTIVITIES_INCREMENT = 15; // Number of activities to load when scrolling
 const MAX_ACTIVITIES_FOR_STATS = 1000; // Maximum activities to fetch for stats calculation
+
+// Helper component for period stat card with projections
+function PeriodStatCard({ title, periodKey, currentMiles, currentTime, periodSummary, formatTime }) {
+  const periodData = periodSummary.data?.[periodKey];
+  
+  // Tooltip content with goal framing
+  const getTooltipText = () => {
+    if (!periodData) return null;
+    
+    const parts = [];
+    // Pace statement
+    parts.push(`At your current pace, you are on track for ${periodData.projected} mi this period.`);
+    
+    // Goal framed nudge (only if previous exists)
+    if (periodData.previous !== null) {
+      if (periodData.remaining_to_beat === 0) {
+        parts.push('You have already surpassed last period!');
+      } else {
+        parts.push(`To beat last period, you need ${periodData.remaining_to_beat} more miles by period end.`);
+      }
+    }
+    
+    // Method statement
+    parts.push('Projection uses a straight line extrapolation from distance so far and time elapsed in the period.');
+    
+    return parts.join(' ');
+  };
+
+  const tooltipText = getTooltipText();
+
+  return (
+    <div className="bg-white rounded-lg shadow p-6">
+      <h3 className="text-sm font-medium text-gray-500 mb-2">
+        {title}
+      </h3>
+      <p className="text-3xl font-bold text-gray-900">
+        {currentMiles.toFixed(1)}
+      </p>
+      <p className="text-xs text-gray-500 mt-1">
+        {formatTime(currentTime)}
+      </p>
+      
+      {/* Projection data */}
+      {periodData && !periodSummary.loading && (
+        <div className="mt-3 pt-3 border-t border-gray-200 space-y-1">
+          {/* Projected */}
+          <div 
+            className="flex items-center justify-between text-xs group relative cursor-help"
+            title={tooltipText}
+          >
+            <span className="text-gray-600">Projected:</span>
+            <span className="font-medium text-blue-600 flex items-center">
+              {periodData.projected} mi
+              {periodData.trend && (
+                <span className="ml-1">
+                  {periodData.trend === 'up' ? (
+                    <span className="text-green-600" title="Trending up">↗</span>
+                  ) : (
+                    <span className="text-red-600" title="Trending down">↘</span>
+                  )}
+                </span>
+              )}
+            </span>
+          </div>
+          
+          {/* Previous (only if exists) */}
+          {periodData.previous !== null && (
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-gray-600">Previous:</span>
+              <span className="font-medium text-gray-700">{periodData.previous} mi</span>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function Dashboard() {
   // Activity type filter state - can select bike, foot, or both
@@ -28,6 +105,11 @@ function Dashboard() {
   const [refreshState, setRefreshState] = useState({
     refreshing: false,
     message: null,
+    error: null,
+  });
+  const [periodSummary, setPeriodSummary] = useState({
+    loading: false,
+    data: null,
     error: null,
   });
   const [isPolling, setIsPolling] = useState(false);
@@ -185,6 +267,29 @@ function Dashboard() {
     }
   }, []);
 
+  // Load period summary with projections
+  const loadPeriodSummary = useCallback(async () => {
+    setPeriodSummary({ loading: true, data: null, error: null });
+    
+    const result = await fetchPeriodSummary();
+    
+    if (result.success) {
+      setPeriodSummary({
+        loading: false,
+        data: result.data,
+        error: null,
+      });
+    } else {
+      // Don't block dashboard if period summary fails
+      debug.log('Period summary failed to load, will hide projections');
+      setPeriodSummary({
+        loading: false,
+        data: null,
+        error: result.error || 'Failed to load period summary',
+      });
+    }
+  }, []);
+
   // Toggle activity type filter (Bike or Foot)
   const toggleActivityType = useCallback((type) => {
     if (type === 'Bike') {
@@ -283,8 +388,9 @@ function Dashboard() {
           user: result.user,
           error: null,
         });
-        // Fetch activities after successful authentication
+        // Fetch activities and period summary after successful authentication
         loadActivities(false);
+        loadPeriodSummary();
         // Start automatic polling
         startPolling();
       } else if (result.notConnected) {
@@ -308,7 +414,7 @@ function Dashboard() {
     return () => {
       stopPolling();
     };
-  }, [navigate, loadActivities, startPolling, stopPolling]);
+  }, [navigate, loadActivities, loadPeriodSummary, startPolling, stopPolling]);
 
   // Intersection observer for infinite scroll
   useEffect(() => {
@@ -467,41 +573,32 @@ function Dashboard() {
             </p>
           </div>
 
-          <div className="bg-white rounded-lg shadow p-6">
-            <h3 className="text-sm font-medium text-gray-500 mb-2">
-              This Week on Trail
-            </h3>
-            <p className="text-3xl font-bold text-gray-900">
-              {stats.thisWeek.toFixed(1)}
-            </p>
-            <p className="text-xs text-gray-500 mt-1">
-              {formatTime(stats.thisWeekTime)}
-            </p>
-          </div>
+          <PeriodStatCard 
+            title="This Week on Trail"
+            periodKey="week"
+            currentMiles={stats.thisWeek}
+            currentTime={stats.thisWeekTime}
+            periodSummary={periodSummary}
+            formatTime={formatTime}
+          />
 
-          <div className="bg-white rounded-lg shadow p-6">
-            <h3 className="text-sm font-medium text-gray-500 mb-2">
-              {currentMonthName} on Trail
-            </h3>
-            <p className="text-3xl font-bold text-gray-900">
-              {stats.thisMonth.toFixed(1)}
-            </p>
-            <p className="text-xs text-gray-500 mt-1">
-              {formatTime(stats.thisMonthTime)}
-            </p>
-          </div>
+          <PeriodStatCard 
+            title={`${currentMonthName} on Trail`}
+            periodKey="month"
+            currentMiles={stats.thisMonth}
+            currentTime={stats.thisMonthTime}
+            periodSummary={periodSummary}
+            formatTime={formatTime}
+          />
 
-          <div className="bg-white rounded-lg shadow p-6">
-            <h3 className="text-sm font-medium text-gray-500 mb-2">
-              {currentYear} on Trail
-            </h3>
-            <p className="text-3xl font-bold text-gray-900">
-              {stats.thisYear.toFixed(1)}
-            </p>
-            <p className="text-xs text-gray-500 mt-1">
-              {formatTime(stats.thisYearTime)}
-            </p>
-          </div>
+          <PeriodStatCard 
+            title={`${currentYear} on Trail`}
+            periodKey="year"
+            currentMiles={stats.thisYear}
+            currentTime={stats.thisYearTime}
+            periodSummary={periodSummary}
+            formatTime={formatTime}
+          />
         </div>
 
         <div className="bg-white rounded-lg shadow p-6">

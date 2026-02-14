@@ -235,6 +235,55 @@ function About() {
               </div>
             </section>
 
+            <section className="mb-10">
+              <h2 className="text-2xl font-semibold text-gray-900 mb-4 flex items-center">
+                <span className="text-3xl mr-3">📊</span>
+                How Calculations Work
+              </h2>
+              <div className="bg-gray-50 rounded-lg p-6 space-y-4">
+                <div>
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">Distance on Trail</h3>
+                  <p className="text-gray-700 leading-relaxed">
+                    RabbitMiles analyzes your activity's GPS path and calculates how much of your run 
+                    or ride was within 25 meters of the Swamp Rabbit Trail. This gives you an accurate 
+                    count of miles actually spent on the trail, rather than just total activity distance.
+                  </p>
+                </div>
+                
+                <div>
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">Projections</h3>
+                  <p className="text-gray-700 leading-relaxed">
+                    Weekly, monthly, and yearly projections use a simple straight-line extrapolation 
+                    based on your progress so far. The formula is: 
+                    <code className="mx-1 px-2 py-1 bg-white rounded text-sm font-mono">
+                      projected = (current_distance / days_elapsed) × total_days
+                    </code>
+                    For example, if you've run 10 miles in the first 3 days of a week, you're on track 
+                    for approximately 23.3 miles by Sunday. These are estimates and will change as you 
+                    log more activities.
+                  </p>
+                </div>
+                
+                <div>
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">Trend Indicators</h3>
+                  <p className="text-gray-700 leading-relaxed">
+                    Trend arrows (↗ up or ↘ down) compare your projected total for the current period 
+                    against the actual total from the previous period. An upward trend means you're on 
+                    pace to exceed last period's mileage. Trends only appear when there's data from a 
+                    previous period to compare against.
+                  </p>
+                </div>
+                
+                <div>
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">Time Periods</h3>
+                  <p className="text-gray-700 leading-relaxed">
+                    Weeks run Monday through Sunday. Months and years follow standard calendar boundaries. 
+                    All calculations use your activity's local time to ensure accurate period assignments.
+                  </p>
+                </div>
+              </div>
+            </section>
+
             <section className="mb-8">
               <h2 className="text-2xl font-semibold text-gray-900 mb-4 flex items-center">
                 <span className="text-3xl mr-3">🏃</span>

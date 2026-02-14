@@ -71,6 +71,8 @@ jobs:
             needs_utils: true
           - name: user_update_activities
             secret: LAMBDA_USER_UPDATE_ACTIVITIES
+          - name: stats_period_summary
+            secret: LAMBDA_STATS_PERIOD_SUMMARY
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
