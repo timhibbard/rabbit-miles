@@ -24,7 +24,8 @@ import base64
 import hmac
 import hashlib
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from urllib.parse import urlparse
 import boto3
 
@@ -399,28 +400,24 @@ def handler(event, context):
         
         # Get current time
         # If we have the athlete's timezone, use it; otherwise fall back to UTC
-        from datetime import timezone as dt_timezone
-        from zoneinfo import ZoneInfo
-        
         if athlete_timezone:
             try:
                 # Strava timezone format is like "(GMT-08:00) America/Los_Angeles"
                 # Extract the timezone name (part after the space)
-                if " " in athlete_timezone:
+                tz_name = athlete_timezone
+                if " " in athlete_timezone and len(athlete_timezone.split(" ", 1)) == 2:
                     tz_name = athlete_timezone.split(" ", 1)[1]
-                else:
-                    tz_name = athlete_timezone
                 
                 tz = ZoneInfo(tz_name)
                 now = datetime.now(tz).replace(tzinfo=None)  # Convert to naive datetime in athlete's timezone
                 print(f"Current time in athlete timezone ({tz_name}): {now.isoformat()}")
             except Exception as e:
                 print(f"Warning: Could not use athlete timezone '{athlete_timezone}': {e}")
-                now = datetime.now(dt_timezone.utc).replace(tzinfo=None)
+                now = datetime.now(timezone.utc).replace(tzinfo=None)
                 print(f"Falling back to UTC time: {now.isoformat()}")
         else:
             print("No athlete timezone found, using UTC")
-            now = datetime.now(dt_timezone.utc).replace(tzinfo=None)
+            now = datetime.now(timezone.utc).replace(tzinfo=None)
             print(f"Current UTC time: {now.isoformat()}")
         
         # Calculate period boundaries
