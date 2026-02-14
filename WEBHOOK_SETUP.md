@@ -2,6 +2,8 @@
 
 This document describes how to set up Strava webhooks to receive real-time activity updates.
 
+> **Note:** Wondering if new users are automatically covered by webhooks? See [WEBHOOK_NEW_USERS.md](WEBHOOK_NEW_USERS.md) for details on how webhooks work at the application level.
+
 ## Architecture Overview
 
 The webhook implementation uses AWS services for scalability and reliability:
@@ -214,6 +216,28 @@ curl -X POST https://YOUR_API_GATEWAY_URL/strava/webhook \
 ```
 
 Check CloudWatch Logs to verify the event was processed.
+
+## Verification
+
+Run the webhook verification script to check your configuration:
+
+```bash
+# Export your Strava credentials (optional but recommended)
+export STRAVA_CLIENT_ID=your_client_id
+export STRAVA_CLIENT_SECRET=your_client_secret
+
+# Run verification script
+./scripts/verify-webhook.sh
+```
+
+The script will check:
+- Lambda functions exist and are configured
+- Required environment variables are set
+- Strava webhook subscription is active
+- SQS queue is healthy
+- Event source mapping is enabled
+
+For more details on how webhooks work for new users, see [WEBHOOK_NEW_USERS.md](WEBHOOK_NEW_USERS.md).
 
 ## Environment Variables Reference
 
