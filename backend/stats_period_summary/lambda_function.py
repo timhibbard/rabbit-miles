@@ -24,7 +24,8 @@ import base64
 import hmac
 import hashlib
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from urllib.parse import urlparse
 import boto3
 
@@ -228,6 +229,8 @@ def aggregate_distance(athlete_id, start_date, end_date):
     start_str = start_date.strftime("%Y-%m-%d %H:%M:%S")
     end_str = end_date.strftime("%Y-%m-%d %H:%M:%S")
     
+    print(f"    Querying with athlete_id={athlete_id}, start={start_str}, end={end_str}")
+    
     sql = """
         SELECT COALESCE(SUM(distance_on_trail), 0) as total_distance
         FROM activities
@@ -247,12 +250,21 @@ def aggregate_distance(athlete_id, start_date, end_date):
     records = result.get("records", [])
     
     if not records or not records[0]:
+        print(f"    No records returned from query")
         return 0.0
     
     # Extract distance value (could be longValue or doubleValue)
     distance_field = records[0][0]
-    distance = distance_field.get("doubleValue") or distance_field.get("longValue", 0)
+    # Fix: Check if keys exist instead of using 'or' which fails for 0 values
+    if "doubleValue" in distance_field:
+        distance = distance_field["doubleValue"]
+    elif "longValue" in distance_field:
+        distance = distance_field["longValue"]
+    else:
+        print(f"    Unexpected distance field format: {distance_field}")
+        distance = 0
     
+    print(f"    Query returned distance: {distance} meters")
     return float(distance)
 
 
@@ -366,12 +378,50 @@ def handler(event, context):
         
         print(f"Authenticated as athlete_id: {athlete_id}")
         
-        # Get current time (using UTC)
-        # Note: Using datetime.now(timezone.utc) for Python 3.12+ compatibility
-        # Calculations use start_date_local from DB which stores local time
-        from datetime import timezone
-        now = datetime.now(timezone.utc).replace(tzinfo=None)  # Remove timezone for consistency with existing logic
-        print(f"Current UTC time: {now.isoformat()}")
+        # Query the athlete's timezone from their most recent activity
+        # This ensures period calculations match the athlete's local timezone
+        timezone_query = """
+            SELECT timezone
+            FROM activities
+            WHERE athlete_id = :athlete_id
+              AND timezone IS NOT NULL
+            ORDER BY start_date_local DESC
+            LIMIT 1
+        """
+        timezone_params = [{"name": "athlete_id", "value": {"longValue": athlete_id}}]
+        timezone_result = exec_sql(timezone_query, timezone_params)
+        
+        athlete_timezone = None
+        if timezone_result.get("records") and timezone_result["records"][0]:
+            tz_field = timezone_result["records"][0][0]
+            if "stringValue" in tz_field:
+                athlete_timezone = tz_field["stringValue"]
+                print(f"Athlete timezone from recent activity: {athlete_timezone}")
+        
+        # Get current time
+        # If we have the athlete's timezone, use it; otherwise fall back to UTC
+        if athlete_timezone:
+            try:
+                # Strava timezone format is typically "(GMT-08:00) America/Los_Angeles"
+                # but may also be just "America/Los_Angeles"
+                # Extract the IANA timezone identifier (part after the space if present)
+                tz_name = athlete_timezone
+                if " " in athlete_timezone:
+                    tz_name = athlete_timezone.split(" ", 1)[1]
+                
+                # Validate and use the timezone
+                tz = ZoneInfo(tz_name)
+                now = datetime.now(tz).replace(tzinfo=None)  # Convert to naive datetime in athlete's timezone
+                print(f"Current time in athlete timezone ({tz_name}): {now.isoformat()}")
+            except Exception as e:
+                # If timezone is invalid or not available, fall back to UTC
+                print(f"Warning: Could not use athlete timezone '{athlete_timezone}': {e}")
+                now = datetime.now(timezone.utc).replace(tzinfo=None)
+                print(f"Falling back to UTC time: {now.isoformat()}")
+        else:
+            print("No athlete timezone found, using UTC")
+            now = datetime.now(timezone.utc).replace(tzinfo=None)
+            print(f"Current UTC time: {now.isoformat()}")
         
         # Calculate period boundaries
         periods = get_period_boundaries(now)
