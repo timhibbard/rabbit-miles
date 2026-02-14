@@ -285,7 +285,8 @@ def aggregate_distance(athlete_id, start_date, end_date):
                         activity_date = datetime.strptime(start, "%Y-%m-%d %H:%M:%S")
                         if activity_date >= start_date and activity_date <= end_date:
                             print(f"        ^ This activity SHOULD match the query range!")
-                    except:
+                    except (ValueError, TypeError) as e:
+                        print(f"        (Could not parse date for comparison: {e})")
                         pass
         else:
             print(f"      No activities with distance found for this athlete")
