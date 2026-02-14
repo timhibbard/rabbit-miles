@@ -270,7 +270,8 @@ def calculate_projection(current_distance, elapsed_days, total_days):
     try:
         projected = (current_distance / elapsed_days) * total_days
         # Guard against NaN and Infinity
-        if not isinstance(projected, (int, float)) or projected != projected or projected == float('inf'):
+        import math
+        if math.isnan(projected) or math.isinf(projected):
             return 0.0
         return projected
     except Exception:
@@ -365,8 +366,11 @@ def handler(event, context):
         
         print(f"Authenticated as athlete_id: {athlete_id}")
         
-        # Get current time (using UTC, but will use start_date_local from DB which stores local time)
-        now = datetime.utcnow()
+        # Get current time (using UTC)
+        # Note: Using datetime.now(timezone.utc) for Python 3.12+ compatibility
+        # Calculations use start_date_local from DB which stores local time
+        from datetime import timezone
+        now = datetime.now(timezone.utc).replace(tzinfo=None)  # Remove timezone for consistency with existing logic
         print(f"Current UTC time: {now.isoformat()}")
         
         # Calculate period boundaries
