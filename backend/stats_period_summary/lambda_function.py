@@ -402,16 +402,19 @@ def handler(event, context):
         # If we have the athlete's timezone, use it; otherwise fall back to UTC
         if athlete_timezone:
             try:
-                # Strava timezone format is like "(GMT-08:00) America/Los_Angeles"
-                # Extract the timezone name (part after the space)
+                # Strava timezone format is typically "(GMT-08:00) America/Los_Angeles"
+                # but may also be just "America/Los_Angeles"
+                # Extract the IANA timezone identifier (part after the space if present)
                 tz_name = athlete_timezone
-                if " " in athlete_timezone and len(athlete_timezone.split(" ", 1)) == 2:
+                if " " in athlete_timezone:
                     tz_name = athlete_timezone.split(" ", 1)[1]
                 
+                # Validate and use the timezone
                 tz = ZoneInfo(tz_name)
                 now = datetime.now(tz).replace(tzinfo=None)  # Convert to naive datetime in athlete's timezone
                 print(f"Current time in athlete timezone ({tz_name}): {now.isoformat()}")
             except Exception as e:
+                # If timezone is invalid or not available, fall back to UTC
                 print(f"Warning: Could not use athlete timezone '{athlete_timezone}': {e}")
                 now = datetime.now(timezone.utc).replace(tzinfo=None)
                 print(f"Falling back to UTC time: {now.isoformat()}")
