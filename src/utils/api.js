@@ -355,4 +355,21 @@ export const updateUserActivities = async (athleteId) => {
   }
 };
 
+// Fetch period summary with projections
+export const fetchPeriodSummary = async () => {
+  try {
+    debug.log('Calling /stats/period_summary endpoint...');
+    const response = await api.get('/stats/period_summary');
+    debug.log('/stats/period_summary response received:', response.data);
+    return { success: true, data: response.data };
+  } catch (error) {
+    console.error('/stats/period_summary endpoint error:', error.message);
+    if (error.response?.status === 401) {
+      debug.log('User not authenticated (401)');
+      return { success: false, notConnected: true };
+    }
+    return { success: false, error: error.message };
+  }
+};
+
 export default api;
