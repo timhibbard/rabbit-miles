@@ -10,6 +10,83 @@ const INITIAL_ACTIVITIES_TO_SHOW = 15; // Initial number of activities to displa
 const ACTIVITIES_INCREMENT = 15; // Number of activities to load when scrolling
 const MAX_ACTIVITIES_FOR_STATS = 1000; // Maximum activities to fetch for stats calculation
 
+// Helper component for period stat card with projections
+function PeriodStatCard({ title, periodKey, currentMiles, currentTime, periodSummary, formatTime }) {
+  const periodData = periodSummary.data?.[periodKey];
+  
+  // Tooltip content with goal framing
+  const getTooltipText = () => {
+    if (!periodData) return null;
+    
+    const parts = [];
+    // Pace statement
+    parts.push(`At your current pace, you are on track for ${periodData.projected} mi this period.`);
+    
+    // Goal framed nudge (only if previous exists)
+    if (periodData.previous !== null) {
+      if (periodData.remaining_to_beat === 0) {
+        parts.push('You have already surpassed last period!');
+      } else {
+        parts.push(`To beat last period, you need ${periodData.remaining_to_beat} more miles by period end.`);
+      }
+    }
+    
+    // Method statement
+    parts.push('Projection uses a straight line extrapolation from distance so far and time elapsed in the period.');
+    
+    return parts.join(' ');
+  };
+
+  const tooltipText = getTooltipText();
+
+  return (
+    <div className="bg-white rounded-lg shadow p-6">
+      <h3 className="text-sm font-medium text-gray-500 mb-2">
+        {title}
+      </h3>
+      <p className="text-3xl font-bold text-gray-900">
+        {currentMiles.toFixed(1)}
+      </p>
+      <p className="text-xs text-gray-500 mt-1">
+        {formatTime(currentTime)}
+      </p>
+      
+      {/* Projection data */}
+      {periodData && !periodSummary.loading && (
+        <div className="mt-3 pt-3 border-t border-gray-200 space-y-1">
+          {/* Projected */}
+          <div 
+            className="flex items-center justify-between text-xs group relative cursor-help"
+            title={tooltipText}
+          >
+            <span className="text-gray-600">Projected:</span>
+            <span className="font-medium text-blue-600 flex items-center">
+              {periodData.projected} mi
+              {periodData.trend && (
+                <span className="ml-1">
+                  {periodData.trend === 'up' ? (
+                    <span className="text-green-600" title="Trending up">↗</span>
+                  ) : (
+                    <span className="text-red-600" title="Trending down">↘</span>
+                  )}
+                </span>
+              )}
+            </span>
+          </div>
+          
+          {/* Previous (only if exists) */}
+          {periodData.previous !== null && (
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-gray-600">Previous:</span>
+              <span className="font-medium text-gray-700">{periodData.previous} mi</span>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Dashboard() {
   // Activity type filter state - can select bike, foot, or both
   const [selectedTypes, setSelectedTypes] = useState(['Ride', 'Run', 'Walk']);
@@ -373,83 +450,6 @@ function Dashboard() {
     return `${hours}:${minutes.toString().padStart(2, '0')}`;
   };
 
-  // Helper component for period stat card with projections
-  const PeriodStatCard = ({ title, periodKey, currentMiles, currentTime }) => {
-    const periodData = periodSummary.data?.[periodKey];
-    
-    // Tooltip content with goal framing
-    const getTooltipText = () => {
-      if (!periodData) return null;
-      
-      const parts = [];
-      // Pace statement
-      parts.push(`At your current pace, you are on track for ${periodData.projected} mi this period.`);
-      
-      // Goal framed nudge (only if previous exists)
-      if (periodData.previous !== null) {
-        if (periodData.remaining_to_beat === 0) {
-          parts.push('You have already surpassed last period!');
-        } else {
-          parts.push(`To beat last period, you need ${periodData.remaining_to_beat} more miles by period end.`);
-        }
-      }
-      
-      // Method statement
-      parts.push('Projection uses a straight line extrapolation from distance so far and time elapsed in the period.');
-      
-      return parts.join(' ');
-    };
-
-    const tooltipText = getTooltipText();
-
-    return (
-      <div className="bg-white rounded-lg shadow p-6">
-        <h3 className="text-sm font-medium text-gray-500 mb-2">
-          {title}
-        </h3>
-        <p className="text-3xl font-bold text-gray-900">
-          {currentMiles.toFixed(1)}
-        </p>
-        <p className="text-xs text-gray-500 mt-1">
-          {formatTime(currentTime)}
-        </p>
-        
-        {/* Projection data */}
-        {periodData && !periodSummary.loading && (
-          <div className="mt-3 pt-3 border-t border-gray-200 space-y-1">
-            {/* Projected */}
-            <div 
-              className="flex items-center justify-between text-xs group relative cursor-help"
-              title={tooltipText}
-            >
-              <span className="text-gray-600">Projected:</span>
-              <span className="font-medium text-blue-600 flex items-center">
-                {periodData.projected} mi
-                {periodData.trend && (
-                  <span className="ml-1">
-                    {periodData.trend === 'up' ? (
-                      <span className="text-green-600" title="Trending up">↗</span>
-                    ) : (
-                      <span className="text-red-600" title="Trending down">↘</span>
-                    )}
-                  </span>
-                )}
-              </span>
-            </div>
-            
-            {/* Previous (only if exists) */}
-            {periodData.previous !== null && (
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-gray-600">Previous:</span>
-                <span className="font-medium text-gray-700">{periodData.previous} mi</span>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-    );
-  };
-
   // Loading state
   if (authState.loading) {
     return (
@@ -578,6 +578,8 @@ function Dashboard() {
             periodKey="week"
             currentMiles={stats.thisWeek}
             currentTime={stats.thisWeekTime}
+            periodSummary={periodSummary}
+            formatTime={formatTime}
           />
 
           <PeriodStatCard 
@@ -585,6 +587,8 @@ function Dashboard() {
             periodKey="month"
             currentMiles={stats.thisMonth}
             currentTime={stats.thisMonthTime}
+            periodSummary={periodSummary}
+            formatTime={formatTime}
           />
 
           <PeriodStatCard 
@@ -592,6 +596,8 @@ function Dashboard() {
             periodKey="year"
             currentMiles={stats.thisYear}
             currentTime={stats.thisYearTime}
+            periodSummary={periodSummary}
+            formatTime={formatTime}
           />
         </div>
 
