@@ -293,13 +293,20 @@ def aggregate_distance(athlete_id, start_date, end_date):
         
         return 0.0
     
-    # Extract distance value (could be longValue or doubleValue)
+    # Extract distance value (could be longValue, doubleValue, or stringValue)
     distance_field = records[0][0]
     # Fix: Check if keys exist instead of using 'or' which fails for 0 values
     if "doubleValue" in distance_field:
         distance = distance_field["doubleValue"]
     elif "longValue" in distance_field:
         distance = distance_field["longValue"]
+    elif "stringValue" in distance_field:
+        # AWS RDS Data API may return numeric results as strings
+        try:
+            distance = float(distance_field["stringValue"])
+        except (ValueError, TypeError) as e:
+            print(f"    Error parsing stringValue as float: {e}")
+            distance = 0
     else:
         print(f"    Unexpected distance field format: {distance_field}")
         distance = 0
