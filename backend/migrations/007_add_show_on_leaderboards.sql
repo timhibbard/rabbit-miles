@@ -1,4 +1,4 @@
--- Add showOnLeaderboards column to users table for leaderboard privacy control
+-- Add show_on_leaderboards column to users table for leaderboard privacy control
 -- This column controls whether a user's data appears on the leaderboard
 -- Default is true (opt-in by default) and all existing users are backfilled to true
 

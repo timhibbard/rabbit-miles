@@ -17,7 +17,7 @@
 import os
 import json
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from urllib.request import Request, urlopen
 from urllib.parse import urlencode
 import boto3
@@ -293,7 +293,6 @@ def get_window_keys(activity_start_date_local):
         days_since_monday = dt.weekday()  # Monday is 0
         monday = dt.replace(hour=0, minute=0, second=0, microsecond=0)
         if days_since_monday > 0:
-            from datetime import timedelta
             monday = monday - timedelta(days=days_since_monday)
         week_key = f"week_{monday.strftime('%Y-%m-%d')}"
         
