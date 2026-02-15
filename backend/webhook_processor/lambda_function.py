@@ -4,17 +4,20 @@
 # Env vars required:
 # DB_CLUSTER_ARN, DB_SECRET_ARN, DB_NAME=postgres
 # STRAVA_CLIENT_ID, STRAVA_CLIENT_SECRET (or STRAVA_SECRET_ARN)
+# MATCH_ACTIVITY_LAMBDA_ARN (optional, for trail matching)
 #
 # This Lambda is triggered by SQS messages from the webhook handler.
 # It processes Strava webhook events asynchronously:
 # - Fetches activity details from Strava API
 # - Updates the activities table in the database
+# - Updates leaderboard aggregations
 # - Handles token refresh if needed
 # - Implements idempotency to avoid duplicate processing
 
 import os
 import json
 import time
+from datetime import datetime, timezone
 from urllib.request import Request, urlopen
 from urllib.parse import urlencode
 import boto3
@@ -270,6 +273,266 @@ def trigger_trail_matching(activity_id):
         return False
 
 
+def get_window_keys(activity_start_date_local):
+    """
+    Calculate window keys for current week, month, and year based on activity date.
+    
+    Args:
+        activity_start_date_local: ISO 8601 timestamp string (e.g., "2026-02-15T10:30:00Z")
+    
+    Returns:
+        Dict with 'week', 'month', 'year' keys containing window_key strings
+    """
+    try:
+        # Parse ISO 8601 timestamp
+        dt = datetime.fromisoformat(activity_start_date_local.replace('Z', '+00:00'))
+        
+        # Week: ISO week format, Monday is start of week
+        # Window key format: week_YYYY-MM-DD (Monday of the week)
+        # Get Monday of the current week
+        days_since_monday = dt.weekday()  # Monday is 0
+        monday = dt.replace(hour=0, minute=0, second=0, microsecond=0)
+        if days_since_monday > 0:
+            from datetime import timedelta
+            monday = monday - timedelta(days=days_since_monday)
+        week_key = f"week_{monday.strftime('%Y-%m-%d')}"
+        
+        # Month: YYYY-MM
+        month_key = f"month_{dt.strftime('%Y-%m')}"
+        
+        # Year: YYYY
+        year_key = f"year_{dt.strftime('%Y')}"
+        
+        return {
+            'week': week_key,
+            'month': month_key,
+            'year': year_key
+        }
+    except Exception as e:
+        print(f"ERROR: Failed to parse activity date {activity_start_date_local}: {e}")
+        return None
+
+
+def check_user_leaderboard_opt_in(athlete_id):
+    """Check if user has opted in to leaderboards (show_on_leaderboards = true)"""
+    sql = "SELECT show_on_leaderboards FROM users WHERE athlete_id = :aid"
+    params = [{"name": "aid", "value": {"longValue": athlete_id}}]
+    
+    try:
+        result = _exec_sql(sql, params)
+        records = result.get("records", [])
+        if not records:
+            print(f"User {athlete_id} not found in database")
+            return False
+        
+        # Get boolean value - handle both booleanValue and stringValue
+        field = records[0][0]
+        if "booleanValue" in field:
+            return field["booleanValue"]
+        elif "stringValue" in field:
+            return field["stringValue"].lower() in ('true', 't', '1')
+        
+        # Default to False if field is NULL or unexpected type
+        return False
+    except Exception as e:
+        print(f"ERROR: Failed to check leaderboard opt-in for user {athlete_id}: {e}")
+        # Default to False on error - safer to not include than to include incorrectly
+        return False
+
+
+def update_leaderboard_aggregates(athlete_id, activity):
+    """
+    Update leaderboard aggregates for an activity (create or update).
+    Increments aggregate values for current week, month, and year.
+    
+    Args:
+        athlete_id: The athlete ID
+        activity: The activity dict from Strava API
+    
+    Returns:
+        True if successful, False otherwise
+    """
+    start_time = time.time()
+    print(f"TELEMETRY - leaderboard_agg_update_start athlete_id={athlete_id} activity_id={activity.get('id')}")
+    
+    try:
+        # Check if user has opted in to leaderboards
+        if not check_user_leaderboard_opt_in(athlete_id):
+            print(f"User {athlete_id} has opted out of leaderboards, skipping aggregation")
+            return True  # Not an error, just skip
+        
+        # Extract activity data
+        strava_activity_id = activity.get("id")
+        distance = float(activity.get("distance", 0))  # meters
+        start_date_local = activity.get("start_date_local", "")
+        activity_type = activity.get("type", "")
+        
+        if not start_date_local:
+            print(f"WARNING: Activity {strava_activity_id} has no start_date_local, skipping aggregation")
+            return True
+        
+        # Calculate window keys
+        window_keys = get_window_keys(start_date_local)
+        if not window_keys:
+            print(f"WARNING: Failed to calculate window keys for activity {strava_activity_id}")
+            return True
+        
+        # Phase 1: Only track distance metric for 'all' activity types
+        metric = "distance"
+        agg_activity_type = "all"
+        
+        # First, check if this activity was already counted in aggregates
+        # We need to get the old distance to adjust the aggregates properly
+        check_sql = """
+        SELECT distance FROM activities 
+        WHERE athlete_id = :aid AND strava_activity_id = :sid
+        """
+        check_params = [
+            {"name": "aid", "value": {"longValue": athlete_id}},
+            {"name": "sid", "value": {"longValue": strava_activity_id}},
+        ]
+        check_result = _exec_sql(check_sql, check_params)
+        
+        old_distance = 0
+        if check_result.get("records"):
+            old_dist_field = check_result["records"][0][0]
+            if "doubleValue" in old_dist_field:
+                old_distance = float(old_dist_field["doubleValue"])
+            elif "stringValue" in old_dist_field:
+                old_distance = float(old_dist_field["stringValue"])
+        
+        # Calculate delta (new distance - old distance)
+        # For new activities, old_distance is 0
+        # For updates, we adjust by the difference
+        distance_delta = distance - old_distance
+        
+        # Update aggregates for each window (week, month, year)
+        for window, window_key in window_keys.items():
+            sql = """
+            INSERT INTO leaderboard_agg (window, window_key, metric, activity_type, athlete_id, value, last_updated)
+            VALUES (:window, :window_key, :metric, :act_type, :aid, :value, now())
+            ON CONFLICT (window_key, metric, activity_type, athlete_id)
+            DO UPDATE SET
+                value = leaderboard_agg.value + EXCLUDED.value,
+                last_updated = now()
+            """
+            
+            params = [
+                {"name": "window", "value": {"stringValue": window}},
+                {"name": "window_key", "value": {"stringValue": window_key}},
+                {"name": "metric", "value": {"stringValue": metric}},
+                {"name": "act_type", "value": {"stringValue": agg_activity_type}},
+                {"name": "aid", "value": {"longValue": athlete_id}},
+                {"name": "value", "value": {"doubleValue": distance_delta}},
+            ]
+            
+            _exec_sql(sql, params)
+            print(f"Updated leaderboard aggregate: {window_key} athlete={athlete_id} delta={distance_delta:.2f}m")
+        
+        duration_ms = (time.time() - start_time) * 1000
+        print(f"TELEMETRY - leaderboard_agg_update_complete athlete_id={athlete_id} activity_id={strava_activity_id} duration_ms={duration_ms:.2f}")
+        return True
+        
+    except Exception as e:
+        duration_ms = (time.time() - start_time) * 1000
+        print(f"TELEMETRY - leaderboard_agg_error athlete_id={athlete_id} error={str(e)} duration_ms={duration_ms:.2f}")
+        print(f"ERROR: Failed to update leaderboard aggregates for athlete {athlete_id}: {e}")
+        import traceback
+        traceback.print_exc()
+        # Don't fail the entire webhook processing if leaderboard update fails
+        return False
+
+
+def delete_leaderboard_aggregates(athlete_id, strava_activity_id):
+    """
+    Remove activity contribution from leaderboard aggregates when activity is deleted.
+    
+    Args:
+        athlete_id: The athlete ID
+        strava_activity_id: The Strava activity ID being deleted
+    
+    Returns:
+        True if successful, False otherwise
+    """
+    start_time = time.time()
+    print(f"TELEMETRY - leaderboard_agg_delete_start athlete_id={athlete_id} activity_id={strava_activity_id}")
+    
+    try:
+        # Check if user has opted in to leaderboards
+        if not check_user_leaderboard_opt_in(athlete_id):
+            print(f"User {athlete_id} has opted out of leaderboards, no aggregates to delete")
+            return True
+        
+        # Get the activity details before deletion to know what to subtract
+        sql = "SELECT distance, start_date_local FROM activities WHERE athlete_id = :aid AND strava_activity_id = :sid"
+        params = [
+            {"name": "aid", "value": {"longValue": athlete_id}},
+            {"name": "sid", "value": {"longValue": strava_activity_id}},
+        ]
+        result = _exec_sql(sql, params)
+        
+        records = result.get("records", [])
+        if not records:
+            print(f"Activity {strava_activity_id} not found, no aggregates to delete")
+            return True
+        
+        # Extract distance and date
+        record = records[0]
+        distance_field = record[0]
+        distance = 0
+        if "doubleValue" in distance_field:
+            distance = float(distance_field["doubleValue"])
+        elif "stringValue" in distance_field:
+            distance = float(distance_field["stringValue"])
+        
+        start_date_local_field = record[1]
+        start_date_local = start_date_local_field.get("stringValue", "")
+        
+        if not start_date_local:
+            print(f"Activity {strava_activity_id} has no start_date_local, skipping aggregate deletion")
+            return True
+        
+        # Calculate window keys
+        window_keys = get_window_keys(start_date_local)
+        if not window_keys:
+            print(f"Failed to calculate window keys for activity {strava_activity_id}")
+            return True
+        
+        # Subtract distance from each window aggregate
+        metric = "distance"
+        agg_activity_type = "all"
+        
+        for window, window_key in window_keys.items():
+            sql = """
+            UPDATE leaderboard_agg
+            SET value = value - :value, last_updated = now()
+            WHERE window_key = :window_key AND metric = :metric AND activity_type = :act_type AND athlete_id = :aid
+            """
+            
+            params = [
+                {"name": "value", "value": {"doubleValue": distance}},
+                {"name": "window_key", "value": {"stringValue": window_key}},
+                {"name": "metric", "value": {"stringValue": metric}},
+                {"name": "act_type", "value": {"stringValue": agg_activity_type}},
+                {"name": "aid", "value": {"longValue": athlete_id}},
+            ]
+            
+            _exec_sql(sql, params)
+            print(f"Deleted from leaderboard aggregate: {window_key} athlete={athlete_id} distance={distance:.2f}m")
+        
+        duration_ms = (time.time() - start_time) * 1000
+        print(f"TELEMETRY - leaderboard_agg_delete_complete athlete_id={athlete_id} activity_id={strava_activity_id} duration_ms={duration_ms:.2f}")
+        return True
+        
+    except Exception as e:
+        duration_ms = (time.time() - start_time) * 1000
+        print(f"TELEMETRY - leaderboard_agg_delete_error athlete_id={athlete_id} error={str(e)} duration_ms={duration_ms:.2f}")
+        print(f"ERROR: Failed to delete leaderboard aggregates for activity {strava_activity_id}: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
 def check_idempotency(idempotency_key):
     """Check if event has already been processed"""
     sql = "SELECT processed_at FROM webhook_events WHERE idempotency_key = :key"
@@ -357,6 +620,8 @@ def process_webhook_event(webhook_event):
     activity_id = None
     
     if aspect_type == "delete":
+        # Delete from leaderboard aggregates first (before deleting activity record)
+        delete_leaderboard_aggregates(owner_id, object_id)
         # Delete activity from database
         success = delete_activity(owner_id, object_id)
     elif aspect_type in ["create", "update"]:
@@ -365,6 +630,10 @@ def process_webhook_event(webhook_event):
             activity = fetch_activity_details(access_token, object_id)
             activity_id = store_activity(owner_id, activity)
             success = activity_id is not None
+            
+            # Update leaderboard aggregates for the activity
+            if success:
+                update_leaderboard_aggregates(owner_id, activity)
             
             # Trigger trail matching for the activity
             if success and activity_id:

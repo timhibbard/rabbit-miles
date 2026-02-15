@@ -10,7 +10,9 @@ CREATE TABLE IF NOT EXISTS leaderboard_agg (
     activity_type TEXT NOT NULL,             -- 'all' initially, extensible for specific types
     athlete_id BIGINT NOT NULL REFERENCES users(athlete_id) ON DELETE CASCADE,
     value NUMERIC NOT NULL,                  -- aggregated value (e.g., total distance in meters)
-    last_updated TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    last_updated TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    -- Unique constraint to prevent duplicate aggregates
+    UNIQUE (window_key, metric, activity_type, athlete_id)
 );
 
 -- Index for efficient leaderboard queries (ordered by value desc)
