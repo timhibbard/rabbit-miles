@@ -287,7 +287,7 @@ def handler(event, context):
         print(f"LOG - Verified athlete_id: {aid}")
 
         print(f"LOG - Querying database for user data")
-        sql = "SELECT athlete_id, display_name, profile_picture FROM users WHERE athlete_id = :aid LIMIT 1"
+        sql = "SELECT athlete_id, display_name, profile_picture, show_on_leaderboards FROM users WHERE athlete_id = :aid LIMIT 1"
         res = exec_sql(sql, parameters=[{"name":"aid","value":{"longValue":aid}}])
         records = res.get("records") or []
         print(f"LOG - Database query returned {len(records)} records")
@@ -313,11 +313,16 @@ def handler(event, context):
         profile_picture = ""
         if len(rec) > 2 and rec[2]:
             profile_picture = rec[2].get("stringValue", "")
+        # Handle show_on_leaderboards (default to True if NULL)
+        show_on_leaderboards = True
+        if len(rec) > 3 and rec[3]:
+            show_on_leaderboards = rec[3].get("booleanValue", True)
         
         print(f"LOG - User data:")
         print(f"LOG -   athlete_id: {athlete_id}")
         print(f"LOG -   display_name: {display_name}")
         print(f"LOG -   profile_picture: {bool(profile_picture)}")
+        print(f"LOG -   show_on_leaderboards: {show_on_leaderboards}")
         
         # Check if user is an admin
         is_user_admin = admin_utils.is_admin(athlete_id)
@@ -327,7 +332,8 @@ def handler(event, context):
             "athlete_id": athlete_id,
             "display_name": display_name,
             "profile_picture": profile_picture,
-            "is_admin": is_user_admin
+            "is_admin": is_user_admin,
+            "show_on_leaderboards": show_on_leaderboards
         }
         
         print(f"LOG - Returning success response")
