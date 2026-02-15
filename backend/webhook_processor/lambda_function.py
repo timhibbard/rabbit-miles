@@ -376,9 +376,16 @@ def update_leaderboard_aggregates(athlete_id, activity):
             print(f"WARNING: Failed to calculate window keys for activity {strava_activity_id}")
             return True
         
-        # Phase 1: Only track distance metric for 'all' activity types
+        # Track distance metric
         metric = "distance"
-        agg_activity_type = "all"
+        
+        # Determine aggregate activity types to update
+        # Map Strava activity types to aggregate categories
+        agg_types = ["all"]  # Always update 'all'
+        if activity_type in ["Run", "Walk"]:
+            agg_types.append("foot")
+        elif activity_type == "Ride":
+            agg_types.append("bike")
         
         # First, check if this activity was already counted in aggregates
         # We need to get the old distance to adjust the aggregates properly
@@ -405,28 +412,29 @@ def update_leaderboard_aggregates(athlete_id, activity):
         # For updates, we adjust by the difference
         distance_delta = distance - old_distance
         
-        # Update aggregates for each window (week, month, year)
+        # Update aggregates for each window (week, month, year) and each activity type
         for window, window_key in window_keys.items():
-            sql = """
-            INSERT INTO leaderboard_agg (window, window_key, metric, activity_type, athlete_id, value, last_updated)
-            VALUES (:window, :window_key, :metric, :act_type, :aid, :value, now())
-            ON CONFLICT (window_key, metric, activity_type, athlete_id)
-            DO UPDATE SET
-                value = leaderboard_agg.value + EXCLUDED.value,
-                last_updated = now()
-            """
-            
-            params = [
-                {"name": "window", "value": {"stringValue": window}},
-                {"name": "window_key", "value": {"stringValue": window_key}},
-                {"name": "metric", "value": {"stringValue": metric}},
-                {"name": "act_type", "value": {"stringValue": agg_activity_type}},
-                {"name": "aid", "value": {"longValue": athlete_id}},
-                {"name": "value", "value": {"doubleValue": distance_delta}},
-            ]
-            
-            _exec_sql(sql, params)
-            print(f"Updated leaderboard aggregate: {window_key} athlete={athlete_id} delta={distance_delta:.2f}m")
+            for agg_activity_type in agg_types:
+                sql = """
+                INSERT INTO leaderboard_agg (window, window_key, metric, activity_type, athlete_id, value, last_updated)
+                VALUES (:window, :window_key, :metric, :act_type, :aid, :value, now())
+                ON CONFLICT (window_key, metric, activity_type, athlete_id)
+                DO UPDATE SET
+                    value = leaderboard_agg.value + EXCLUDED.value,
+                    last_updated = now()
+                """
+                
+                params = [
+                    {"name": "window", "value": {"stringValue": window}},
+                    {"name": "window_key", "value": {"stringValue": window_key}},
+                    {"name": "metric", "value": {"stringValue": metric}},
+                    {"name": "act_type", "value": {"stringValue": agg_activity_type}},
+                    {"name": "aid", "value": {"longValue": athlete_id}},
+                    {"name": "value", "value": {"doubleValue": distance_delta}},
+                ]
+                
+                _exec_sql(sql, params)
+                print(f"Updated leaderboard aggregate: {window_key} athlete={athlete_id} type={agg_activity_type} delta={distance_delta:.2f}m")
         
         duration_ms = (time.time() - start_time) * 1000
         print(f"TELEMETRY - leaderboard_agg_update_complete athlete_id={athlete_id} activity_id={strava_activity_id} duration_ms={duration_ms:.2f}")
@@ -463,7 +471,7 @@ def delete_leaderboard_aggregates(athlete_id, strava_activity_id):
             return True
         
         # Get the activity details before deletion to know what to subtract
-        sql = "SELECT distance, start_date_local FROM activities WHERE athlete_id = :aid AND strava_activity_id = :sid"
+        sql = "SELECT distance, start_date_local, type FROM activities WHERE athlete_id = :aid AND strava_activity_id = :sid"
         params = [
             {"name": "aid", "value": {"longValue": athlete_id}},
             {"name": "sid", "value": {"longValue": strava_activity_id}},
@@ -475,7 +483,7 @@ def delete_leaderboard_aggregates(athlete_id, strava_activity_id):
             print(f"Activity {strava_activity_id} not found, no aggregates to delete")
             return True
         
-        # Extract distance and date
+        # Extract distance, date, and type
         record = records[0]
         distance_field = record[0]
         distance = 0
@@ -487,6 +495,9 @@ def delete_leaderboard_aggregates(athlete_id, strava_activity_id):
         start_date_local_field = record[1]
         start_date_local = start_date_local_field.get("stringValue", "")
         
+        activity_type_field = record[2]
+        activity_type = activity_type_field.get("stringValue", "")
+        
         if not start_date_local:
             print(f"Activity {strava_activity_id} has no start_date_local, skipping aggregate deletion")
             return True
@@ -497,27 +508,33 @@ def delete_leaderboard_aggregates(athlete_id, strava_activity_id):
             print(f"Failed to calculate window keys for activity {strava_activity_id}")
             return True
         
-        # Subtract distance from each window aggregate
+        # Determine which aggregate types to update
         metric = "distance"
-        agg_activity_type = "all"
+        agg_types = ["all"]  # Always update 'all'
+        if activity_type in ["Run", "Walk"]:
+            agg_types.append("foot")
+        elif activity_type == "Ride":
+            agg_types.append("bike")
         
+        # Subtract distance from each window aggregate for each activity type
         for window, window_key in window_keys.items():
-            sql = """
-            UPDATE leaderboard_agg
-            SET value = value - :value, last_updated = now()
-            WHERE window_key = :window_key AND metric = :metric AND activity_type = :act_type AND athlete_id = :aid
-            """
-            
-            params = [
-                {"name": "value", "value": {"doubleValue": distance}},
-                {"name": "window_key", "value": {"stringValue": window_key}},
-                {"name": "metric", "value": {"stringValue": metric}},
-                {"name": "act_type", "value": {"stringValue": agg_activity_type}},
-                {"name": "aid", "value": {"longValue": athlete_id}},
-            ]
-            
-            _exec_sql(sql, params)
-            print(f"Deleted from leaderboard aggregate: {window_key} athlete={athlete_id} distance={distance:.2f}m")
+            for agg_activity_type in agg_types:
+                sql = """
+                UPDATE leaderboard_agg
+                SET value = value - :value, last_updated = now()
+                WHERE window_key = :window_key AND metric = :metric AND activity_type = :act_type AND athlete_id = :aid
+                """
+                
+                params = [
+                    {"name": "value", "value": {"doubleValue": distance}},
+                    {"name": "window_key", "value": {"stringValue": window_key}},
+                    {"name": "metric", "value": {"stringValue": metric}},
+                    {"name": "act_type", "value": {"stringValue": agg_activity_type}},
+                    {"name": "aid", "value": {"longValue": athlete_id}},
+                ]
+                
+                _exec_sql(sql, params)
+                print(f"Deleted from leaderboard aggregate: {window_key} athlete={athlete_id} type={agg_activity_type} distance={distance:.2f}m")
         
         duration_ms = (time.time() - start_time) * 1000
         print(f"TELEMETRY - leaderboard_agg_delete_complete athlete_id={athlete_id} activity_id={strava_activity_id} duration_ms={duration_ms:.2f}")

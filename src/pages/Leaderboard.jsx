@@ -8,6 +8,7 @@ function Leaderboard() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [currentUserId, setCurrentUserId] = useState(null);
   const [selectedWindow, setSelectedWindow] = useState('week');
+  const [selectedActivityType, setSelectedActivityType] = useState('foot'); // Default to Foot only
   const [leaderboardData, setLeaderboardData] = useState(null);
   const [error, setError] = useState(null);
 
@@ -36,7 +37,7 @@ function Leaderboard() {
     checkAuth();
   }, [navigate]);
 
-  // Fetch leaderboard data when window changes
+  // Fetch leaderboard data when window or activity type changes
   useEffect(() => {
     if (!isAdmin) return;
     
@@ -45,6 +46,7 @@ function Leaderboard() {
       try {
         const result = await fetchLeaderboard(selectedWindow, {
           user_id: currentUserId,
+          activity_type: selectedActivityType,
         });
         
         if (result.success) {
@@ -52,6 +54,7 @@ function Leaderboard() {
           console.log('TELEMETRY - leaderboard_page_view', {
             window: selectedWindow,
             window_key: result.data.window_key,
+            activity_type: selectedActivityType,
           });
         } else {
           setError(result.error || 'Failed to load leaderboard');
@@ -63,7 +66,7 @@ function Leaderboard() {
     };
     
     loadLeaderboard();
-  }, [selectedWindow, isAdmin, currentUserId]);
+  }, [selectedWindow, selectedActivityType, isAdmin, currentUserId]);
 
   // Format distance in meters to miles
   const formatDistance = (meters) => {
@@ -76,6 +79,15 @@ function Leaderboard() {
     if (!dateString) return '';
     const date = new Date(dateString);
     return date.toLocaleDateString();
+  };
+
+  // Toggle activity type filter (Bike or Foot)
+  const toggleActivityType = (type) => {
+    if (type === 'bike') {
+      setSelectedActivityType(selectedActivityType === 'bike' ? 'all' : 'bike');
+    } else if (type === 'foot') {
+      setSelectedActivityType(selectedActivityType === 'foot' ? 'all' : 'foot');
+    }
   };
 
   if (loading) {
@@ -142,6 +154,37 @@ function Leaderboard() {
                 }`}
               >
                 This Year
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Activity Type Filter */}
+        <div className="mb-6">
+          <div className="bg-white rounded-lg shadow p-4">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Activity Type
+            </label>
+            <div className="inline-flex rounded-lg border border-gray-300 bg-white">
+              <button
+                onClick={() => toggleActivityType('bike')}
+                className={`px-4 py-2 text-sm font-medium rounded-l-lg transition-colors ${
+                  selectedActivityType === 'bike' || selectedActivityType === 'all'
+                    ? 'bg-orange-600 text-white'
+                    : 'bg-white text-gray-700 hover:bg-gray-50'
+                }`}
+              >
+                Bike
+              </button>
+              <button
+                onClick={() => toggleActivityType('foot')}
+                className={`px-4 py-2 text-sm font-medium rounded-r-lg border-l transition-colors ${
+                  selectedActivityType === 'foot' || selectedActivityType === 'all'
+                    ? 'bg-orange-600 text-white border-orange-600'
+                    : 'bg-white text-gray-700 hover:bg-gray-50 border-gray-300'
+                }`}
+              >
+                Foot
               </button>
             </div>
           </div>
