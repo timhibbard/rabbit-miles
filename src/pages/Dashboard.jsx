@@ -223,8 +223,11 @@ function Dashboard() {
   }, [activitiesState.activities, selectedTypes, displayCount]);
 
   // Load period summary with projections
-  const loadPeriodSummary = useCallback(async () => {
-    setPeriodSummary({ loading: true, data: null, error: null });
+  const loadPeriodSummary = useCallback(async (silent = false) => {
+    // Only show loading state if not silent
+    if (!silent) {
+      setPeriodSummary({ loading: true, data: null, error: null });
+    }
     
     const result = await fetchPeriodSummary();
     
@@ -276,7 +279,7 @@ function Dashboard() {
       });
       // Stats will be calculated automatically via useMemo
       // Also reload period summary to update projections with new activities
-      loadPeriodSummary();
+      loadPeriodSummary(silent);
     } else {
       // For silent refresh, don't update error state to avoid disrupting UI
       if (!silent) {
