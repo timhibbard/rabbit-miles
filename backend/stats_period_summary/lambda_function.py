@@ -526,7 +526,7 @@ def handler(event, context):
             )
             current_distance_miles = current_distance_meters / METERS_TO_MILES
             
-            print(f"  Current distance: {current_distance_miles:.2f} miles")
+            print(f"  Current distance: {current_distance_miles:.1f} miles")
             
             # Query previous period
             previous_distance_meters = aggregate_distance(
@@ -539,7 +539,7 @@ def handler(event, context):
             if previous_distance_miles is None:
                 print(f"  Previous period: no data")
             else:
-                print(f"  Previous distance: {previous_distance_miles:.2f} miles")
+                print(f"  Previous distance: {previous_distance_miles:.1f} miles")
             
             # Calculate projection
             projected_miles = calculate_projection(
@@ -547,7 +547,7 @@ def handler(event, context):
                 period_info['elapsed_days'],
                 period_info['total_days']
             )
-            print(f"  Projected distance: {projected_miles:.2f} miles")
+            print(f"  Projected distance: {projected_miles:.1f} miles")
             
             # Calculate trend
             trend = calculate_trend(projected_miles, previous_distance_miles)
@@ -556,16 +556,16 @@ def handler(event, context):
             # Calculate remaining to beat
             remaining = calculate_remaining_to_beat(current_distance_miles, previous_distance_miles)
             if remaining is not None:
-                print(f"  Remaining to beat: {remaining:.2f} miles")
+                print(f"  Remaining to beat: {remaining:.1f} miles")
             else:
                 print(f"  Remaining to beat: N/A (no previous data)")
             
             response_data[period_name] = {
-                "current": round(current_distance_miles, 2),
-                "previous": round(previous_distance_miles, 2) if previous_distance_miles is not None else None,
-                "projected": round(projected_miles, 2),
+                "current": round(current_distance_miles, 1),
+                "previous": round(previous_distance_miles, 1) if previous_distance_miles is not None else None,
+                "projected": round(projected_miles, 1),
                 "trend": trend,
-                "remaining_to_beat": round(remaining, 2) if remaining is not None else None
+                "remaining_to_beat": round(remaining, 1) if remaining is not None else None
             }
         
         print(f"\nResponse data: {json.dumps(response_data, indent=2)}")
