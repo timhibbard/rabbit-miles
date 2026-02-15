@@ -222,6 +222,29 @@ function Dashboard() {
     };
   }, [activitiesState.activities, selectedTypes, displayCount]);
 
+  // Load period summary with projections
+  const loadPeriodSummary = useCallback(async () => {
+    setPeriodSummary({ loading: true, data: null, error: null });
+    
+    const result = await fetchPeriodSummary();
+    
+    if (result.success) {
+      setPeriodSummary({
+        loading: false,
+        data: result.data,
+        error: null,
+      });
+    } else {
+      // Don't block dashboard if period summary fails
+      debug.log('Period summary failed to load, will hide projections');
+      setPeriodSummary({
+        loading: false,
+        data: null,
+        error: result.error || 'Failed to load period summary',
+      });
+    }
+  }, []);
+
   // Load activities for the authenticated user
   const loadActivities = useCallback(async (silent = false) => {
     // Prevent overlapping requests
@@ -252,6 +275,8 @@ function Dashboard() {
         error: null,
       });
       // Stats will be calculated automatically via useMemo
+      // Also reload period summary to update projections with new activities
+      loadPeriodSummary();
     } else {
       // For silent refresh, don't update error state to avoid disrupting UI
       if (!silent) {
@@ -265,30 +290,7 @@ function Dashboard() {
         debug.warn('Silent activity refresh failed:', result.error);
       }
     }
-  }, []);
-
-  // Load period summary with projections
-  const loadPeriodSummary = useCallback(async () => {
-    setPeriodSummary({ loading: true, data: null, error: null });
-    
-    const result = await fetchPeriodSummary();
-    
-    if (result.success) {
-      setPeriodSummary({
-        loading: false,
-        data: result.data,
-        error: null,
-      });
-    } else {
-      // Don't block dashboard if period summary fails
-      debug.log('Period summary failed to load, will hide projections');
-      setPeriodSummary({
-        loading: false,
-        data: null,
-        error: result.error || 'Failed to load period summary',
-      });
-    }
-  }, []);
+  }, [loadPeriodSummary]);
 
   // Toggle activity type filter (Bike or Foot)
   const toggleActivityType = useCallback((type) => {
