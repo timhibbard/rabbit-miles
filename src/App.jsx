@@ -9,6 +9,7 @@ import Terms from './pages/Terms';
 import ActivityDetail from './pages/ActivityDetail';
 import About from './pages/About';
 import Admin from './pages/Admin';
+import Leaderboard from './pages/Leaderboard';
 
 function App() {
   return (
@@ -21,6 +22,7 @@ function App() {
           <Route path="activity/:id" element={<ActivityDetail />} />
           <Route path="settings" element={<Settings />} />
           <Route path="admin" element={<Admin />} />
+          <Route path="leaderboard" element={<Leaderboard />} />
           <Route path="privacy" element={<Privacy />} />
           <Route path="terms" element={<Terms />} />
           <Route path="about" element={<About />} />

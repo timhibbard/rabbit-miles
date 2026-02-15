@@ -372,4 +372,77 @@ export const fetchPeriodSummary = async () => {
   }
 };
 
+// Update user settings (e.g., show_on_leaderboards)
+export const updateUserSettings = async (settings) => {
+  try {
+    debug.log('Calling PATCH /user/settings endpoint...');
+    const response = await api.patch('/user/settings', settings);
+    debug.log('PATCH /user/settings response received:', response.data);
+    return { success: true, data: response.data };
+  } catch (error) {
+    console.error('PATCH /user/settings endpoint error:', error.message);
+    if (error.response?.status === 401) {
+      debug.log('User not authenticated (401)');
+      return { success: false, notConnected: true };
+    }
+    return { success: false, error: error.response?.data?.error || error.message };
+  }
+};
+
+// Fetch leaderboard (admin only)
+export const fetchLeaderboard = async (window, options = {}) => {
+  try {
+    const params = {
+      window,
+      metric: options.metric || 'distance',
+      activity_type: options.activity_type || 'all',
+      limit: options.limit || 50,
+      offset: options.offset || 0,
+    };
+    
+    if (options.user_id) {
+      params.user_id = options.user_id;
+    }
+    
+    debug.log(`Calling /leaderboard endpoint (window=${window})...`);
+    const response = await api.get('/leaderboard', { params });
+    debug.log('/leaderboard response received:', response.data);
+    return { success: true, data: response.data };
+  } catch (error) {
+    console.error('/leaderboard endpoint error:', error.message);
+    if (error.response?.status === 401) {
+      debug.log('User not authenticated (401)');
+      return { success: false, notConnected: true };
+    }
+    if (error.response?.status === 403) {
+      debug.log('User not authorized for admin access (403)');
+      return { success: false, error: 'Access denied - admin privileges required' };
+    }
+    return { success: false, error: error.response?.data?.error || error.message };
+  }
+};
+
+// Fetch user's leaderboard contribution activities (admin only)
+export const fetchUserLeaderboardContrib = async (athleteId, window) => {
+  try {
+    debug.log(`Calling /users/${athleteId}/leaderboard_contrib endpoint (window=${window})...`);
+    const response = await api.get(`/users/${athleteId}/leaderboard_contrib`, {
+      params: { window },
+    });
+    debug.log(`/users/${athleteId}/leaderboard_contrib response received:`, response.data);
+    return { success: true, data: response.data };
+  } catch (error) {
+    console.error(`/users/${athleteId}/leaderboard_contrib endpoint error:`, error.message);
+    if (error.response?.status === 401) {
+      debug.log('User not authenticated (401)');
+      return { success: false, notConnected: true };
+    }
+    if (error.response?.status === 403) {
+      debug.log('User not authorized for admin access (403)');
+      return { success: false, error: 'Access denied - admin privileges required' };
+    }
+    return { success: false, error: error.response?.data?.error || error.message };
+  }
+};
+
 export default api;
