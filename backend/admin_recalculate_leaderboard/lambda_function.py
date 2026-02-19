@@ -128,7 +128,12 @@ def recalculate_leaderboard():
         );
         """
         result = exec_sql(check_table_sql)
-        table_exists = result.get("records", [[]])[0][0].get("booleanValue", False)
+        records = result.get("records", [])
+        
+        # Safely extract the boolean value
+        table_exists = False
+        if records and len(records) > 0 and len(records[0]) > 0:
+            table_exists = records[0][0].get("booleanValue", False)
         
         if not table_exists:
             error_msg = (
