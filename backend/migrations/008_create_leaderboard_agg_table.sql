@@ -4,7 +4,7 @@
 
 CREATE TABLE IF NOT EXISTS leaderboard_agg (
     id BIGSERIAL PRIMARY KEY,
-    window TEXT NOT NULL,                    -- 'week', 'month', 'year'
+    "window" TEXT NOT NULL,                  -- 'week', 'month', 'year'
     window_key TEXT NOT NULL,                -- canonical period id: 'week_2026-02-09', 'month_2026-02', 'year_2026'
     metric TEXT NOT NULL,                    -- 'distance' initially, extensible for future metrics
     activity_type TEXT NOT NULL,             -- 'all' initially, extensible for specific types
@@ -29,7 +29,7 @@ ON leaderboard_agg(window_key);
 
 -- Add comments for documentation
 COMMENT ON TABLE leaderboard_agg IS 'Pre-computed leaderboard aggregations by time window, updated incrementally by webhook processor';
-COMMENT ON COLUMN leaderboard_agg.window IS 'Time window type: week, month, or year';
+COMMENT ON COLUMN leaderboard_agg."window" IS 'Time window type: week, month, or year';
 COMMENT ON COLUMN leaderboard_agg.window_key IS 'Canonical period identifier for efficient querying';
 COMMENT ON COLUMN leaderboard_agg.metric IS 'Metric being aggregated (distance, etc.)';
 COMMENT ON COLUMN leaderboard_agg.activity_type IS 'Activity type filter (all, Run, Ride, etc.)';

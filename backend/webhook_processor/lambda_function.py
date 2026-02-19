@@ -416,7 +416,7 @@ def update_leaderboard_aggregates(athlete_id, activity):
         for window, window_key in window_keys.items():
             for agg_activity_type in agg_types:
                 sql = """
-                INSERT INTO leaderboard_agg (window, window_key, metric, activity_type, athlete_id, value, last_updated)
+                INSERT INTO leaderboard_agg ("window", window_key, metric, activity_type, athlete_id, value, last_updated)
                 VALUES (:window, :window_key, :metric, :act_type, :aid, :value, now())
                 ON CONFLICT (window_key, metric, activity_type, athlete_id)
                 DO UPDATE SET
