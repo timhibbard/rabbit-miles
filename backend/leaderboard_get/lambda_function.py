@@ -148,7 +148,14 @@ def query_leaderboard(window_key, metric, activity_type, limit, offset):
         athlete_id = int(record[0].get("longValue", 0))
         display_name = record[1].get("stringValue", "")
         profile_picture = record[2].get("stringValue", "") if not record[2].get("isNull") else ""
-        value = float(record[3].get("doubleValue", 0))
+        # NUMERIC fields are returned as stringValue by RDS Data API
+        value_field = record[3]
+        if "stringValue" in value_field:
+            value = float(value_field["stringValue"])
+        elif "doubleValue" in value_field:
+            value = float(value_field["doubleValue"])
+        else:
+            value = 0.0
         last_updated = record[4].get("stringValue", "")
         
         rows.append({
@@ -200,7 +207,14 @@ def get_user_rank(window_key, metric, activity_type, athlete_id):
     
     record = records[0]
     rank = int(record[0].get("longValue", 0))
-    value = float(record[1].get("doubleValue", 0))
+    # NUMERIC fields are returned as stringValue by RDS Data API
+    value_field = record[1]
+    if "stringValue" in value_field:
+        value = float(value_field["stringValue"])
+    elif "doubleValue" in value_field:
+        value = float(value_field["doubleValue"])
+    else:
+        value = 0.0
     
     return {
         "rank": rank,
