@@ -157,7 +157,7 @@ def recalculate_leaderboard():
         SELECT 
             a.athlete_id,
             a.strava_activity_id,
-            COALESCE(a.distance_on_trail, 0) as distance,
+            a.distance_on_trail as distance,
             a.start_date_local,
             a.type
         FROM activities a

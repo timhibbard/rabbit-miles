@@ -12,7 +12,7 @@
 import os
 import json
 import boto3
-from datetime import datetime
+from datetime import datetime, timedelta
 
 rds = boto3.client("rds-data")
 s3 = boto3.client("s3")
@@ -429,8 +429,6 @@ def get_window_keys(start_date_local):
         Dict with 'week', 'month', 'year' keys containing window_key strings
     """
     try:
-        from datetime import timedelta
-        
         # Parse ISO 8601 timestamp (can be with or without timezone)
         dt_str = start_date_local.replace('Z', '+00:00')
         if '+' not in dt_str and dt_str.count(':') == 2:
@@ -500,6 +498,13 @@ def update_leaderboard_after_trail_matching(activity_id, athlete_id, distance_on
             print(f"Activity {activity_id} has no start_date_local")
             return
         
+        # Calculate delta (new - old distance_on_trail)
+        distance_delta = distance_on_trail - old_distance_on_trail
+        
+        if distance_delta == 0:
+            print(f"No change in distance_on_trail for activity {activity_id}, skipping leaderboard update")
+            return
+        
         # Calculate window keys
         window_keys = get_window_keys(start_date_local)
         if not window_keys:
@@ -512,13 +517,6 @@ def update_leaderboard_after_trail_matching(activity_id, athlete_id, distance_on
             agg_types.append("foot")
         elif activity_type == "Ride":
             agg_types.append("bike")
-        
-        # Calculate delta (new - old distance_on_trail)
-        distance_delta = distance_on_trail - old_distance_on_trail
-        
-        if distance_delta == 0:
-            print(f"No change in distance_on_trail for activity {activity_id}, skipping leaderboard update")
-            return
         
         # Update aggregates for each window (week, month, year) and each activity type
         metric = "distance"
