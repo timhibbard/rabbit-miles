@@ -75,12 +75,14 @@ The admin-only leaderboard feature allows authorized administrators to view runn
    - leaderboard_get (new)
    - leaderboard_user_contrib (new)
    - update_user_settings (new)
+   - admin_recalculate_leaderboard (new)
    - me (updated to include show_on_leaderboards)
 
 3. Configure API Gateway routes:
    - GET /leaderboard → leaderboard_get
    - GET /users/:id/leaderboard_contrib → leaderboard_user_contrib
    - PATCH /user/settings → update_user_settings
+   - POST /admin/leaderboard/recalculate → admin_recalculate_leaderboard
 
 4. Set environment variables:
    - All leaderboard Lambdas need: `ADMIN_ATHLETE_IDS`, `APP_SECRET`, `FRONTEND_URL`, `DB_CLUSTER_ARN`, `DB_SECRET_ARN`
@@ -91,6 +93,7 @@ If new Lambda functions are added, update `.github/workflows/deploy-lambdas.yml`
 - leaderboard_get
 - leaderboard_user_contrib
 - update_user_settings
+- admin_recalculate_leaderboard
 
 ## Monitoring
 
@@ -147,6 +150,37 @@ fields @timestamp, athlete_id, error
 3. **Admin access**: Test admin endpoints return 403 for non-admin users
 4. **Opt-out behavior**: Verify opted-out users don't appear in rankings
 
+## Initial Setup
+
+### First-Time Deployment
+
+After deploying the leaderboard feature for the first time, the `leaderboard_agg` table will be empty. To populate it with historical data:
+
+1. **Ensure users have activities**: Use the admin backfill activities endpoint for each user if needed:
+   ```bash
+   POST /admin/users/{athlete_id}/backfill-activities
+   ```
+
+2. **Recalculate leaderboard aggregates**: Once activities exist in the database, run the recalculation:
+   ```bash
+   POST /admin/leaderboard/recalculate
+   ```
+
+3. **Verify data**: Check that aggregates were created:
+   ```sql
+   SELECT window_key, metric, activity_type, COUNT(*) as athlete_count, SUM(value) as total_distance
+   FROM leaderboard_agg
+   GROUP BY window_key, metric, activity_type
+   ORDER BY window_key DESC;
+   ```
+
+### Ongoing Operations
+
+After initial setup, the `webhook_processor` Lambda will automatically update aggregates as new activities are created, updated, or deleted via Strava webhooks. Manual recalculation should only be needed if:
+- Data corruption occurs
+- The table is accidentally truncated
+- Logic bugs are fixed and need re-application to historical data
+
 ## Troubleshooting
 
 ### Issue: Leaderboard not updating after new activities
@@ -174,13 +208,37 @@ fields @timestamp, athlete_id, error
 SELECT * FROM leaderboard_agg 
 WHERE athlete_id = <user_id> AND window_key = '<current_window_key>';
 
--- Recalculate from scratch if needed (admin action)
-SELECT athlete_id, SUM(distance) 
-FROM activities 
-WHERE start_date_local >= '<window_start>' 
-  AND start_date_local < '<window_end>'
-GROUP BY athlete_id;
+-- Check if there are any aggregates at all
+SELECT COUNT(*) FROM leaderboard_agg;
 ```
+
+**Recalculate Aggregates (Admin API)**:
+If the `leaderboard_agg` table is empty or has incorrect data, use the admin recalculation endpoint:
+
+```bash
+# Recalculate all aggregates from activities since Jan 1, 2026
+POST /admin/leaderboard/recalculate
+
+# Example using curl:
+curl -X POST https://api.rabbitmiles.com/admin/leaderboard/recalculate \
+  -H "Cookie: rm_session=<admin_session_cookie>" \
+  -H "Content-Type: application/json"
+
+# Response:
+{
+  "message": "Leaderboard recalculation completed successfully",
+  "activities_processed": 1234,
+  "athletes_processed": 56,
+  "duration_ms": 1234.56
+}
+```
+
+This endpoint:
+- Clears the `leaderboard_agg` table
+- Recalculates all aggregates from the `activities` table
+- Only includes activities from users with `show_on_leaderboards = true`
+- Processes activities from Jan 1, 2026 onwards
+- Admin-only access (requires session cookie and admin allowlist)
 
 ### Issue: Previous period top 3 not showing
 
