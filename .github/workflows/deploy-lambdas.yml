@@ -73,6 +73,15 @@ jobs:
             secret: LAMBDA_USER_UPDATE_ACTIVITIES
           - name: stats_period_summary
             secret: LAMBDA_STATS_PERIOD_SUMMARY
+          - name: leaderboard_get
+            secret: LAMBDA_LEADERBOARD_GET
+            needs_utils: true
+          - name: leaderboard_user_contrib
+            secret: LAMBDA_LEADERBOARD_USER_CONTRIB
+            needs_utils: true
+          - name: update_user_settings
+            secret: LAMBDA_UPDATE_USER_SETTINGS
+            needs_utils: true
     steps:
       - name: Checkout code
         uses: actions/checkout@v4

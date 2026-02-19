@@ -1,13 +1,15 @@
 import { useEffect, useState } from 'react';
-import { fetchMe, resetTrailMatching, updateActivities } from '../utils/api';
+import { fetchMe, resetTrailMatching, updateActivities, updateUserSettings } from '../utils/api';
 
 function Settings() {
   const [authState, setAuthState] = useState({
     loading: true,
     isConnected: false,
+    showOnLeaderboards: true,
   });
   const [resetting, setResetting] = useState(false);
   const [updatingActivities, setUpdatingActivities] = useState(false);
+  const [updatingLeaderboardSettings, setUpdatingLeaderboardSettings] = useState(false);
 
   useEffect(() => {
     // Check if user is connected via /me endpoint
@@ -16,6 +18,7 @@ function Settings() {
       setAuthState({
         loading: false,
         isConnected: result.success,
+        showOnLeaderboards: result.user?.show_on_leaderboards ?? true,
       });
     };
     
@@ -70,6 +73,27 @@ function Settings() {
       alert('An unexpected error occurred. Please try again.');
     } finally {
       setUpdatingActivities(false);
+    }
+  };
+
+  const handleToggleLeaderboards = async (newValue) => {
+    setUpdatingLeaderboardSettings(true);
+    try {
+      const result = await updateUserSettings({ show_on_leaderboards: newValue });
+      if (result.success) {
+        setAuthState(prev => ({
+          ...prev,
+          showOnLeaderboards: result.data.show_on_leaderboards
+        }));
+      } else {
+        alert(`Failed to update leaderboard settings: ${result.error || 'Unknown error'}`);
+        // Revert on error
+      }
+    } catch (error) {
+      console.error('Error updating leaderboard settings:', error);
+      alert('An unexpected error occurred. Please try again.');
+    } finally {
+      setUpdatingLeaderboardSettings(false);
     }
   };
 
@@ -206,6 +230,34 @@ function Settings() {
                 >
                   {resetting ? 'Resetting...' : 'Reset Trail Matching'}
                 </button>
+              </div>
+            </div>
+          )}
+
+          {/* Leaderboard Privacy Section */}
+          {authState.isConnected && (
+            <div className="p-6 border-b border-gray-200">
+              <h2 className="text-xl font-semibold text-gray-900 mb-4">
+                Leaderboard Privacy
+              </h2>
+              <div>
+                <p className="text-sm text-gray-600 mb-4">
+                  Control whether your activities appear on the leaderboard. When enabled, your running stats will be visible to other users on the leaderboard. When disabled, your activities will be private and won't contribute to leaderboard rankings.
+                </p>
+                <label className="flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={authState.showOnLeaderboards}
+                    onChange={(e) => handleToggleLeaderboards(e.target.checked)}
+                    disabled={updatingLeaderboardSettings}
+                    className="sr-only peer"
+                  />
+                  <div className="relative w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-orange-300 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-orange-600"></div>
+                  <span className="ms-3 text-sm font-medium text-gray-900">
+                    {authState.showOnLeaderboards ? 'Show on leaderboard' : 'Hidden from leaderboard'}
+                    {updatingLeaderboardSettings && ' (updating...)'}
+                  </span>
+                </label>
               </div>
             </div>
           )}
