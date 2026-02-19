@@ -355,6 +355,27 @@ export const updateUserActivities = async (athleteId) => {
   }
 };
 
+// Recalculate leaderboard aggregates (admin only)
+export const recalculateLeaderboard = async () => {
+  try {
+    debug.log('Calling POST /admin/leaderboard/recalculate endpoint...');
+    const response = await api.post('/admin/leaderboard/recalculate');
+    debug.log('POST /admin/leaderboard/recalculate response received:', response.data);
+    return { success: true, data: response.data };
+  } catch (error) {
+    console.error('POST /admin/leaderboard/recalculate endpoint error:', error.message);
+    if (error.response?.status === 401) {
+      debug.log('User not authenticated (401)');
+      return { success: false, notConnected: true };
+    }
+    if (error.response?.status === 403) {
+      debug.log('User not authorized for admin access (403)');
+      return { success: false, error: 'Access denied - admin privileges required' };
+    }
+    return { success: false, error: error.response?.data?.message || error.message };
+  }
+};
+
 // Fetch period summary with projections
 export const fetchPeriodSummary = async () => {
   try {
