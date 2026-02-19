@@ -17,6 +17,34 @@ This PR fixes the 500 error on the leaderboard endpoint by adding a way to popul
 
 ## What You Need To Do
 
+### Step 0: Run Database Migration (REQUIRED - 2 minutes)
+
+⚠️ **IMPORTANT**: Before creating the Lambda function, you MUST run the database migration to create the `leaderboard_agg` table.
+
+```bash
+# Replace with your actual values
+DB_CLUSTER_ARN="your-db-cluster-arn"
+DB_SECRET_ARN="your-db-secret-arn"
+
+# Run the migration
+aws rds-data execute-statement \
+  --resource-arn "$DB_CLUSTER_ARN" \
+  --secret-arn "$DB_SECRET_ARN" \
+  --database "postgres" \
+  --sql "$(cat backend/migrations/008_create_leaderboard_agg_table.sql)"
+```
+
+**Verify the table was created:**
+```bash
+aws rds-data execute-statement \
+  --resource-arn "$DB_CLUSTER_ARN" \
+  --secret-arn "$DB_SECRET_ARN" \
+  --database "postgres" \
+  --sql "SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename = 'leaderboard_agg';"
+```
+
+You should see `leaderboard_agg` in the results. If the recalculation fails with "relation 'leaderboard_agg' does not exist", this step was skipped.
+
 ### Step 1: Create the Lambda Function (5 minutes)
 
 ```bash
@@ -130,6 +158,11 @@ Leaderboard_Agg Table
 ```
 
 ## Troubleshooting
+
+### "relation 'leaderboard_agg' does not exist" error
+- **Cause**: The database migration has not been run
+- **Fix**: Go back to Step 0 and run the migration: `backend/migrations/008_create_leaderboard_agg_table.sql`
+- **Verify**: The recalculation Lambda now checks for the table and will provide a helpful error message if it's missing
 
 ### "not authenticated" error
 - Make sure you're using a valid admin session cookie

@@ -106,9 +106,10 @@ def recalculate_leaderboard():
     Recalculate leaderboard_agg table from all activities since Jan 1, 2026.
     
     This function:
-    1. Clears existing leaderboard_agg data
-    2. Queries all activities from users who have opted in
-    3. Recalculates aggregates for week, month, and year windows
+    1. Verifies leaderboard_agg table exists
+    2. Clears existing leaderboard_agg data
+    3. Queries all activities from users who have opted in
+    4. Recalculates aggregates for week, month, and year windows
     
     Returns:
         Tuple of (activities_processed, athletes_processed, error_message)
@@ -117,6 +118,33 @@ def recalculate_leaderboard():
     print(f"LOG - Recalculating leaderboard aggregates from {RECALC_START_DATE}")
     
     try:
+        # Step 0: Verify that leaderboard_agg table exists
+        print("LOG - Checking if leaderboard_agg table exists")
+        check_table_sql = """
+        SELECT EXISTS (
+            SELECT FROM information_schema.tables 
+            WHERE table_schema = 'public' 
+            AND table_name = 'leaderboard_agg'
+        );
+        """
+        result = exec_sql(check_table_sql)
+        records = result.get("records", [])
+        
+        # Safely extract the boolean value
+        table_exists = False
+        if records and len(records) > 0 and len(records[0]) > 0:
+            table_exists = records[0][0].get("booleanValue", False)
+        
+        if not table_exists:
+            error_msg = (
+                "The leaderboard_agg table does not exist. "
+                "Please run the database migration: backend/migrations/008_create_leaderboard_agg_table.sql"
+            )
+            print(f"ERROR: {error_msg}")
+            return 0, 0, error_msg
+        
+        print("LOG - leaderboard_agg table exists")
+        
         # Step 1: Clear existing leaderboard_agg data
         print("LOG - Clearing existing leaderboard_agg table")
         clear_sql = "DELETE FROM leaderboard_agg"
