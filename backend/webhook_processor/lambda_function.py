@@ -360,9 +360,8 @@ def update_leaderboard_aggregates(athlete_id, activity):
             print(f"User {athlete_id} has opted out of leaderboards, skipping aggregation")
             return True  # Not an error, just skip
         
-        # Extract activity data
+        # Extract activity data from Strava
         strava_activity_id = activity.get("id")
-        distance = float(activity.get("distance", 0))  # meters
         start_date_local = activity.get("start_date_local", "")
         activity_type = activity.get("type", "")
         
@@ -370,74 +369,17 @@ def update_leaderboard_aggregates(athlete_id, activity):
             print(f"WARNING: Activity {strava_activity_id} has no start_date_local, skipping aggregation")
             return True
         
-        # Calculate window keys
-        window_keys = get_window_keys(start_date_local)
-        if not window_keys:
-            print(f"WARNING: Failed to calculate window keys for activity {strava_activity_id}")
-            return True
+        # NOTE: Leaderboard uses distance_on_trail, which is calculated by trail matching,
+        # not by Strava webhooks. Strava webhooks update the activity data but preserve
+        # distance_on_trail. Therefore, webhook updates don't change leaderboard rankings.
+        # Trail matching will trigger leaderboard updates when distance_on_trail is calculated.
         
-        # Track distance metric
-        metric = "distance"
+        # For now, we skip leaderboard updates in webhook processor since:
+        # - New activities have distance_on_trail = NULL (no change to leaderboard)
+        # - Updated activities preserve distance_on_trail (no change to leaderboard)
+        # - Only trail matching changes distance_on_trail (handled separately)
         
-        # Determine aggregate activity types to update
-        # Map Strava activity types to aggregate categories
-        agg_types = ["all"]  # Always update 'all'
-        if activity_type in ["Run", "Walk"]:
-            agg_types.append("foot")
-        elif activity_type == "Ride":
-            agg_types.append("bike")
-        
-        # First, check if this activity was already counted in aggregates
-        # We need to get the old distance to adjust the aggregates properly
-        check_sql = """
-        SELECT distance FROM activities 
-        WHERE athlete_id = :aid AND strava_activity_id = :sid
-        """
-        check_params = [
-            {"name": "aid", "value": {"longValue": athlete_id}},
-            {"name": "sid", "value": {"longValue": strava_activity_id}},
-        ]
-        check_result = _exec_sql(check_sql, check_params)
-        
-        old_distance = 0
-        if check_result.get("records"):
-            old_dist_field = check_result["records"][0][0]
-            if "doubleValue" in old_dist_field:
-                old_distance = float(old_dist_field["doubleValue"])
-            elif "stringValue" in old_dist_field:
-                old_distance = float(old_dist_field["stringValue"])
-        
-        # Calculate delta (new distance - old distance)
-        # For new activities, old_distance is 0
-        # For updates, we adjust by the difference
-        distance_delta = distance - old_distance
-        
-        # Update aggregates for each window (week, month, year) and each activity type
-        for window, window_key in window_keys.items():
-            for agg_activity_type in agg_types:
-                sql = """
-                INSERT INTO leaderboard_agg ("window", window_key, metric, activity_type, athlete_id, value, last_updated)
-                VALUES (:window, :window_key, :metric, :act_type, :aid, :value, now())
-                ON CONFLICT (window_key, metric, activity_type, athlete_id)
-                DO UPDATE SET
-                    value = leaderboard_agg.value + EXCLUDED.value,
-                    last_updated = now()
-                """
-                
-                params = [
-                    {"name": "window", "value": {"stringValue": window}},
-                    {"name": "window_key", "value": {"stringValue": window_key}},
-                    {"name": "metric", "value": {"stringValue": metric}},
-                    {"name": "act_type", "value": {"stringValue": agg_activity_type}},
-                    {"name": "aid", "value": {"longValue": athlete_id}},
-                    {"name": "value", "value": {"doubleValue": distance_delta}},
-                ]
-                
-                _exec_sql(sql, params)
-                print(f"Updated leaderboard aggregate: {window_key} athlete={athlete_id} type={agg_activity_type} delta={distance_delta:.2f}m")
-        
-        duration_ms = (time.time() - start_time) * 1000
-        print(f"TELEMETRY - leaderboard_agg_update_complete athlete_id={athlete_id} activity_id={strava_activity_id} duration_ms={duration_ms:.2f}")
+        print(f"Skipping leaderboard update for activity {strava_activity_id} - will be updated after trail matching")
         return True
         
     except Exception as e:
@@ -471,7 +413,7 @@ def delete_leaderboard_aggregates(athlete_id, strava_activity_id):
             return True
         
         # Get the activity details before deletion to know what to subtract
-        sql = "SELECT distance, start_date_local, type FROM activities WHERE athlete_id = :aid AND strava_activity_id = :sid"
+        sql = "SELECT COALESCE(distance_on_trail, 0) as distance, start_date_local, type FROM activities WHERE athlete_id = :aid AND strava_activity_id = :sid"
         params = [
             {"name": "aid", "value": {"longValue": athlete_id}},
             {"name": "sid", "value": {"longValue": strava_activity_id}},

@@ -360,7 +360,7 @@ def calculate_trail_intersection(activity_coords, trail_segments, tolerance_mete
 def get_activity_from_db(activity_id):
     """Fetch activity details from database"""
     sql = """
-    SELECT athlete_id, strava_activity_id, polyline, moving_time, distance
+    SELECT athlete_id, strava_activity_id, polyline, moving_time, distance, COALESCE(distance_on_trail, 0) as distance_on_trail
     FROM activities
     WHERE id = :id
     """
@@ -378,13 +378,22 @@ def get_activity_from_db(activity_id):
     distance_str = record[4].get("stringValue")
     distance = float(distance_str) if distance_str else 0.0
     
+    distance_on_trail_field = record[5]
+    if "doubleValue" in distance_on_trail_field:
+        old_distance_on_trail = float(distance_on_trail_field["doubleValue"])
+    elif "stringValue" in distance_on_trail_field:
+        old_distance_on_trail = float(distance_on_trail_field["stringValue"])
+    else:
+        old_distance_on_trail = 0.0
+    
     return {
         "activity_id": activity_id,
         "athlete_id": int(record[0].get("longValue", 0)),
         "strava_activity_id": int(record[1].get("longValue", 0)),
         "polyline": record[2].get("stringValue", ""),
         "moving_time": int(record[3].get("longValue", 0)),
-        "distance": distance
+        "distance": distance,
+        "old_distance_on_trail": old_distance_on_trail
     }
 
 
@@ -409,6 +418,142 @@ def update_activity_trail_metrics(activity_id, distance_on_trail, time_on_trail)
     print(f"Updated activity {activity_id} with trail metrics")
 
 
+def get_window_keys(start_date_local):
+    """
+    Calculate window keys (week, month, year) for an activity based on its start date.
+    
+    Args:
+        start_date_local: ISO 8601 timestamp string (e.g., "2026-02-15T10:30:00Z")
+    
+    Returns:
+        Dict with 'week', 'month', 'year' keys containing window_key strings
+    """
+    try:
+        from datetime import timedelta
+        
+        # Parse ISO 8601 timestamp (can be with or without timezone)
+        dt_str = start_date_local.replace('Z', '+00:00')
+        if '+' not in dt_str and dt_str.count(':') == 2:
+            # No timezone info, assume UTC
+            dt = datetime.fromisoformat(dt_str)
+        else:
+            dt = datetime.fromisoformat(dt_str)
+        
+        # Week: ISO week format, Monday is start of week
+        # Window key format: week_YYYY-MM-DD (Monday of the week)
+        days_since_monday = dt.weekday()  # Monday is 0
+        monday = dt.replace(hour=0, minute=0, second=0, microsecond=0)
+        if days_since_monday > 0:
+            monday = monday - timedelta(days=days_since_monday)
+        week_key = f"week_{monday.strftime('%Y-%m-%d')}"
+        
+        # Month: YYYY-MM
+        month_key = f"month_{dt.strftime('%Y-%m')}"
+        
+        # Year: YYYY
+        year_key = f"year_{dt.strftime('%Y')}"
+        
+        return {
+            'week': week_key,
+            'month': month_key,
+            'year': year_key
+        }
+    except Exception as e:
+        print(f"ERROR: Failed to parse activity date {start_date_local}: {e}")
+        return None
+
+
+def update_leaderboard_after_trail_matching(activity_id, athlete_id, distance_on_trail, old_distance_on_trail):
+    """
+    Update leaderboard aggregates after trail matching completes.
+    
+    Args:
+        activity_id: The activity ID
+        athlete_id: The athlete ID
+        distance_on_trail: New distance_on_trail value (after matching)
+        old_distance_on_trail: Old distance_on_trail value (before matching, usually 0)
+    """
+    try:
+        # Check if user has opted in to leaderboards
+        check_sql = "SELECT show_on_leaderboards FROM users WHERE athlete_id = :aid"
+        check_params = [{"name": "aid", "value": {"longValue": athlete_id}}]
+        check_result = _exec_sql(check_sql, check_params)
+        
+        if not check_result.get("records") or not check_result["records"][0][0].get("booleanValue", False):
+            print(f"User {athlete_id} has opted out of leaderboards, skipping aggregation")
+            return
+        
+        # Get activity details for window calculation
+        sql = "SELECT start_date_local, type FROM activities WHERE id = :id"
+        params = [{"name": "id", "value": {"longValue": activity_id}}]
+        result = _exec_sql(sql, params)
+        
+        if not result.get("records"):
+            print(f"Activity {activity_id} not found")
+            return
+        
+        record = result["records"][0]
+        start_date_local = record[0].get("stringValue", "")
+        activity_type = record[1].get("stringValue", "")
+        
+        if not start_date_local:
+            print(f"Activity {activity_id} has no start_date_local")
+            return
+        
+        # Calculate window keys
+        window_keys = get_window_keys(start_date_local)
+        if not window_keys:
+            print(f"Failed to calculate window keys for activity {activity_id}")
+            return
+        
+        # Determine aggregate activity types to update
+        agg_types = ["all"]  # Always update 'all'
+        if activity_type in ["Run", "Walk"]:
+            agg_types.append("foot")
+        elif activity_type == "Ride":
+            agg_types.append("bike")
+        
+        # Calculate delta (new - old distance_on_trail)
+        distance_delta = distance_on_trail - old_distance_on_trail
+        
+        if distance_delta == 0:
+            print(f"No change in distance_on_trail for activity {activity_id}, skipping leaderboard update")
+            return
+        
+        # Update aggregates for each window (week, month, year) and each activity type
+        metric = "distance"
+        for window, window_key in window_keys.items():
+            for agg_activity_type in agg_types:
+                sql = """
+                INSERT INTO leaderboard_agg ("window", window_key, metric, activity_type, athlete_id, value, last_updated)
+                VALUES (:window, :window_key, :metric, :act_type, :aid, :value, now())
+                ON CONFLICT (window_key, metric, activity_type, athlete_id)
+                DO UPDATE SET
+                    value = leaderboard_agg.value + EXCLUDED.value,
+                    last_updated = now()
+                """
+                
+                params = [
+                    {"name": "window", "value": {"stringValue": window}},
+                    {"name": "window_key", "value": {"stringValue": window_key}},
+                    {"name": "metric", "value": {"stringValue": metric}},
+                    {"name": "act_type", "value": {"stringValue": agg_activity_type}},
+                    {"name": "aid", "value": {"longValue": athlete_id}},
+                    {"name": "value", "value": {"doubleValue": distance_delta}},
+                ]
+                
+                _exec_sql(sql, params)
+                print(f"Updated leaderboard aggregate after trail matching: {window_key} athlete={athlete_id} type={agg_activity_type} delta={distance_delta:.2f}m")
+        
+        print(f"Leaderboard updated for activity {activity_id}")
+        
+    except Exception as e:
+        print(f"ERROR: Failed to update leaderboard for activity {activity_id}: {e}")
+        import traceback
+        traceback.print_exc()
+        # Don't fail the trail matching if leaderboard update fails
+
+
 def match_activity(activity_id):
     """Match a single activity against trail data"""
     print(f"Matching activity {activity_id} against trail")
@@ -419,11 +564,16 @@ def match_activity(activity_id):
     if not activity:
         raise ValueError(f"Activity {activity_id} not found in database")
     
+    athlete_id = activity.get("athlete_id")
+    old_distance_on_trail = activity.get("old_distance_on_trail", 0.0)
+    
     polyline = activity.get("polyline", "")
     if not polyline:
         print(f"Activity {activity_id} has no polyline data, skipping")
         # Still update last_matched to indicate we checked
         update_activity_trail_metrics(activity_id, 0.0, 0)
+        # Update leaderboard if distance_on_trail changed
+        update_leaderboard_after_trail_matching(activity_id, athlete_id, 0.0, old_distance_on_trail)
         return {
             "activity_id": activity_id,
             "distance_on_trail": 0.0,
@@ -455,6 +605,9 @@ def match_activity(activity_id):
         # Update database
         update_activity_trail_metrics(activity_id, distance_on_trail, time_on_trail)
         
+        # Update leaderboard aggregates
+        update_leaderboard_after_trail_matching(activity_id, athlete_id, distance_on_trail, old_distance_on_trail)
+        
         print(f"Activity {activity_id} matched: {distance_on_trail:.2f}m, {time_on_trail}s on trail")
         
         return {
@@ -468,6 +621,8 @@ def match_activity(activity_id):
         print(f"Failed to match activity {activity_id} against trail: {e}")
         print("Setting distance_on_trail=0, time_on_trail=0, and updating last_matched")
         update_activity_trail_metrics(activity_id, 0.0, 0)
+        # Update leaderboard
+        update_leaderboard_after_trail_matching(activity_id, athlete_id, 0.0, old_distance_on_trail)
         return {
             "activity_id": activity_id,
             "distance_on_trail": 0.0,
