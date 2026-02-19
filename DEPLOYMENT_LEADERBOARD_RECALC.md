@@ -14,6 +14,40 @@ A new Lambda function `admin_recalculate_leaderboard` recalculates all leaderboa
 
 ## Deployment Steps
 
+### 0. Run Database Migration (REQUIRED - FIRST)
+
+⚠️ **CRITICAL**: The `leaderboard_agg` table MUST exist before running the recalculation Lambda. Run this migration first:
+
+```bash
+# Replace with your actual values
+DB_CLUSTER_ARN="your-db-cluster-arn"
+DB_SECRET_ARN="your-db-secret-arn"
+
+# Run the migration to create the leaderboard_agg table
+aws rds-data execute-statement \
+  --resource-arn "$DB_CLUSTER_ARN" \
+  --secret-arn "$DB_SECRET_ARN" \
+  --database "postgres" \
+  --sql "$(cat backend/migrations/008_create_leaderboard_agg_table.sql)"
+```
+
+**Why is this required?**
+The recalculation Lambda attempts to insert data into the `leaderboard_agg` table. If the table doesn't exist, you'll get the error:
+```
+ERROR: relation "leaderboard_agg" does not exist
+```
+
+**Verify the migration succeeded:**
+```bash
+aws rds-data execute-statement \
+  --resource-arn "$DB_CLUSTER_ARN" \
+  --secret-arn "$DB_SECRET_ARN" \
+  --database "postgres" \
+  --sql "SELECT COUNT(*) FROM leaderboard_agg;"
+```
+
+If the table exists, this will return `0` (the table is empty, which is expected before recalculation).
+
 ### 1. Create the Lambda Function in AWS
 
 ```bash
