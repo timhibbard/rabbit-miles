@@ -82,6 +82,9 @@ jobs:
           - name: update_user_settings
             secret: LAMBDA_UPDATE_USER_SETTINGS
             needs_utils: true
+          - name: admin_recalculate_leaderboard
+            secret: LAMBDA_ADMIN_RECALCULATE_LEADERBOARD
+            needs_utils: true
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
