@@ -245,8 +245,13 @@ def recalculate_leaderboard():
             window = window_key.split('_')[0]
             
             insert_sql = """
-            INSERT INTO leaderboard_agg (window, window_key, metric, activity_type, athlete_id, value, last_updated)
+            INSERT INTO leaderboard_agg ("window", window_key, metric, activity_type, athlete_id, value, last_updated)
             VALUES (:window, :window_key, :metric, :activity_type, :athlete_id, :value, now())
+            ON CONFLICT (window_key, metric, activity_type, athlete_id)
+            DO UPDATE SET
+                "window" = EXCLUDED."window",
+                value = EXCLUDED.value,
+                last_updated = now()
             """
             
             insert_params = [
