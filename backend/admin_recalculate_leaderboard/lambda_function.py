@@ -157,13 +157,14 @@ def recalculate_leaderboard():
         SELECT 
             a.athlete_id,
             a.strava_activity_id,
-            a.distance,
+            a.distance_on_trail as distance,
             a.start_date_local,
             a.type
         FROM activities a
         JOIN users u ON a.athlete_id = u.athlete_id
         WHERE u.show_on_leaderboards = true
           AND a.start_date_local >= CAST(:start_date AS TIMESTAMP)
+          AND a.distance_on_trail IS NOT NULL
         ORDER BY a.athlete_id, a.start_date_local
         """
         
