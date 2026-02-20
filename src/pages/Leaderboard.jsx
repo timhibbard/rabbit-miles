@@ -8,7 +8,8 @@ function Leaderboard() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [currentUserId, setCurrentUserId] = useState(null);
   const [selectedWindow, setSelectedWindow] = useState('week');
-  const [selectedActivityType, setSelectedActivityType] = useState('foot'); // Default to Foot only
+  const [selectedBike, setSelectedBike] = useState(false);
+  const [selectedFoot, setSelectedFoot] = useState(true); // Default to Foot only
   const [leaderboardData, setLeaderboardData] = useState(null);
   const [error, setError] = useState(null);
 
@@ -41,12 +42,20 @@ function Leaderboard() {
   useEffect(() => {
     if (!isAdmin) return;
     
+    // Compute activity_type based on selected filters
+    const getActivityType = () => {
+      if (selectedBike && selectedFoot) return 'all';
+      if (selectedBike) return 'bike';
+      if (selectedFoot) return 'foot';
+      return 'all'; // If neither selected, show all
+    };
+    
     const loadLeaderboard = async () => {
       setError(null);
       try {
         const result = await fetchLeaderboard(selectedWindow, {
           user_id: currentUserId,
-          activity_type: selectedActivityType,
+          activity_type: getActivityType(),
         });
         
         if (result.success) {
@@ -54,7 +63,7 @@ function Leaderboard() {
           console.log('TELEMETRY - leaderboard_page_view', {
             window: selectedWindow,
             window_key: result.data.window_key,
-            activity_type: selectedActivityType,
+            activity_type: getActivityType(),
           });
         } else {
           setError(result.error || 'Failed to load leaderboard');
@@ -66,7 +75,7 @@ function Leaderboard() {
     };
     
     loadLeaderboard();
-  }, [selectedWindow, selectedActivityType, isAdmin, currentUserId]);
+  }, [selectedWindow, selectedBike, selectedFoot, isAdmin, currentUserId]);
 
   // Format distance in meters to miles
   const formatDistance = (meters) => {
@@ -84,9 +93,9 @@ function Leaderboard() {
   // Toggle activity type filter (Bike or Foot)
   const toggleActivityType = (type) => {
     if (type === 'bike') {
-      setSelectedActivityType(selectedActivityType === 'bike' ? 'all' : 'bike');
+      setSelectedBike(!selectedBike);
     } else if (type === 'foot') {
-      setSelectedActivityType(selectedActivityType === 'foot' ? 'all' : 'foot');
+      setSelectedFoot(!selectedFoot);
     }
   };
 
@@ -114,7 +123,7 @@ function Leaderboard() {
             🏆 Leaderboard (Admin Preview)
           </h1>
           <p className="text-gray-600">
-            View runner rankings by time period. This feature is currently in admin-only testing mode.
+            View athlete rankings by time period. This feature is currently in admin-only testing mode.
           </p>
         </div>
 
@@ -169,7 +178,7 @@ function Leaderboard() {
               <button
                 onClick={() => toggleActivityType('bike')}
                 className={`px-4 py-2 text-sm font-medium rounded-l-lg transition-colors ${
-                  selectedActivityType === 'bike' || selectedActivityType === 'all'
+                  selectedBike
                     ? 'bg-orange-600 text-white'
                     : 'bg-white text-gray-700 hover:bg-gray-50'
                 }`}
@@ -179,7 +188,7 @@ function Leaderboard() {
               <button
                 onClick={() => toggleActivityType('foot')}
                 className={`px-4 py-2 text-sm font-medium rounded-r-lg border-l transition-colors ${
-                  selectedActivityType === 'foot' || selectedActivityType === 'all'
+                  selectedFoot
                     ? 'bg-orange-600 text-white border-orange-600'
                     : 'bg-white text-gray-700 hover:bg-gray-50 border-gray-300'
                 }`}
@@ -263,7 +272,7 @@ function Leaderboard() {
                         Rank
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Runner
+                        Athlete
                       </th>
                       <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Distance (miles)
@@ -331,7 +340,7 @@ function Leaderboard() {
 
             {/* Stats Summary */}
             <div className="mt-4 text-sm text-gray-600 text-center">
-              Showing {leaderboardData.total_returned} runners
+              Showing {leaderboardData.total_returned} athletes
               {leaderboardData.cursor && ' • More results available'}
             </div>
           </div>
