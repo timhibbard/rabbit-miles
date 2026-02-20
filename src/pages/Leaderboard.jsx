@@ -2,6 +2,9 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { fetchMe, fetchLeaderboard } from '../utils/api';
 
+// Number of top athletes to display in current rankings
+const TOP_ATHLETES_COUNT = 5;
+
 function Leaderboard() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
@@ -283,7 +286,7 @@ function Leaderboard() {
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
-                    {leaderboardData.rows.slice(0, 5).map((entry) => (
+                    {leaderboardData.rows.slice(0, TOP_ATHLETES_COUNT).map((entry) => (
                       <tr
                         key={entry.user.id}
                         className={entry.user.id === currentUserId ? 'bg-blue-50' : 'hover:bg-gray-50'}
@@ -340,7 +343,7 @@ function Leaderboard() {
 
             {/* Stats Summary */}
             <div className="mt-3 sm:mt-4 text-xs sm:text-sm text-gray-600 text-center">
-              Showing top 5 athletes
+              Showing top {Math.min(TOP_ATHLETES_COUNT, leaderboardData.rows?.length || 0)} athletes
               {leaderboardData.cursor && ' • More results available'}
             </div>
           </div>
