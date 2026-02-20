@@ -116,27 +116,27 @@ function Leaderboard() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="max-w-7xl mx-auto px-2 sm:px-4 lg:px-8 py-4 sm:py-8">
         {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">
+        <div className="mb-4 sm:mb-8">
+          <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-2">
             🏆 Leaderboard (Admin Preview)
           </h1>
-          <p className="text-gray-600">
+          <p className="text-sm sm:text-base text-gray-600">
             View athlete rankings by time period. This feature is currently in admin-only testing mode.
           </p>
         </div>
 
         {/* Window Selector */}
-        <div className="mb-6">
-          <div className="bg-white rounded-lg shadow p-4">
+        <div className="mb-4 sm:mb-6">
+          <div className="bg-white rounded-lg shadow p-3 sm:p-4">
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Time Period
             </label>
-            <div className="flex space-x-2">
+            <div className="flex flex-wrap gap-2">
               <button
                 onClick={() => setSelectedWindow('week')}
-                className={`px-4 py-2 rounded-md font-medium ${
+                className={`px-3 sm:px-4 py-2 rounded-md font-medium text-sm ${
                   selectedWindow === 'week'
                     ? 'bg-orange-600 text-white'
                     : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
@@ -146,7 +146,7 @@ function Leaderboard() {
               </button>
               <button
                 onClick={() => setSelectedWindow('month')}
-                className={`px-4 py-2 rounded-md font-medium ${
+                className={`px-3 sm:px-4 py-2 rounded-md font-medium text-sm ${
                   selectedWindow === 'month'
                     ? 'bg-orange-600 text-white'
                     : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
@@ -156,7 +156,7 @@ function Leaderboard() {
               </button>
               <button
                 onClick={() => setSelectedWindow('year')}
-                className={`px-4 py-2 rounded-md font-medium ${
+                className={`px-3 sm:px-4 py-2 rounded-md font-medium text-sm ${
                   selectedWindow === 'year'
                     ? 'bg-orange-600 text-white'
                     : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
@@ -169,15 +169,15 @@ function Leaderboard() {
         </div>
 
         {/* Activity Type Filter */}
-        <div className="mb-6">
-          <div className="bg-white rounded-lg shadow p-4">
+        <div className="mb-4 sm:mb-6">
+          <div className="bg-white rounded-lg shadow p-3 sm:p-4">
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Activity Type
             </label>
             <div className="inline-flex rounded-lg border border-gray-300 bg-white">
               <button
                 onClick={() => toggleActivityType('bike')}
-                className={`px-4 py-2 text-sm font-medium rounded-l-lg transition-colors ${
+                className={`px-3 sm:px-4 py-2 text-sm font-medium rounded-l-lg transition-colors ${
                   selectedBike
                     ? 'bg-orange-600 text-white'
                     : 'bg-white text-gray-700 hover:bg-gray-50'
@@ -187,7 +187,7 @@ function Leaderboard() {
               </button>
               <button
                 onClick={() => toggleActivityType('foot')}
-                className={`px-4 py-2 text-sm font-medium rounded-r-lg border-l transition-colors ${
+                className={`px-3 sm:px-4 py-2 text-sm font-medium rounded-r-lg border-l transition-colors ${
                   selectedFoot
                     ? 'bg-orange-600 text-white border-orange-600'
                     : 'bg-white text-gray-700 hover:bg-gray-50 border-gray-300'
@@ -201,21 +201,21 @@ function Leaderboard() {
 
         {/* Error Message */}
         {error && (
-          <div className="mb-6 bg-red-50 border border-red-200 rounded-lg p-4">
-            <p className="text-red-800">{error}</p>
+          <div className="mb-4 sm:mb-6 bg-red-50 border border-red-200 rounded-lg p-3 sm:p-4">
+            <p className="text-red-800 text-sm sm:text-base">{error}</p>
           </div>
         )}
 
         {/* Previous Period Top 3 */}
         {leaderboardData && leaderboardData.previous_top3 && leaderboardData.previous_top3.length > 0 && (
-          <div className="mb-8">
-            <h2 className="text-xl font-semibold text-gray-900 mb-4">
+          <div className="mb-6 sm:mb-8">
+            <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-3 sm:mb-4">
               🥇 Last {selectedWindow === 'week' ? 'Week' : selectedWindow === 'month' ? 'Month' : 'Year'}'s Top 3
             </h2>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 sm:gap-4">
               {leaderboardData.previous_top3.map((entry, idx) => (
-                <div key={entry.user.id} className="bg-white rounded-lg shadow-md p-6 text-center">
-                  <div className="text-4xl mb-2">
+                <div key={entry.user.id} className="bg-white rounded-lg shadow-md p-4 sm:p-6 text-center">
+                  <div className="text-3xl sm:text-4xl mb-2">
                     {idx === 0 ? '🥇' : idx === 1 ? '🥈' : '🥉'}
                   </div>
                   <div className="flex items-center justify-center mb-2">
@@ -223,16 +223,16 @@ function Leaderboard() {
                       <img
                         src={entry.user.avatar_url}
                         alt={entry.user.display_name}
-                        className="w-16 h-16 rounded-full"
+                        className="w-12 h-12 sm:w-16 sm:h-16 rounded-full"
                       />
                     ) : (
-                      <div className="w-16 h-16 rounded-full bg-gray-200 flex items-center justify-center">
-                        <span className="text-2xl text-gray-500">👤</span>
+                      <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-gray-200 flex items-center justify-center">
+                        <span className="text-xl sm:text-2xl text-gray-500">👤</span>
                       </div>
                     )}
                   </div>
-                  <p className="font-semibold text-gray-900">{entry.user.display_name}</p>
-                  <p className="text-2xl font-bold text-orange-600">{formatDistance(entry.value)} mi</p>
+                  <p className="font-semibold text-gray-900 text-sm sm:text-base">{entry.user.display_name}</p>
+                  <p className="text-xl sm:text-2xl font-bold text-orange-600">{formatDistance(entry.value)} mi</p>
                 </div>
               ))}
             </div>
@@ -242,21 +242,21 @@ function Leaderboard() {
         {/* Current Leaderboard */}
         {leaderboardData && (
           <div>
-            <h2 className="text-xl font-semibold text-gray-900 mb-4">
+            <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-3 sm:mb-4">
               Current Rankings ({leaderboardData.window_key})
             </h2>
             
             {/* My Rank (Sticky) */}
             {leaderboardData.my_rank && (
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 sm:p-4 mb-3 sm:mb-4">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-sm text-blue-600 font-medium">Your Rank</p>
-                    <p className="text-2xl font-bold text-blue-900">#{leaderboardData.my_rank.rank}</p>
+                    <p className="text-xs sm:text-sm text-blue-600 font-medium">Your Rank</p>
+                    <p className="text-xl sm:text-2xl font-bold text-blue-900">#{leaderboardData.my_rank.rank}</p>
                   </div>
                   <div className="text-right">
-                    <p className="text-sm text-blue-600 font-medium">Your Total</p>
-                    <p className="text-2xl font-bold text-blue-900">{formatDistance(leaderboardData.my_rank.value)} mi</p>
+                    <p className="text-xs sm:text-sm text-blue-600 font-medium">Your Total</p>
+                    <p className="text-xl sm:text-2xl font-bold text-blue-900">{formatDistance(leaderboardData.my_rank.value)} mi</p>
                   </div>
                 </div>
               </div>
@@ -268,27 +268,27 @@ function Leaderboard() {
                 <table className="min-w-full divide-y divide-gray-200">
                   <thead className="bg-gray-50">
                     <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-2 sm:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Rank
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-2 sm:px-6 py-2 sm:py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Athlete
                       </th>
-                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-2 sm:px-6 py-2 sm:py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Distance (miles)
                       </th>
-                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-2 sm:px-6 py-2 sm:py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Last Updated
                       </th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
-                    {leaderboardData.rows.map((entry) => (
+                    {leaderboardData.rows.slice(0, 5).map((entry) => (
                       <tr
                         key={entry.user.id}
                         className={entry.user.id === currentUserId ? 'bg-blue-50' : 'hover:bg-gray-50'}
                       >
-                        <td className="px-6 py-4 whitespace-nowrap">
+                        <td className="px-2 sm:px-6 py-2 sm:py-4 whitespace-nowrap">
                           <div className="text-sm font-bold text-gray-900">
                             #{entry.rank}
                             {entry.rank === 1 && ' 🥇'}
@@ -296,16 +296,16 @@ function Leaderboard() {
                             {entry.rank === 3 && ' 🥉'}
                           </div>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
+                        <td className="px-2 sm:px-6 py-2 sm:py-4 whitespace-nowrap">
                           <div className="flex items-center">
                             {entry.user.avatar_url ? (
                               <img
                                 src={entry.user.avatar_url}
                                 alt={entry.user.display_name}
-                                className="w-10 h-10 rounded-full mr-3"
+                                className="w-8 h-8 sm:w-10 sm:h-10 rounded-full mr-2 sm:mr-3"
                               />
                             ) : (
-                              <div className="w-10 h-10 rounded-full bg-gray-200 flex items-center justify-center mr-3">
+                              <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-gray-200 flex items-center justify-center mr-2 sm:mr-3">
                                 <span className="text-gray-500">👤</span>
                               </div>
                             )}
@@ -313,18 +313,18 @@ function Leaderboard() {
                               <div className="text-sm font-medium text-gray-900">
                                 {entry.user.display_name}
                               </div>
-                              <div className="text-sm text-gray-500">
+                              <div className="text-xs sm:text-sm text-gray-500">
                                 ID: {entry.user.id}
                               </div>
                             </div>
                           </div>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-right">
-                          <div className="text-lg font-bold text-orange-600">
+                        <td className="px-2 sm:px-6 py-2 sm:py-4 whitespace-nowrap text-right">
+                          <div className="text-base sm:text-lg font-bold text-orange-600">
                             {formatDistance(entry.value)}
                           </div>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-right text-sm text-gray-500">
+                        <td className="px-2 sm:px-6 py-2 sm:py-4 whitespace-nowrap text-right text-xs sm:text-sm text-gray-500">
                           {formatDate(entry.last_updated)}
                         </td>
                       </tr>
@@ -332,15 +332,15 @@ function Leaderboard() {
                   </tbody>
                 </table>
               ) : (
-                <div className="p-8 text-center text-gray-500">
+                <div className="p-6 sm:p-8 text-center text-gray-500 text-sm sm:text-base">
                   No leaderboard data available for this period yet.
                 </div>
               )}
             </div>
 
             {/* Stats Summary */}
-            <div className="mt-4 text-sm text-gray-600 text-center">
-              Showing {leaderboardData.total_returned} athletes
+            <div className="mt-3 sm:mt-4 text-xs sm:text-sm text-gray-600 text-center">
+              Showing top 5 athletes
               {leaderboardData.cursor && ' • More results available'}
             </div>
           </div>
