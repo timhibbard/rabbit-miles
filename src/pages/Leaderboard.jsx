@@ -129,7 +129,13 @@ function Leaderboard() {
             <div className="bg-white rounded-lg shadow-md p-3 sm:p-4">
               <div className="flex flex-wrap items-center justify-around gap-2 sm:gap-4">
                 {leaderboardData.previous_top3.map((entry, idx) => (
-                  <div key={entry.user.id} className="flex items-center gap-2 sm:gap-3">
+                  <a
+                    key={entry.user.id}
+                    href={`https://www.strava.com/athletes/${entry.user.id}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-2 sm:gap-3 hover:opacity-80 transition-opacity"
+                  >
                     <div className="text-2xl sm:text-3xl">
                       {idx === 0 ? '🥇' : idx === 1 ? '🥈' : '🥉'}
                     </div>
@@ -148,7 +154,7 @@ function Leaderboard() {
                       <p className="font-semibold text-gray-900 text-xs sm:text-sm">{entry.user.display_name}</p>
                       <p className="text-sm sm:text-base font-bold text-orange-600">{formatDistance(entry.value)} mi</p>
                     </div>
-                  </div>
+                  </a>
                 ))}
               </div>
             </div>
@@ -193,9 +199,6 @@ function Leaderboard() {
                       <th className="px-2 sm:px-6 py-2 sm:py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
                         Distance (miles)
                       </th>
-                      <th className="px-2 sm:px-6 py-2 sm:py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Last Updated
-                      </th>
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
@@ -213,7 +216,12 @@ function Leaderboard() {
                           </div>
                         </td>
                         <td className="px-2 sm:px-6 py-2 sm:py-4 whitespace-nowrap">
-                          <div className="flex items-center">
+                          <a
+                            href={`https://www.strava.com/athletes/${entry.user.id}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex items-center hover:opacity-80 transition-opacity"
+                          >
                             {entry.user.avatar_url ? (
                               <img
                                 src={entry.user.avatar_url}
@@ -229,19 +237,16 @@ function Leaderboard() {
                               <div className="text-sm font-medium text-gray-900">
                                 {entry.user.display_name}
                               </div>
-                              <div className="text-xs sm:text-sm text-gray-500">
-                                ID: {entry.user.id}
-                              </div>
                             </div>
-                          </div>
+                          </a>
                         </td>
                         <td className="px-2 sm:px-6 py-2 sm:py-4 whitespace-nowrap text-right">
-                          <div className="text-base sm:text-lg font-bold text-orange-600">
+                          <div 
+                            className="text-base sm:text-lg font-bold text-orange-600"
+                            title={`Last updated: ${formatDate(entry.last_updated)}`}
+                          >
                             {formatDistance(entry.value)}
                           </div>
-                        </td>
-                        <td className="px-2 sm:px-6 py-2 sm:py-4 whitespace-nowrap text-right text-xs sm:text-sm text-gray-500">
-                          {formatDate(entry.last_updated)}
                         </td>
                       </tr>
                     ))}
