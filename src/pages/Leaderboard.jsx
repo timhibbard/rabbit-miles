@@ -158,6 +158,18 @@ function Leaderboard() {
               >
                 Compact
               </button>
+              <button
+                onClick={() => handleLayoutChange('4')}
+                className={`underline hover:text-orange-600 ${layout === '4' ? 'font-bold text-orange-600' : ''}`}
+              >
+                Filters Below
+              </button>
+              <button
+                onClick={() => handleLayoutChange('5')}
+                className={`underline hover:text-orange-600 ${layout === '5' ? 'font-bold text-orange-600' : ''}`}
+              >
+                Compact Top 3
+              </button>
             </div>
           )}
         </div>
@@ -376,6 +388,9 @@ function Leaderboard() {
           </div>
         )}
 
+        {/* Layout 4 will not show filters here - they will be after current leaderboard */}
+        {/* Layout 5 will not show filters here - they will be after previous top 3 */}
+
         {/* Error Message */}
         {error && (
           <div className="mb-4 sm:mb-6 bg-red-50 border border-red-200 rounded-lg p-3 sm:p-4">
@@ -389,30 +404,61 @@ function Leaderboard() {
             <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-3 sm:mb-4">
               🥇 Last {selectedWindow === 'week' ? 'Week' : selectedWindow === 'month' ? 'Month' : 'Year'}'s Top 3
             </h2>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 sm:gap-4">
-              {leaderboardData.previous_top3.map((entry, idx) => (
-                <div key={entry.user.id} className="bg-white rounded-lg shadow-md p-4 sm:p-6 text-center">
-                  <div className="text-3xl sm:text-4xl mb-2">
-                    {idx === 0 ? '🥇' : idx === 1 ? '🥈' : '🥉'}
-                  </div>
-                  <div className="flex items-center justify-center mb-2">
-                    {entry.user.avatar_url ? (
-                      <img
-                        src={entry.user.avatar_url}
-                        alt={entry.user.display_name}
-                        className="w-12 h-12 sm:w-16 sm:h-16 rounded-full"
-                      />
-                    ) : (
-                      <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-gray-200 flex items-center justify-center">
-                        <span className="text-xl sm:text-2xl text-gray-500">👤</span>
+            {/* Layout 5: Single line display */}
+            {layout === '5' ? (
+              <div className="bg-white rounded-lg shadow-md p-3 sm:p-4">
+                <div className="flex flex-wrap items-center justify-around gap-2 sm:gap-4">
+                  {leaderboardData.previous_top3.map((entry, idx) => (
+                    <div key={entry.user.id} className="flex items-center gap-2 sm:gap-3">
+                      <div className="text-2xl sm:text-3xl">
+                        {idx === 0 ? '🥇' : idx === 1 ? '🥈' : '🥉'}
                       </div>
-                    )}
-                  </div>
-                  <p className="font-semibold text-gray-900 text-sm sm:text-base">{entry.user.display_name}</p>
-                  <p className="text-xl sm:text-2xl font-bold text-orange-600">{formatDistance(entry.value)} mi</p>
+                      {entry.user.avatar_url ? (
+                        <img
+                          src={entry.user.avatar_url}
+                          alt={entry.user.display_name}
+                          className="w-8 h-8 sm:w-10 sm:h-10 rounded-full"
+                        />
+                      ) : (
+                        <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-gray-200 flex items-center justify-center">
+                          <span className="text-sm sm:text-base text-gray-500">👤</span>
+                        </div>
+                      )}
+                      <div className="text-left">
+                        <p className="font-semibold text-gray-900 text-xs sm:text-sm">{entry.user.display_name}</p>
+                        <p className="text-sm sm:text-base font-bold text-orange-600">{formatDistance(entry.value)} mi</p>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              </div>
+            ) : (
+              /* Default grid layout for all other layouts */
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 sm:gap-4">
+                {leaderboardData.previous_top3.map((entry, idx) => (
+                  <div key={entry.user.id} className="bg-white rounded-lg shadow-md p-4 sm:p-6 text-center">
+                    <div className="text-3xl sm:text-4xl mb-2">
+                      {idx === 0 ? '🥇' : idx === 1 ? '🥈' : '🥉'}
+                    </div>
+                    <div className="flex items-center justify-center mb-2">
+                      {entry.user.avatar_url ? (
+                        <img
+                          src={entry.user.avatar_url}
+                          alt={entry.user.display_name}
+                          className="w-12 h-12 sm:w-16 sm:h-16 rounded-full"
+                        />
+                      ) : (
+                        <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-gray-200 flex items-center justify-center">
+                          <span className="text-xl sm:text-2xl text-gray-500">👤</span>
+                        </div>
+                      )}
+                    </div>
+                    <p className="font-semibold text-gray-900 text-sm sm:text-base">{entry.user.display_name}</p>
+                    <p className="text-xl sm:text-2xl font-bold text-orange-600">{formatDistance(entry.value)} mi</p>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
@@ -519,6 +565,166 @@ function Leaderboard() {
             <div className="mt-3 sm:mt-4 text-xs sm:text-sm text-gray-600 text-center">
               Showing top {Math.min(TOP_ATHLETES_COUNT, leaderboardData.rows?.length || 0)} athletes
               {leaderboardData.cursor && ' • More results available'}
+            </div>
+          </div>
+        )}
+
+        {/* Filters - Layout 4: Inline Horizontal Below Current Rankings */}
+        {layout === '4' && leaderboardData && (
+          <div className="mt-4 sm:mt-6">
+            <div className="bg-white rounded-lg shadow p-3 sm:p-4">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
+                {/* Time Period */}
+                <div className="flex-1">
+                  <label className="block text-xs font-medium text-gray-600 mb-1.5">
+                    Time Period
+                  </label>
+                  <div className="flex gap-1.5">
+                    <button
+                      onClick={() => setSelectedWindow('week')}
+                      className={`flex-1 px-2.5 py-1.5 rounded text-xs font-medium ${
+                        selectedWindow === 'week'
+                          ? 'bg-orange-600 text-white'
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
+                    >
+                      Week
+                    </button>
+                    <button
+                      onClick={() => setSelectedWindow('month')}
+                      className={`flex-1 px-2.5 py-1.5 rounded text-xs font-medium ${
+                        selectedWindow === 'month'
+                          ? 'bg-orange-600 text-white'
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
+                    >
+                      Month
+                    </button>
+                    <button
+                      onClick={() => setSelectedWindow('year')}
+                      className={`flex-1 px-2.5 py-1.5 rounded text-xs font-medium ${
+                        selectedWindow === 'year'
+                          ? 'bg-orange-600 text-white'
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
+                    >
+                      Year
+                    </button>
+                  </div>
+                </div>
+                
+                {/* Divider */}
+                <div className="hidden sm:block h-12 w-px bg-gray-200"></div>
+                
+                {/* Activity Type */}
+                <div className="flex-1">
+                  <label className="block text-xs font-medium text-gray-600 mb-1.5">
+                    Activity Type
+                  </label>
+                  <div className="inline-flex rounded border border-gray-300 bg-white">
+                    <button
+                      onClick={() => toggleActivityType('bike')}
+                      className={`px-2.5 sm:px-3 py-1.5 text-xs font-medium rounded-l transition-colors ${
+                        selectedBike
+                          ? 'bg-orange-600 text-white'
+                          : 'bg-white text-gray-700 hover:bg-gray-50'
+                      }`}
+                    >
+                      Bike
+                    </button>
+                    <button
+                      onClick={() => toggleActivityType('foot')}
+                      className={`px-2.5 sm:px-3 py-1.5 text-xs font-medium rounded-r border-l transition-colors ${
+                        selectedFoot
+                          ? 'bg-orange-600 text-white border-orange-600'
+                          : 'bg-white text-gray-700 hover:bg-gray-50 border-gray-300'
+                      }`}
+                    >
+                      Foot
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Filters - Layout 5: Inline Horizontal Below Previous Top 3 */}
+        {layout === '5' && leaderboardData && (
+          <div className="mt-4 sm:mt-6">
+            <div className="bg-white rounded-lg shadow p-3 sm:p-4">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
+                {/* Time Period */}
+                <div className="flex-1">
+                  <label className="block text-xs font-medium text-gray-600 mb-1.5">
+                    Time Period
+                  </label>
+                  <div className="flex gap-1.5">
+                    <button
+                      onClick={() => setSelectedWindow('week')}
+                      className={`flex-1 px-2.5 py-1.5 rounded text-xs font-medium ${
+                        selectedWindow === 'week'
+                          ? 'bg-orange-600 text-white'
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
+                    >
+                      Week
+                    </button>
+                    <button
+                      onClick={() => setSelectedWindow('month')}
+                      className={`flex-1 px-2.5 py-1.5 rounded text-xs font-medium ${
+                        selectedWindow === 'month'
+                          ? 'bg-orange-600 text-white'
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
+                    >
+                      Month
+                    </button>
+                    <button
+                      onClick={() => setSelectedWindow('year')}
+                      className={`flex-1 px-2.5 py-1.5 rounded text-xs font-medium ${
+                        selectedWindow === 'year'
+                          ? 'bg-orange-600 text-white'
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
+                    >
+                      Year
+                    </button>
+                  </div>
+                </div>
+                
+                {/* Divider */}
+                <div className="hidden sm:block h-12 w-px bg-gray-200"></div>
+                
+                {/* Activity Type */}
+                <div className="flex-1">
+                  <label className="block text-xs font-medium text-gray-600 mb-1.5">
+                    Activity Type
+                  </label>
+                  <div className="inline-flex rounded border border-gray-300 bg-white">
+                    <button
+                      onClick={() => toggleActivityType('bike')}
+                      className={`px-2.5 sm:px-3 py-1.5 text-xs font-medium rounded-l transition-colors ${
+                        selectedBike
+                          ? 'bg-orange-600 text-white'
+                          : 'bg-white text-gray-700 hover:bg-gray-50'
+                      }`}
+                    >
+                      Bike
+                    </button>
+                    <button
+                      onClick={() => toggleActivityType('foot')}
+                      className={`px-2.5 sm:px-3 py-1.5 text-xs font-medium rounded-r border-l transition-colors ${
+                        selectedFoot
+                          ? 'bg-orange-600 text-white border-orange-600'
+                          : 'bg-white text-gray-700 hover:bg-gray-50 border-gray-300'
+                      }`}
+                    >
+                      Foot
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         )}
