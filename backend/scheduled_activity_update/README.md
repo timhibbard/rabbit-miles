@@ -1,6 +1,6 @@
 # Scheduled Activity Update Lambda
 
-This Lambda function runs on a schedule (every 12 hours) to automatically update activities from the last 24 hours for all connected users from the Strava API.
+This Lambda function runs on a schedule (every hour) to automatically update activities from the last 24 hours for all connected users from the Strava API.
 
 ## Purpose
 
@@ -42,8 +42,8 @@ AWS_REGION=<your-aws-region>
 
 1. **Lambda Function** - Deployed by `.github/workflows/deploy-lambdas.yml`
 2. **EventBridge Schedule** - Configured by `.github/workflows/deploy-eventbridge-schedule.yml`
-   - Rule name: `scheduled-activity-update-every-12h`
-   - Schedule: `rate(12 hours)`
+   - Rule name: `scheduled-activity-update-hourly`
+   - Schedule: `rate(1 hour)`
    - Target: The Lambda function specified in `LAMBDA_SCHEDULED_ACTIVITY_UPDATE`
    - Permissions: Automatically grants EventBridge permission to invoke the Lambda
 
@@ -56,12 +56,12 @@ If you need to manually configure the EventBridge schedule, you can use the AWS 
 1. Navigate to Amazon EventBridge → Rules
 2. Click "Create rule"
 3. Rule details:
-   - Name: `scheduled-activity-update-every-12h`
-   - Description: "Updates activities from Strava every 12 hours"
+   - Name: `scheduled-activity-update-hourly`
+   - Description: "Updates activities from Strava every hour"
    - Event bus: `default`
 4. Rule type: Schedule
 5. Schedule pattern: Rate-based schedule
-   - Rate expression: `rate(12 hours)`
+   - Rate expression: `rate(1 hour)`
 6. Select targets:
    - Target types: AWS service
    - Select a target: Lambda function
@@ -73,14 +73,14 @@ If you need to manually configure the EventBridge schedule, you can use the AWS 
 ```bash
 # Create EventBridge rule
 aws events put-rule \
-  --name scheduled-activity-update-every-12h \
-  --description "Updates activities from Strava every 12 hours" \
-  --schedule-expression "rate(12 hours)" \
+  --name scheduled-activity-update-hourly \
+  --description "Updates activities from Strava every hour" \
+  --schedule-expression "rate(1 hour)" \
   --region us-east-1
 
 # Add Lambda as target
 aws events put-targets \
-  --rule scheduled-activity-update-every-12h \
+  --rule scheduled-activity-update-hourly \
   --targets "Id"="1","Arn"="arn:aws:lambda:us-east-1:ACCOUNT_ID:function:LAMBDA_NAME" \
   --region us-east-1
 
@@ -90,7 +90,7 @@ aws lambda add-permission \
   --statement-id AllowEventBridgeInvoke \
   --action lambda:InvokeFunction \
   --principal events.amazonaws.com \
-  --source-arn arn:aws:events:us-east-1:ACCOUNT_ID:rule/scheduled-activity-update-every-12h \
+  --source-arn arn:aws:events:us-east-1:ACCOUNT_ID:rule/scheduled-activity-update-hourly \
   --region us-east-1
 ```
 
