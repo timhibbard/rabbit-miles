@@ -23,6 +23,8 @@ All backend code lives under the `backend/` directory.
 - Each `lambda_function.py` file must expose a `handler(event, context)` function.
 - Lambda handler configuration is always `lambda_function.handler`.
 
+- All the lambdas follow the naming convention: `rabbitmiles-` + name
+
 - Any time a new lambda is created, the github action and action secrets must be updated
 
 ### Runtime and Platform
