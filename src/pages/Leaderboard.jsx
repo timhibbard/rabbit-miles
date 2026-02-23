@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { fetchMe, fetchLeaderboard } from '../utils/api';
 
 // Number of top athletes to display in current rankings
@@ -7,9 +7,7 @@ const TOP_ATHLETES_COUNT = 5;
 
 function Leaderboard() {
   const navigate = useNavigate();
-  const [searchParams, setSearchParams] = useSearchParams();
   const [loading, setLoading] = useState(true);
-  const [isAdmin, setIsAdmin] = useState(false);
   const [currentUserId, setCurrentUserId] = useState(null);
   const [selectedWindow, setSelectedWindow] = useState('week');
   const [selectedBike, setSelectedBike] = useState(false);
@@ -17,28 +15,18 @@ function Leaderboard() {
   const [leaderboardData, setLeaderboardData] = useState(null);
   const [error, setError] = useState(null);
   
-  // Get layout from query parameter (default to '1')
-  const layout = searchParams.get('layout') || '1';
+  // Use "Compact Top 3" (layout 5) as the default and only layout
+  const layout = '5';
 
-  // Check admin status and authentication
+  // Check authentication (optional - leaderboard is public but we show user's rank if logged in)
   useEffect(() => {
     const checkAuth = async () => {
       const meResult = await fetchMe();
       
-      if (!meResult.success || !meResult.user) {
-        // Not authenticated, redirect to connect page
-        navigate('/connect');
-        return;
+      if (meResult.success && meResult.user) {
+        setCurrentUserId(meResult.user.athlete_id);
       }
       
-      if (!meResult.user.is_admin) {
-        // Not an admin, redirect to dashboard
-        navigate('/');
-        return;
-      }
-      
-      setIsAdmin(true);
-      setCurrentUserId(meResult.user.athlete_id);
       setLoading(false);
     };
     
@@ -47,8 +35,6 @@ function Leaderboard() {
 
   // Fetch leaderboard data when window or activity type changes
   useEffect(() => {
-    if (!isAdmin) return;
-    
     // Compute activity_type based on selected filters
     const getActivityType = () => {
       if (selectedBike && selectedFoot) return 'all';
@@ -82,7 +68,7 @@ function Leaderboard() {
     };
     
     loadLeaderboard();
-  }, [selectedWindow, selectedBike, selectedFoot, isAdmin, currentUserId]);
+  }, [selectedWindow, selectedBike, selectedFoot, currentUserId]);
 
   // Format distance in meters to miles
   const formatDistance = (meters) => {
@@ -106,89 +92,6 @@ function Leaderboard() {
     }
   };
 
-  // Handle layout change while preserving other query parameters
-  const handleLayoutChange = (layoutNumber) => {
-    setSearchParams({ ...Object.fromEntries(searchParams), layout: layoutNumber });
-  };
-
-  // Render inline filters (used by layouts 4 and 5)
-  const renderInlineFilters = () => (
-    <div className="bg-white rounded-lg shadow p-3 sm:p-4">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
-        {/* Time Period */}
-        <div className="flex-1">
-          <label className="block text-xs font-medium text-gray-600 mb-1.5">
-            Time Period
-          </label>
-          <div className="flex gap-1.5">
-            <button
-              onClick={() => setSelectedWindow('week')}
-              className={`flex-1 px-2.5 py-1.5 rounded text-xs font-medium ${
-                selectedWindow === 'week'
-                  ? 'bg-orange-600 text-white'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-              }`}
-            >
-              Week
-            </button>
-            <button
-              onClick={() => setSelectedWindow('month')}
-              className={`flex-1 px-2.5 py-1.5 rounded text-xs font-medium ${
-                selectedWindow === 'month'
-                  ? 'bg-orange-600 text-white'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-              }`}
-            >
-              Month
-            </button>
-            <button
-              onClick={() => setSelectedWindow('year')}
-              className={`flex-1 px-2.5 py-1.5 rounded text-xs font-medium ${
-                selectedWindow === 'year'
-                  ? 'bg-orange-600 text-white'
-                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-              }`}
-            >
-              Year
-            </button>
-          </div>
-        </div>
-        
-        {/* Divider */}
-        <div className="hidden sm:block h-12 w-px bg-gray-200"></div>
-        
-        {/* Activity Type */}
-        <div className="flex-1">
-          <label className="block text-xs font-medium text-gray-600 mb-1.5">
-            Activity Type
-          </label>
-          <div className="inline-flex rounded border border-gray-300 bg-white">
-            <button
-              onClick={() => toggleActivityType('bike')}
-              className={`px-2.5 sm:px-3 py-1.5 text-xs font-medium rounded-l transition-colors ${
-                selectedBike
-                  ? 'bg-orange-600 text-white'
-                  : 'bg-white text-gray-700 hover:bg-gray-50'
-              }`}
-            >
-              Bike
-            </button>
-            <button
-              onClick={() => toggleActivityType('foot')}
-              className={`px-2.5 sm:px-3 py-1.5 text-xs font-medium rounded-r border-l transition-colors ${
-                selectedFoot
-                  ? 'bg-orange-600 text-white border-orange-600'
-                  : 'bg-white text-gray-700 hover:bg-gray-50 border-gray-300'
-              }`}
-            >
-              Foot
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -200,273 +103,19 @@ function Leaderboard() {
     );
   }
 
-  if (!isAdmin) {
-    return null; // Will redirect in useEffect
-  }
-
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="max-w-7xl mx-auto px-2 sm:px-4 lg:px-8 py-4 sm:py-8">
         {/* Header */}
         <div className="mb-4 sm:mb-8">
           <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-2">
-            🏆 Leaderboard (Admin Preview)
+            🏆 Leaderboard
           </h1>
           <p className="text-sm sm:text-base text-gray-600">
-            View athlete rankings by time period. This feature is currently in admin-only testing mode.
+            View athlete rankings by time period.
           </p>
-          {isAdmin && (
-            <div className="mt-2 flex flex-wrap gap-2 text-xs text-gray-500">
-              <span>Layout options:</span>
-              <button
-                onClick={() => handleLayoutChange('1')}
-                className={`underline hover:text-orange-600 ${layout === '1' ? 'font-bold text-orange-600' : ''}`}
-              >
-                Stacked
-              </button>
-              <button
-                onClick={() => handleLayoutChange('2')}
-                className={`underline hover:text-orange-600 ${layout === '2' ? 'font-bold text-orange-600' : ''}`}
-              >
-                Inline
-              </button>
-              <button
-                onClick={() => handleLayoutChange('3')}
-                className={`underline hover:text-orange-600 ${layout === '3' ? 'font-bold text-orange-600' : ''}`}
-              >
-                Compact
-              </button>
-              <button
-                onClick={() => handleLayoutChange('4')}
-                className={`underline hover:text-orange-600 ${layout === '4' ? 'font-bold text-orange-600' : ''}`}
-              >
-                Filters Below
-              </button>
-              <button
-                onClick={() => handleLayoutChange('5')}
-                className={`underline hover:text-orange-600 ${layout === '5' ? 'font-bold text-orange-600' : ''}`}
-              >
-                Compact Top 3
-              </button>
-            </div>
-          )}
         </div>
 
-        {/* Filters - Layout 1: Stacked (Original) */}
-        {layout === '1' && (
-          <>
-            {/* Window Selector */}
-            <div className="mb-4 sm:mb-6">
-              <div className="bg-white rounded-lg shadow p-3 sm:p-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Time Period
-                </label>
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    onClick={() => setSelectedWindow('week')}
-                    className={`px-3 sm:px-4 py-2 rounded-md font-medium text-sm ${
-                      selectedWindow === 'week'
-                        ? 'bg-orange-600 text-white'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    }`}
-                  >
-                    This Week
-                  </button>
-                  <button
-                    onClick={() => setSelectedWindow('month')}
-                    className={`px-3 sm:px-4 py-2 rounded-md font-medium text-sm ${
-                      selectedWindow === 'month'
-                        ? 'bg-orange-600 text-white'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    }`}
-                  >
-                    This Month
-                  </button>
-                  <button
-                    onClick={() => setSelectedWindow('year')}
-                    className={`px-3 sm:px-4 py-2 rounded-md font-medium text-sm ${
-                      selectedWindow === 'year'
-                        ? 'bg-orange-600 text-white'
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                    }`}
-                  >
-                    This Year
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Activity Type Filter */}
-            <div className="mb-4 sm:mb-6">
-              <div className="bg-white rounded-lg shadow p-3 sm:p-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Activity Type
-                </label>
-                <div className="inline-flex rounded-lg border border-gray-300 bg-white">
-                  <button
-                    onClick={() => toggleActivityType('bike')}
-                    className={`px-3 sm:px-4 py-2 text-sm font-medium rounded-l-lg transition-colors ${
-                      selectedBike
-                        ? 'bg-orange-600 text-white'
-                        : 'bg-white text-gray-700 hover:bg-gray-50'
-                    }`}
-                  >
-                    Bike
-                  </button>
-                  <button
-                    onClick={() => toggleActivityType('foot')}
-                    className={`px-3 sm:px-4 py-2 text-sm font-medium rounded-r-lg border-l transition-colors ${
-                      selectedFoot
-                        ? 'bg-orange-600 text-white border-orange-600'
-                        : 'bg-white text-gray-700 hover:bg-gray-50 border-gray-300'
-                    }`}
-                  >
-                    Foot
-                  </button>
-                </div>
-              </div>
-            </div>
-          </>
-        )}
-
-        {/* Filters - Layout 2: Inline Horizontal */}
-        {layout === '2' && (
-          <div className="mb-4 sm:mb-6">
-            <div className="bg-white rounded-lg shadow p-3 sm:p-4">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
-                {/* Time Period */}
-                <div className="flex-1">
-                  <label className="block text-xs font-medium text-gray-600 mb-1.5">
-                    Time Period
-                  </label>
-                  <div className="flex gap-1.5">
-                    <button
-                      onClick={() => setSelectedWindow('week')}
-                      className={`flex-1 px-2.5 py-1.5 rounded text-xs font-medium ${
-                        selectedWindow === 'week'
-                          ? 'bg-orange-600 text-white'
-                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                      }`}
-                    >
-                      Week
-                    </button>
-                    <button
-                      onClick={() => setSelectedWindow('month')}
-                      className={`flex-1 px-2.5 py-1.5 rounded text-xs font-medium ${
-                        selectedWindow === 'month'
-                          ? 'bg-orange-600 text-white'
-                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                      }`}
-                    >
-                      Month
-                    </button>
-                    <button
-                      onClick={() => setSelectedWindow('year')}
-                      className={`flex-1 px-2.5 py-1.5 rounded text-xs font-medium ${
-                        selectedWindow === 'year'
-                          ? 'bg-orange-600 text-white'
-                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                      }`}
-                    >
-                      Year
-                    </button>
-                  </div>
-                </div>
-                
-                {/* Divider */}
-                <div className="hidden sm:block h-12 w-px bg-gray-200"></div>
-                
-                {/* Activity Type */}
-                <div className="flex-1">
-                  <label className="block text-xs font-medium text-gray-600 mb-1.5">
-                    Activity Type
-                  </label>
-                  <div className="inline-flex rounded border border-gray-300 bg-white">
-                    <button
-                      onClick={() => toggleActivityType('bike')}
-                      className={`px-2.5 sm:px-3 py-1.5 text-xs font-medium rounded-l transition-colors ${
-                        selectedBike
-                          ? 'bg-orange-600 text-white'
-                          : 'bg-white text-gray-700 hover:bg-gray-50'
-                      }`}
-                    >
-                      Bike
-                    </button>
-                    <button
-                      onClick={() => toggleActivityType('foot')}
-                      className={`px-2.5 sm:px-3 py-1.5 text-xs font-medium rounded-r border-l transition-colors ${
-                        selectedFoot
-                          ? 'bg-orange-600 text-white border-orange-600'
-                          : 'bg-white text-gray-700 hover:bg-gray-50 border-gray-300'
-                      }`}
-                    >
-                      Foot
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Filters - Layout 3: Compact with Dropdown */}
-        {layout === '3' && (
-          <div className="mb-4 sm:mb-6">
-            <div className="bg-white rounded-lg shadow p-3 sm:p-4">
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-                {/* Time Period Dropdown */}
-                <div className="flex-1">
-                  <label htmlFor="time-period" className="block text-xs font-medium text-gray-600 mb-1">
-                    Time Period
-                  </label>
-                  <select
-                    id="time-period"
-                    value={selectedWindow}
-                    onChange={(e) => setSelectedWindow(e.target.value)}
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
-                  >
-                    <option value="week">This Week</option>
-                    <option value="month">This Month</option>
-                    <option value="year">This Year</option>
-                  </select>
-                </div>
-                
-                {/* Activity Type Toggle */}
-                <div className="flex-1">
-                  <label className="block text-xs font-medium text-gray-600 mb-1">
-                    Activity Type
-                  </label>
-                  <div className="inline-flex w-full rounded border border-gray-300 bg-white">
-                    <button
-                      onClick={() => toggleActivityType('bike')}
-                      aria-label="Filter by bike activities"
-                      className={`flex-1 px-3 py-2 text-xs font-medium rounded-l transition-colors ${
-                        selectedBike
-                          ? 'bg-orange-600 text-white'
-                          : 'bg-white text-gray-700 hover:bg-gray-50'
-                      }`}
-                    >
-                      🚴 Bike
-                    </button>
-                    <button
-                      onClick={() => toggleActivityType('foot')}
-                      aria-label="Filter by foot activities"
-                      className={`flex-1 px-3 py-2 text-xs font-medium rounded-r border-l transition-colors ${
-                        selectedFoot
-                          ? 'bg-orange-600 text-white border-orange-600'
-                          : 'bg-white text-gray-700 hover:bg-gray-50 border-gray-300'
-                      }`}
-                    >
-                      🏃 Foot
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Layouts 4 and 5 don't show filters here. They use renderInlineFilters() positioned below the leaderboard content instead. */}
 
         {/* Error Message */}
         {error && (
@@ -481,61 +130,33 @@ function Leaderboard() {
             <h2 className="text-lg sm:text-xl font-semibold text-gray-900 mb-3 sm:mb-4">
               🥇 Last {selectedWindow === 'week' ? 'Week' : selectedWindow === 'month' ? 'Month' : 'Year'}'s Top 3
             </h2>
-            {/* Layout 5: Single line display */}
-            {layout === '5' ? (
-              <div className="bg-white rounded-lg shadow-md p-3 sm:p-4">
-                <div className="flex flex-wrap items-center justify-around gap-2 sm:gap-4">
-                  {leaderboardData.previous_top3.map((entry, idx) => (
-                    <div key={entry.user.id} className="flex items-center gap-2 sm:gap-3">
-                      <div className="text-2xl sm:text-3xl">
-                        {idx === 0 ? '🥇' : idx === 1 ? '🥈' : '🥉'}
-                      </div>
-                      {entry.user.avatar_url ? (
-                        <img
-                          src={entry.user.avatar_url}
-                          alt={entry.user.display_name}
-                          className="w-8 h-8 sm:w-10 sm:h-10 rounded-full"
-                        />
-                      ) : (
-                        <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-gray-200 flex items-center justify-center">
-                          <span className="text-sm sm:text-base text-gray-500">👤</span>
-                        </div>
-                      )}
-                      <div className="text-left">
-                        <p className="font-semibold text-gray-900 text-xs sm:text-sm">{entry.user.display_name}</p>
-                        <p className="text-sm sm:text-base font-bold text-orange-600">{formatDistance(entry.value)} mi</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              /* Default grid layout for all other layouts */
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 sm:gap-4">
+            {/* Compact Top 3: Single line display */}
+            <div className="bg-white rounded-lg shadow-md p-3 sm:p-4">
+              <div className="flex flex-wrap items-center justify-around gap-2 sm:gap-4">
                 {leaderboardData.previous_top3.map((entry, idx) => (
-                  <div key={entry.user.id} className="bg-white rounded-lg shadow-md p-4 sm:p-6 text-center">
-                    <div className="text-3xl sm:text-4xl mb-2">
+                  <div key={entry.user.id} className="flex items-center gap-2 sm:gap-3">
+                    <div className="text-2xl sm:text-3xl">
                       {idx === 0 ? '🥇' : idx === 1 ? '🥈' : '🥉'}
                     </div>
-                    <div className="flex items-center justify-center mb-2">
-                      {entry.user.avatar_url ? (
-                        <img
-                          src={entry.user.avatar_url}
-                          alt={entry.user.display_name}
-                          className="w-12 h-12 sm:w-16 sm:h-16 rounded-full"
-                        />
-                      ) : (
-                        <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-full bg-gray-200 flex items-center justify-center">
-                          <span className="text-xl sm:text-2xl text-gray-500">👤</span>
-                        </div>
-                      )}
+                    {entry.user.avatar_url ? (
+                      <img
+                        src={entry.user.avatar_url}
+                        alt={entry.user.display_name}
+                        className="w-8 h-8 sm:w-10 sm:h-10 rounded-full"
+                      />
+                    ) : (
+                      <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-gray-200 flex items-center justify-center">
+                        <span className="text-sm sm:text-base text-gray-500">👤</span>
+                      </div>
+                    )}
+                    <div className="text-left">
+                      <p className="font-semibold text-gray-900 text-xs sm:text-sm">{entry.user.display_name}</p>
+                      <p className="text-sm sm:text-base font-bold text-orange-600">{formatDistance(entry.value)} mi</p>
                     </div>
-                    <p className="font-semibold text-gray-900 text-sm sm:text-base">{entry.user.display_name}</p>
-                    <p className="text-xl sm:text-2xl font-bold text-orange-600">{formatDistance(entry.value)} mi</p>
                   </div>
                 ))}
               </div>
-            )}
+            </div>
           </div>
         )}
 
@@ -646,17 +267,83 @@ function Leaderboard() {
           </div>
         )}
 
-        {/* Filters - Layout 4: Inline Horizontal Below Current Rankings */}
-        {layout === '4' && leaderboardData && (
+        {/* Inline Filters */}
+        {leaderboardData && (
           <div className="mt-4 sm:mt-6">
-            {renderInlineFilters()}
-          </div>
-        )}
-
-        {/* Filters - Layout 5: Inline Horizontal Below Previous Top 3 */}
-        {layout === '5' && leaderboardData && (
-          <div className="mt-4 sm:mt-6">
-            {renderInlineFilters()}
+            <div className="bg-white rounded-lg shadow p-3 sm:p-4">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
+                {/* Time Period */}
+                <div className="flex-1">
+                  <label className="block text-xs font-medium text-gray-600 mb-1.5">
+                    Time Period
+                  </label>
+                  <div className="flex gap-1.5">
+                    <button
+                      onClick={() => setSelectedWindow('week')}
+                      className={`flex-1 px-2.5 py-1.5 rounded text-xs font-medium ${
+                        selectedWindow === 'week'
+                          ? 'bg-orange-600 text-white'
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
+                    >
+                      Week
+                    </button>
+                    <button
+                      onClick={() => setSelectedWindow('month')}
+                      className={`flex-1 px-2.5 py-1.5 rounded text-xs font-medium ${
+                        selectedWindow === 'month'
+                          ? 'bg-orange-600 text-white'
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
+                    >
+                      Month
+                    </button>
+                    <button
+                      onClick={() => setSelectedWindow('year')}
+                      className={`flex-1 px-2.5 py-1.5 rounded text-xs font-medium ${
+                        selectedWindow === 'year'
+                          ? 'bg-orange-600 text-white'
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
+                    >
+                      Year
+                    </button>
+                  </div>
+                </div>
+                
+                {/* Divider */}
+                <div className="hidden sm:block h-12 w-px bg-gray-200"></div>
+                
+                {/* Activity Type */}
+                <div className="flex-1">
+                  <label className="block text-xs font-medium text-gray-600 mb-1.5">
+                    Activity Type
+                  </label>
+                  <div className="inline-flex rounded border border-gray-300 bg-white">
+                    <button
+                      onClick={() => toggleActivityType('bike')}
+                      className={`px-2.5 sm:px-3 py-1.5 text-xs font-medium rounded-l transition-colors ${
+                        selectedBike
+                          ? 'bg-orange-600 text-white'
+                          : 'bg-white text-gray-700 hover:bg-gray-50'
+                      }`}
+                    >
+                      Bike
+                    </button>
+                    <button
+                      onClick={() => toggleActivityType('foot')}
+                      className={`px-2.5 sm:px-3 py-1.5 text-xs font-medium rounded-r border-l transition-colors ${
+                        selectedFoot
+                          ? 'bg-orange-600 text-white border-orange-600'
+                          : 'bg-white text-gray-700 hover:bg-gray-50 border-gray-300'
+                      }`}
+                    >
+                      Foot
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         )}
       </div>

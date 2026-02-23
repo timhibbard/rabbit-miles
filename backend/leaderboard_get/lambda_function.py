@@ -1,11 +1,12 @@
 # rabbitmiles-leaderboard-get (API Gateway HTTP API -> Lambda proxy)
 # Handler: lambda_function.handler
 #
+# Public endpoint - no authentication required (but shows user's rank if logged in)
+#
 # Env vars required:
 # DB_CLUSTER_ARN, DB_SECRET_ARN, DB_NAME=postgres
-# APP_SECRET (for session verification)
+# APP_SECRET (for optional session verification)
 # FRONTEND_URL (for CORS)
-# ADMIN_ATHLETE_IDS (comma-separated list of admin athlete IDs)
 
 import os
 import sys
@@ -270,33 +271,16 @@ def handler(event, context):
                 "body": json.dumps({"error": "server configuration error"})
             }
         
-        # Verify session and admin status
-        print("LOG - Verifying admin session")
-        athlete_id, is_admin = admin_utils.verify_admin_session(event, APP_SECRET)
-        
-        if not athlete_id:
-            print("ERROR - Not authenticated")
-            return {
-                "statusCode": 401,
-                "headers": headers,
-                "body": json.dumps({"error": "not authenticated"})
-            }
-        
-        if not is_admin:
-            print(f"ERROR - User {athlete_id} is not an admin")
-            admin_utils.audit_log_admin_action(
-                athlete_id,
-                "/leaderboard",
-                "access_denied",
-                {"reason": "not in admin allowlist"}
-            )
-            return {
-                "statusCode": 403,
-                "headers": headers,
-                "body": json.dumps({"error": "forbidden"})
-            }
-        
-        print(f"LOG - Admin {athlete_id} authenticated successfully")
+        # Verify session (optional - leaderboard is public but we show user's rank if logged in)
+        print("LOG - Checking for session")
+        athlete_id = None
+        try:
+            athlete_id, _ = admin_utils.verify_admin_session(event, APP_SECRET)
+            if athlete_id:
+                print(f"LOG - User {athlete_id} authenticated")
+        except Exception as e:
+            # Session verification failed, but that's OK - leaderboard is public
+            print(f"LOG - No valid session found (this is OK): {e}")
         
         # Get query parameters
         query_params = event.get("queryStringParameters") or {}
@@ -334,22 +318,10 @@ def handler(event, context):
         print(f"LOG - Pagination: limit={limit}, offset={offset}")
         
         # Log telemetry
-        print(f"TELEMETRY - leaderboard_api_call admin_id={athlete_id} window={window} metric={metric} activity_type={activity_type}")
-        
-        # Audit log
-        admin_utils.audit_log_admin_action(
-            athlete_id,
-            "/leaderboard",
-            "view_leaderboard",
-            {
-                "window": window,
-                "window_key": window_key,
-                "metric": metric,
-                "activity_type": activity_type,
-                "limit": limit,
-                "offset": offset
-            }
-        )
+        if athlete_id:
+            print(f"TELEMETRY - leaderboard_api_call user_id={athlete_id} window={window} metric={metric} activity_type={activity_type}")
+        else:
+            print(f"TELEMETRY - leaderboard_api_call anonymous window={window} metric={metric} activity_type={activity_type}")
         
         # Query leaderboard
         rows = query_leaderboard(window_key, metric, activity_type, limit, offset)
