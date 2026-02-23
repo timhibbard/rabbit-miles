@@ -410,7 +410,7 @@ export const updateUserSettings = async (settings) => {
   }
 };
 
-// Fetch leaderboard (admin only)
+// Fetch leaderboard (public endpoint - shows user's rank if logged in)
 export const fetchLeaderboard = async (window, options = {}) => {
   try {
     const params = {
@@ -434,10 +434,6 @@ export const fetchLeaderboard = async (window, options = {}) => {
     if (error.response?.status === 401) {
       debug.log('User not authenticated (401)');
       return { success: false, notConnected: true };
-    }
-    if (error.response?.status === 403) {
-      debug.log('User not authorized for admin access (403)');
-      return { success: false, error: 'Access denied - admin privileges required' };
     }
     return { success: false, error: error.response?.data?.error || error.message };
   }

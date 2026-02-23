@@ -44,8 +44,9 @@ function Layout() {
   let navItems = [...baseNavItems];
   if (!isLoadingUser && currentUser?.is_admin) {
     navItems.push(adminNavItem);
-    navItems.push(leaderboardNavItem);
   }
+  // Leaderboard is now public, so always add it
+  navItems.push(leaderboardNavItem);
   navItems.push(aboutNavItem);
 
   return (
