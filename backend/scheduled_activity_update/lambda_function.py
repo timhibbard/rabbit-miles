@@ -17,6 +17,9 @@ import boto3
 rds = boto3.client("rds-data")
 sm = boto3.client("secretsmanager")
 
+# Logging constants
+SEPARATOR_LINE = "=" * 80
+
 
 def log(message, level="INFO"):
     """Enhanced logging with timestamp and level"""
@@ -317,7 +320,7 @@ def update_recent_activities_for_user(user):
         }
         
     except Exception as e:
-        log(f"ERROR processing user {athlete_id}: {e}", "ERROR")
+        log(f"Processing user {athlete_id}: {e}", "ERROR")
         import traceback
         traceback.print_exc()
         return {"athlete_id": athlete_id, "success": False, "error": str(e)}
@@ -330,11 +333,11 @@ def handler(event, context):
     Runs every hour to update activities from the last 24 hours for all connected users.
     """
     start_time = datetime.utcnow()
-    log("="*80, "INFO")
+    log(SEPARATOR_LINE, "INFO")
     log("SCHEDULED ACTIVITY UPDATE - START", "INFO")
     log(f"Execution started at: {start_time.isoformat()}Z", "INFO")
     log(f"Event: {json.dumps(event, default=str)}", "INFO")
-    log("="*80, "INFO")
+    log(SEPARATOR_LINE, "INFO")
     
     # Get environment variables
     db_cluster_arn = os.environ.get("DB_CLUSTER_ARN", "")
@@ -359,11 +362,11 @@ def handler(event, context):
             log("No connected users found, nothing to update", "INFO")
             end_time = datetime.utcnow()
             duration = (end_time - start_time).total_seconds()
-            log("="*80, "INFO")
+            log(SEPARATOR_LINE, "INFO")
             log(f"SCHEDULED ACTIVITY UPDATE - SUCCESS (No Users)", "INFO")
             log(f"Execution completed at: {end_time.isoformat()}Z", "INFO")
             log(f"Duration: {duration:.2f} seconds", "INFO")
-            log("="*80, "INFO")
+            log(SEPARATOR_LINE, "INFO")
             return {
                 "statusCode": 200,
                 "body": json.dumps({
@@ -398,19 +401,19 @@ def handler(event, context):
         duration = (end_time - start_time).total_seconds()
         
         # Log summary
-        log("="*80, "INFO")
+        log(SEPARATOR_LINE, "INFO")
         log("EXECUTION SUMMARY:", "INFO")
         log(f"  Total users processed: {len(users)}", "INFO")
         log(f"  Successful updates: {successful_updates}", "INFO")
         log(f"  Failed updates: {failed_updates}", "INFO")
         log(f"  Total activities stored: {total_activities_stored}", "INFO")
-        log("="*80, "INFO")
+        log(SEPARATOR_LINE, "INFO")
         
         status = "SUCCESS" if failed_updates == 0 else "PARTIAL SUCCESS"
         log(f"SCHEDULED ACTIVITY UPDATE - {status}", "INFO")
         log(f"Execution completed at: {end_time.isoformat()}Z", "INFO")
         log(f"Duration: {duration:.2f} seconds", "INFO")
-        log("="*80, "INFO")
+        log(SEPARATOR_LINE, "INFO")
         
         return {
             "statusCode": 200,
@@ -421,15 +424,15 @@ def handler(event, context):
         end_time = datetime.utcnow()
         duration = (end_time - start_time).total_seconds()
         
-        log("="*80, "ERROR")
+        log(SEPARATOR_LINE, "ERROR")
         log(f"Error in scheduled_activity_update handler: {e}", "ERROR")
         import traceback
         traceback.print_exc()
-        log("="*80, "ERROR")
+        log(SEPARATOR_LINE, "ERROR")
         log("SCHEDULED ACTIVITY UPDATE - FAILED", "ERROR")
         log(f"Execution completed at: {end_time.isoformat()}Z", "ERROR")
         log(f"Duration: {duration:.2f} seconds", "ERROR")
-        log("="*80, "ERROR")
+        log(SEPARATOR_LINE, "ERROR")
         
         return {
             "statusCode": 500,
