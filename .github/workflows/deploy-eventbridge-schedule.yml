@@ -28,9 +28,9 @@ jobs:
         run: |
           # Create or update the EventBridge rule
           aws events put-rule \
-            --name scheduled-activity-update-every-12h \
-            --description "Updates activities from Strava every 12 hours" \
-            --schedule-expression "rate(12 hours)" \
+            --name scheduled-activity-update-hourly \
+            --description "Updates activities from Strava every hour" \
+            --schedule-expression "rate(1 hour)" \
             --state ENABLED
 
       - name: Add Lambda as Target
@@ -45,7 +45,7 @@ jobs:
           
           # Add Lambda as target to the EventBridge rule
           aws events put-targets \
-            --rule scheduled-activity-update-every-12h \
+            --rule scheduled-activity-update-hourly \
             --targets "Id"="1","Arn"="$LAMBDA_ARN"
 
       - name: Grant EventBridge Permission to Invoke Lambda
@@ -68,13 +68,13 @@ jobs:
             --statement-id AllowEventBridgeInvoke \
             --action lambda:InvokeFunction \
             --principal events.amazonaws.com \
-            --source-arn "arn:aws:events:${REGION}:${ACCOUNT_ID}:rule/scheduled-activity-update-every-12h"
+            --source-arn "arn:aws:events:${REGION}:${ACCOUNT_ID}:rule/scheduled-activity-update-hourly"
 
       - name: Verify EventBridge Rule
         run: |
           echo "Verifying EventBridge rule configuration..."
-          aws events describe-rule --name scheduled-activity-update-every-12h
+          aws events describe-rule --name scheduled-activity-update-hourly
           
           echo ""
           echo "Rule targets:"
-          aws events list-targets-by-rule --rule scheduled-activity-update-every-12h
+          aws events list-targets-by-rule --rule scheduled-activity-update-hourly

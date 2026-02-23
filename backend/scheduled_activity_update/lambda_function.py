@@ -1,5 +1,5 @@
 # scheduled_activity_update Lambda function
-# Runs every 12 hours to update recent activities for all connected users
+# Runs every hour to update recent activities for all connected users
 # Updates activities from the last 24 hours from Strava API
 # 
 # Env vars required:
@@ -9,12 +9,22 @@
 import os
 import json
 import time
+from datetime import datetime
 from urllib.request import Request, urlopen
 from urllib.parse import urlencode
 import boto3
 
 rds = boto3.client("rds-data")
 sm = boto3.client("secretsmanager")
+
+# Logging constants
+SEPARATOR_LINE = "=" * 80
+
+
+def log(message, level="INFO"):
+    """Enhanced logging with timestamp and level"""
+    timestamp = datetime.utcnow().isoformat() + "Z"
+    print(f"[{timestamp}] [{level}] {message}")
 
 # Get environment variables safely - they are checked in handler
 DB_CLUSTER_ARN = None
@@ -113,10 +123,10 @@ def refresh_access_token(athlete_id, refresh_token):
         ]
         _exec_sql(sql, params)
         
-        print(f"Refreshed access token for athlete {athlete_id}")
+        log(f"Refreshed access token for athlete {athlete_id}", "INFO")
         return access_token
     except Exception as e:
-        print(f"Failed to refresh token for athlete {athlete_id}: {e}")
+        log(f"Failed to refresh token for athlete {athlete_id}: {e}", "ERROR")
         raise
 
 
@@ -126,7 +136,7 @@ def ensure_valid_token(athlete_id, access_token, refresh_token, expires_at):
     
     # Check if token needs refresh
     if expires_at < current_time + TOKEN_REFRESH_BUFFER_SECONDS:
-        print(f"Access token expired or expiring soon for athlete {athlete_id}, refreshing...")
+        log(f"Access token expired or expiring soon for athlete {athlete_id}, refreshing...", "INFO")
         access_token = refresh_access_token(athlete_id, refresh_token)
     
     return access_token
@@ -141,16 +151,16 @@ def fetch_strava_activities(access_token, after_timestamp, per_page=200):
         with urlopen(req, timeout=30) as resp:
             response_body = resp.read().decode()
             activities = json.loads(response_body)
-            print(f"Fetched {len(activities) if isinstance(activities, list) else 'non-list'} activities from Strava")
+            log(f"Fetched {len(activities) if isinstance(activities, list) else 'non-list'} activities from Strava", "INFO")
         return activities
     except Exception as e:
-        print(f"Failed to fetch activities from Strava: {e}")
+        log(f"Failed to fetch activities from Strava: {e}", "ERROR")
         if hasattr(e, 'code'):
-            print(f"HTTP status code: {e.code}")
+            log(f"HTTP status code: {e.code}", "ERROR")
         if hasattr(e, 'read'):
             try:
                 error_body = e.read().decode()
-                print(f"Error response body: {error_body}")
+                log(f"Error response body: {error_body}", "ERROR")
             except Exception:
                 pass
         raise
@@ -160,7 +170,7 @@ def store_activity(athlete_id, activity):
     """Store or update activity in database"""
     strava_activity_id = activity.get("id")
     if not strava_activity_id:
-        print(f"ERROR: Activity missing id: {activity}")
+        log(f"Activity missing id: {activity}", "ERROR")
         return False
     
     # Extract activity data
@@ -228,10 +238,10 @@ def store_activity(athlete_id, activity):
     
     try:
         _exec_sql(sql, params)
-        print(f"Successfully stored activity {strava_activity_id}: {name}")
+        log(f"Successfully stored activity {strava_activity_id}: {name}", "INFO")
         return True
     except Exception as e:
-        print(f"ERROR: Failed to store activity {strava_activity_id}: {e}")
+        log(f"Failed to store activity {strava_activity_id}: {e}", "ERROR")
         return False
 
 
@@ -273,7 +283,7 @@ def update_recent_activities_for_user(user):
     expires_at = user["expires_at"]
     
     try:
-        print(f"Processing user {athlete_id}...")
+        log(f"Processing user {athlete_id}...", "INFO")
         
         # Ensure token is valid
         access_token = ensure_valid_token(athlete_id, access_token, refresh_token, expires_at)
@@ -286,7 +296,7 @@ def update_recent_activities_for_user(user):
         activities = fetch_strava_activities(access_token, after_timestamp)
         
         if not isinstance(activities, list):
-            print(f"ERROR: Unexpected response from Strava API for user {athlete_id}: {type(activities)}")
+            log(f"Unexpected response from Strava API for user {athlete_id}: {type(activities)}", "ERROR")
             return {"athlete_id": athlete_id, "success": False, "error": "Invalid API response"}
         
         # Store activities
@@ -299,7 +309,7 @@ def update_recent_activities_for_user(user):
             else:
                 failed_count += 1
         
-        print(f"User {athlete_id}: Stored {stored_count}, Failed {failed_count} out of {len(activities)} activities")
+        log(f"User {athlete_id}: Stored {stored_count}, Failed {failed_count} out of {len(activities)} activities", "INFO")
         
         return {
             "athlete_id": athlete_id,
@@ -310,7 +320,7 @@ def update_recent_activities_for_user(user):
         }
         
     except Exception as e:
-        print(f"ERROR processing user {athlete_id}: {e}")
+        log(f"Processing user {athlete_id}: {e}", "ERROR")
         import traceback
         traceback.print_exc()
         return {"athlete_id": athlete_id, "success": False, "error": str(e)}
@@ -320,10 +330,14 @@ def handler(event, context):
     """
     Lambda handler for scheduled activity updates.
     
-    Runs every 12 hours to update activities from the last 24 hours for all connected users.
+    Runs every hour to update activities from the last 24 hours for all connected users.
     """
-    print(f"scheduled_activity_update handler invoked")
-    print(f"Event: {json.dumps(event, default=str)}")
+    start_time = datetime.utcnow()
+    log(SEPARATOR_LINE, "INFO")
+    log("SCHEDULED ACTIVITY UPDATE - START", "INFO")
+    log(f"Execution started at: {start_time.isoformat()}Z", "INFO")
+    log(f"Event: {json.dumps(event, default=str)}", "INFO")
+    log(SEPARATOR_LINE, "INFO")
     
     # Get environment variables
     db_cluster_arn = os.environ.get("DB_CLUSTER_ARN", "")
@@ -331,7 +345,8 @@ def handler(event, context):
     
     # Validate required environment variables
     if not db_cluster_arn or not db_secret_arn:
-        print("ERROR: Missing DB_CLUSTER_ARN or DB_SECRET_ARN")
+        log("Missing DB_CLUSTER_ARN or DB_SECRET_ARN", "ERROR")
+        log("SCHEDULED ACTIVITY UPDATE - FAILED (Configuration Error)", "ERROR")
         return {
             "statusCode": 500,
             "body": json.dumps({"error": "server configuration error"})
@@ -339,12 +354,19 @@ def handler(event, context):
     
     try:
         # Get all connected users
-        print("Fetching all connected users...")
+        log("Fetching all connected users...", "INFO")
         users = get_all_connected_users()
-        print(f"Found {len(users)} connected users")
+        log(f"Found {len(users)} connected users", "INFO")
         
         if not users:
-            print("No connected users found, nothing to update")
+            log("No connected users found, nothing to update", "INFO")
+            end_time = datetime.utcnow()
+            duration = (end_time - start_time).total_seconds()
+            log(SEPARATOR_LINE, "INFO")
+            log(f"SCHEDULED ACTIVITY UPDATE - SUCCESS (No Users)", "INFO")
+            log(f"Execution completed at: {end_time.isoformat()}Z", "INFO")
+            log(f"Duration: {duration:.2f} seconds", "INFO")
+            log(SEPARATOR_LINE, "INFO")
             return {
                 "statusCode": 200,
                 "body": json.dumps({
@@ -355,6 +377,7 @@ def handler(event, context):
             }
         
         # Update activities for each user
+        log("Starting activity updates for all users...", "INFO")
         results = []
         for user in users:
             result = update_recent_activities_for_user(user)
@@ -374,7 +397,23 @@ def handler(event, context):
             "results": results
         }
         
-        print(f"Summary: {json.dumps(summary)}")
+        end_time = datetime.utcnow()
+        duration = (end_time - start_time).total_seconds()
+        
+        # Log summary
+        log(SEPARATOR_LINE, "INFO")
+        log("EXECUTION SUMMARY:", "INFO")
+        log(f"  Total users processed: {len(users)}", "INFO")
+        log(f"  Successful updates: {successful_updates}", "INFO")
+        log(f"  Failed updates: {failed_updates}", "INFO")
+        log(f"  Total activities stored: {total_activities_stored}", "INFO")
+        log(SEPARATOR_LINE, "INFO")
+        
+        status = "SUCCESS" if failed_updates == 0 else "PARTIAL SUCCESS"
+        log(f"SCHEDULED ACTIVITY UPDATE - {status}", "INFO")
+        log(f"Execution completed at: {end_time.isoformat()}Z", "INFO")
+        log(f"Duration: {duration:.2f} seconds", "INFO")
+        log(SEPARATOR_LINE, "INFO")
         
         return {
             "statusCode": 200,
@@ -382,9 +421,19 @@ def handler(event, context):
         }
         
     except Exception as e:
-        print(f"Error in scheduled_activity_update handler: {e}")
+        end_time = datetime.utcnow()
+        duration = (end_time - start_time).total_seconds()
+        
+        log(SEPARATOR_LINE, "ERROR")
+        log(f"Error in scheduled_activity_update handler: {e}", "ERROR")
         import traceback
         traceback.print_exc()
+        log(SEPARATOR_LINE, "ERROR")
+        log("SCHEDULED ACTIVITY UPDATE - FAILED", "ERROR")
+        log(f"Execution completed at: {end_time.isoformat()}Z", "ERROR")
+        log(f"Duration: {duration:.2f} seconds", "ERROR")
+        log(SEPARATOR_LINE, "ERROR")
+        
         return {
             "statusCode": 500,
             "body": json.dumps({"error": "internal server error", "details": str(e)})
