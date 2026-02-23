@@ -466,8 +466,7 @@ function Leaderboard() {
           </div>
         )}
 
-        {/* Layout 4 will not show filters here - they will be after current leaderboard */}
-        {/* Layout 5 will not show filters here - they will be after previous top 3 */}
+        {/* Layouts 4 and 5 don't show filters here. They use renderInlineFilters() positioned below the leaderboard content instead. */}
 
         {/* Error Message */}
         {error && (
