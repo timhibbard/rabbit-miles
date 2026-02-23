@@ -5,7 +5,7 @@ Provides consistent timezone handling across all Lambda functions.
 Falls back to US Eastern timezone when user timezone is not available.
 """
 
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 # Default timezone: US Eastern
 DEFAULT_TIMEZONE = "America/New_York"
@@ -38,7 +38,10 @@ def parse_strava_timezone(strava_tz_string):
         # Validate the timezone exists
         ZoneInfo(tz_name)
         return tz_name
-    except Exception:
+    except (ZoneInfoNotFoundError, KeyError, ValueError):
+        # ZoneInfoNotFoundError: timezone not found in IANA database
+        # KeyError: invalid timezone string format
+        # ValueError: invalid timezone string
         return None
 
 
@@ -64,7 +67,8 @@ def get_user_timezone(user_timezone=None, activity_timezone=None):
         if tz_name:
             try:
                 return ZoneInfo(tz_name)
-            except Exception:
+            except (ZoneInfoNotFoundError, KeyError):
+                # Timezone not found or invalid, continue to fallback
                 pass
     
     # Try activity timezone
@@ -73,7 +77,8 @@ def get_user_timezone(user_timezone=None, activity_timezone=None):
         if tz_name:
             try:
                 return ZoneInfo(tz_name)
-            except Exception:
+            except (ZoneInfoNotFoundError, KeyError):
+                # Timezone not found or invalid, continue to fallback
                 pass
     
     # Fall back to US Eastern

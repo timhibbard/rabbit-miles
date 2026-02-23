@@ -185,6 +185,15 @@ def recalculate_leaderboard():
         ORDER BY a.athlete_id, a.start_date_local
         """
         
+        # Define column indices for clarity and maintainability
+        COL_ATHLETE_ID = 0
+        COL_STRAVA_ACTIVITY_ID = 1
+        COL_DISTANCE = 2
+        COL_START_DATE_LOCAL = 3
+        COL_TYPE = 4
+        COL_ACTIVITY_TIMEZONE = 5
+        COL_USER_TIMEZONE = 6
+        
         params = [
             {"name": "start_date", "value": {"stringValue": RECALC_START_DATE}}
         ]
@@ -207,11 +216,11 @@ def recalculate_leaderboard():
         athletes_seen = set()
         
         for record in records:
-            athlete_id = int(record[0].get("longValue", 0))
-            strava_activity_id = int(record[1].get("longValue", 0))
+            athlete_id = int(record[COL_ATHLETE_ID].get("longValue", 0))
+            strava_activity_id = int(record[COL_STRAVA_ACTIVITY_ID].get("longValue", 0))
             
             # Distance can be NUMERIC which comes back as stringValue
-            distance_field = record[2]
+            distance_field = record[COL_DISTANCE]
             if "doubleValue" in distance_field:
                 distance = float(distance_field["doubleValue"])
             elif "stringValue" in distance_field:
@@ -219,17 +228,19 @@ def recalculate_leaderboard():
             else:
                 distance = 0.0
             
-            start_date_local = record[3].get("stringValue", "")
-            activity_type = record[4].get("stringValue", "")
+            start_date_local = record[COL_START_DATE_LOCAL].get("stringValue", "")
+            activity_type = record[COL_TYPE].get("stringValue", "")
             
             # Extract timezones (may be NULL)
             activity_timezone = None
-            if len(record) > 5 and record[5] and "stringValue" in record[5]:
-                activity_timezone = record[5]["stringValue"]
+            if len(record) > COL_ACTIVITY_TIMEZONE and record[COL_ACTIVITY_TIMEZONE]:
+                if "stringValue" in record[COL_ACTIVITY_TIMEZONE]:
+                    activity_timezone = record[COL_ACTIVITY_TIMEZONE]["stringValue"]
             
             user_timezone = None
-            if len(record) > 6 and record[6] and "stringValue" in record[6]:
-                user_timezone = record[6]["stringValue"]
+            if len(record) > COL_USER_TIMEZONE and record[COL_USER_TIMEZONE]:
+                if "stringValue" in record[COL_USER_TIMEZONE]:
+                    user_timezone = record[COL_USER_TIMEZONE]["stringValue"]
             
             athletes_seen.add(athlete_id)
             
