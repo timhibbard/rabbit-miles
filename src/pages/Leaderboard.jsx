@@ -151,7 +151,7 @@ function Leaderboard() {
                       </div>
                     )}
                     <div className="text-left">
-                      <p className="font-semibold text-gray-900 text-xs sm:text-sm hover:text-orange-600">{entry.user.display_name}</p>
+                      <p className="font-semibold text-gray-900 text-xs sm:text-sm">{entry.user.display_name}</p>
                       <p className="text-sm sm:text-base font-bold text-orange-600">{formatDistance(entry.value)} mi</p>
                     </div>
                   </a>
@@ -234,7 +234,7 @@ function Leaderboard() {
                               </div>
                             )}
                             <div>
-                              <div className="text-sm font-medium text-gray-900 hover:text-orange-600">
+                              <div className="text-sm font-medium text-gray-900">
                                 {entry.user.display_name}
                               </div>
                             </div>
