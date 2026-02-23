@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { fetchMe, fetchLeaderboard } from '../utils/api';
 
 // Number of top athletes to display in current rankings
@@ -7,6 +7,7 @@ const TOP_ATHLETES_COUNT = 5;
 
 function Leaderboard() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
   const [currentUserId, setCurrentUserId] = useState(null);
@@ -15,6 +16,9 @@ function Leaderboard() {
   const [selectedFoot, setSelectedFoot] = useState(true); // Default to Foot only
   const [leaderboardData, setLeaderboardData] = useState(null);
   const [error, setError] = useState(null);
+  
+  // Get layout from query parameter (default to '1')
+  const layout = searchParams.get('layout') || '1';
 
   // Check admin status and authentication
   useEffect(() => {
@@ -102,6 +106,11 @@ function Leaderboard() {
     }
   };
 
+  // Handle layout change while preserving other query parameters
+  const handleLayoutChange = (layoutNumber) => {
+    setSearchParams({ ...Object.fromEntries(searchParams), layout: layoutNumber });
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -128,79 +137,244 @@ function Leaderboard() {
           <p className="text-sm sm:text-base text-gray-600">
             View athlete rankings by time period. This feature is currently in admin-only testing mode.
           </p>
-        </div>
-
-        {/* Window Selector */}
-        <div className="mb-4 sm:mb-6">
-          <div className="bg-white rounded-lg shadow p-3 sm:p-4">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Time Period
-            </label>
-            <div className="flex flex-wrap gap-2">
+          {isAdmin && (
+            <div className="mt-2 flex flex-wrap gap-2 text-xs text-gray-500">
+              <span>Layout options:</span>
               <button
-                onClick={() => setSelectedWindow('week')}
-                className={`px-3 sm:px-4 py-2 rounded-md font-medium text-sm ${
-                  selectedWindow === 'week'
-                    ? 'bg-orange-600 text-white'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
+                onClick={() => handleLayoutChange('1')}
+                className={`underline hover:text-orange-600 ${layout === '1' ? 'font-bold text-orange-600' : ''}`}
               >
-                This Week
+                Stacked
               </button>
               <button
-                onClick={() => setSelectedWindow('month')}
-                className={`px-3 sm:px-4 py-2 rounded-md font-medium text-sm ${
-                  selectedWindow === 'month'
-                    ? 'bg-orange-600 text-white'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
+                onClick={() => handleLayoutChange('2')}
+                className={`underline hover:text-orange-600 ${layout === '2' ? 'font-bold text-orange-600' : ''}`}
               >
-                This Month
+                Inline
               </button>
               <button
-                onClick={() => setSelectedWindow('year')}
-                className={`px-3 sm:px-4 py-2 rounded-md font-medium text-sm ${
-                  selectedWindow === 'year'
-                    ? 'bg-orange-600 text-white'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
+                onClick={() => handleLayoutChange('3')}
+                className={`underline hover:text-orange-600 ${layout === '3' ? 'font-bold text-orange-600' : ''}`}
               >
-                This Year
+                Compact
               </button>
             </div>
-          </div>
+          )}
         </div>
 
-        {/* Activity Type Filter */}
-        <div className="mb-4 sm:mb-6">
-          <div className="bg-white rounded-lg shadow p-3 sm:p-4">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Activity Type
-            </label>
-            <div className="inline-flex rounded-lg border border-gray-300 bg-white">
-              <button
-                onClick={() => toggleActivityType('bike')}
-                className={`px-3 sm:px-4 py-2 text-sm font-medium rounded-l-lg transition-colors ${
-                  selectedBike
-                    ? 'bg-orange-600 text-white'
-                    : 'bg-white text-gray-700 hover:bg-gray-50'
-                }`}
-              >
-                Bike
-              </button>
-              <button
-                onClick={() => toggleActivityType('foot')}
-                className={`px-3 sm:px-4 py-2 text-sm font-medium rounded-r-lg border-l transition-colors ${
-                  selectedFoot
-                    ? 'bg-orange-600 text-white border-orange-600'
-                    : 'bg-white text-gray-700 hover:bg-gray-50 border-gray-300'
-                }`}
-              >
-                Foot
-              </button>
+        {/* Filters - Layout 1: Stacked (Original) */}
+        {layout === '1' && (
+          <>
+            {/* Window Selector */}
+            <div className="mb-4 sm:mb-6">
+              <div className="bg-white rounded-lg shadow p-3 sm:p-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Time Period
+                </label>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={() => setSelectedWindow('week')}
+                    className={`px-3 sm:px-4 py-2 rounded-md font-medium text-sm ${
+                      selectedWindow === 'week'
+                        ? 'bg-orange-600 text-white'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    This Week
+                  </button>
+                  <button
+                    onClick={() => setSelectedWindow('month')}
+                    className={`px-3 sm:px-4 py-2 rounded-md font-medium text-sm ${
+                      selectedWindow === 'month'
+                        ? 'bg-orange-600 text-white'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    This Month
+                  </button>
+                  <button
+                    onClick={() => setSelectedWindow('year')}
+                    className={`px-3 sm:px-4 py-2 rounded-md font-medium text-sm ${
+                      selectedWindow === 'year'
+                        ? 'bg-orange-600 text-white'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    This Year
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Activity Type Filter */}
+            <div className="mb-4 sm:mb-6">
+              <div className="bg-white rounded-lg shadow p-3 sm:p-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Activity Type
+                </label>
+                <div className="inline-flex rounded-lg border border-gray-300 bg-white">
+                  <button
+                    onClick={() => toggleActivityType('bike')}
+                    className={`px-3 sm:px-4 py-2 text-sm font-medium rounded-l-lg transition-colors ${
+                      selectedBike
+                        ? 'bg-orange-600 text-white'
+                        : 'bg-white text-gray-700 hover:bg-gray-50'
+                    }`}
+                  >
+                    Bike
+                  </button>
+                  <button
+                    onClick={() => toggleActivityType('foot')}
+                    className={`px-3 sm:px-4 py-2 text-sm font-medium rounded-r-lg border-l transition-colors ${
+                      selectedFoot
+                        ? 'bg-orange-600 text-white border-orange-600'
+                        : 'bg-white text-gray-700 hover:bg-gray-50 border-gray-300'
+                    }`}
+                  >
+                    Foot
+                  </button>
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* Filters - Layout 2: Inline Horizontal */}
+        {layout === '2' && (
+          <div className="mb-4 sm:mb-6">
+            <div className="bg-white rounded-lg shadow p-3 sm:p-4">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
+                {/* Time Period */}
+                <div className="flex-1">
+                  <label className="block text-xs font-medium text-gray-600 mb-1.5">
+                    Time Period
+                  </label>
+                  <div className="flex gap-1.5">
+                    <button
+                      onClick={() => setSelectedWindow('week')}
+                      className={`flex-1 px-2.5 py-1.5 rounded text-xs font-medium ${
+                        selectedWindow === 'week'
+                          ? 'bg-orange-600 text-white'
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
+                    >
+                      Week
+                    </button>
+                    <button
+                      onClick={() => setSelectedWindow('month')}
+                      className={`flex-1 px-2.5 py-1.5 rounded text-xs font-medium ${
+                        selectedWindow === 'month'
+                          ? 'bg-orange-600 text-white'
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
+                    >
+                      Month
+                    </button>
+                    <button
+                      onClick={() => setSelectedWindow('year')}
+                      className={`flex-1 px-2.5 py-1.5 rounded text-xs font-medium ${
+                        selectedWindow === 'year'
+                          ? 'bg-orange-600 text-white'
+                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      }`}
+                    >
+                      Year
+                    </button>
+                  </div>
+                </div>
+                
+                {/* Divider */}
+                <div className="hidden sm:block h-12 w-px bg-gray-200"></div>
+                
+                {/* Activity Type */}
+                <div className="flex-1">
+                  <label className="block text-xs font-medium text-gray-600 mb-1.5">
+                    Activity Type
+                  </label>
+                  <div className="inline-flex rounded border border-gray-300 bg-white">
+                    <button
+                      onClick={() => toggleActivityType('bike')}
+                      className={`px-2.5 sm:px-3 py-1.5 text-xs font-medium rounded-l transition-colors ${
+                        selectedBike
+                          ? 'bg-orange-600 text-white'
+                          : 'bg-white text-gray-700 hover:bg-gray-50'
+                      }`}
+                    >
+                      Bike
+                    </button>
+                    <button
+                      onClick={() => toggleActivityType('foot')}
+                      className={`px-2.5 sm:px-3 py-1.5 text-xs font-medium rounded-r border-l transition-colors ${
+                        selectedFoot
+                          ? 'bg-orange-600 text-white border-orange-600'
+                          : 'bg-white text-gray-700 hover:bg-gray-50 border-gray-300'
+                      }`}
+                    >
+                      Foot
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
-        </div>
+        )}
+
+        {/* Filters - Layout 3: Compact with Dropdown */}
+        {layout === '3' && (
+          <div className="mb-4 sm:mb-6">
+            <div className="bg-white rounded-lg shadow p-3 sm:p-4">
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                {/* Time Period Dropdown */}
+                <div className="flex-1">
+                  <label htmlFor="time-period" className="block text-xs font-medium text-gray-600 mb-1">
+                    Time Period
+                  </label>
+                  <select
+                    id="time-period"
+                    value={selectedWindow}
+                    onChange={(e) => setSelectedWindow(e.target.value)}
+                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-orange-500"
+                  >
+                    <option value="week">This Week</option>
+                    <option value="month">This Month</option>
+                    <option value="year">This Year</option>
+                  </select>
+                </div>
+                
+                {/* Activity Type Toggle */}
+                <div className="flex-1">
+                  <label className="block text-xs font-medium text-gray-600 mb-1">
+                    Activity Type
+                  </label>
+                  <div className="inline-flex w-full rounded border border-gray-300 bg-white">
+                    <button
+                      onClick={() => toggleActivityType('bike')}
+                      aria-label="Filter by bike activities"
+                      className={`flex-1 px-3 py-2 text-xs font-medium rounded-l transition-colors ${
+                        selectedBike
+                          ? 'bg-orange-600 text-white'
+                          : 'bg-white text-gray-700 hover:bg-gray-50'
+                      }`}
+                    >
+                      🚴 Bike
+                    </button>
+                    <button
+                      onClick={() => toggleActivityType('foot')}
+                      aria-label="Filter by foot activities"
+                      className={`flex-1 px-3 py-2 text-xs font-medium rounded-r border-l transition-colors ${
+                        selectedFoot
+                          ? 'bg-orange-600 text-white border-orange-600'
+                          : 'bg-white text-gray-700 hover:bg-gray-50 border-gray-300'
+                      }`}
+                    >
+                      🏃 Foot
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Error Message */}
         {error && (
