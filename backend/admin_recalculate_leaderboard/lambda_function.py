@@ -15,11 +15,12 @@ from datetime import datetime, timedelta
 from urllib.parse import urlparse
 import boto3
 
-# Add parent directory to path to import admin_utils
+# Add parent directory to path to import admin_utils and timezone_utils
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, parent_dir)
 
 import admin_utils
+import timezone_utils
 
 rds = boto3.client("rds-data")
 
@@ -58,24 +59,38 @@ def exec_sql(sql, parameters=None):
     return rds.execute_statement(**kwargs)
 
 
-def get_window_keys(activity_start_date_local):
+def get_window_keys(activity_start_date_local, user_timezone=None, activity_timezone=None):
     """
     Calculate window keys (week, month, year) for an activity based on its start date.
     
+    Uses the user's timezone preference with fallback to US Eastern.
+    This ensures that week/month/year boundaries are calculated correctly
+    for each user's local timezone.
+    
     Args:
         activity_start_date_local: ISO 8601 timestamp string (e.g., "2026-02-15T10:30:00Z")
+        user_timezone: User's stored timezone preference (from users.timezone)
+        activity_timezone: Activity's timezone (from activities.timezone)
     
     Returns:
         Dict with 'week', 'month', 'year' keys containing window_key strings
     """
     try:
-        # Parse ISO 8601 timestamp (can be with or without timezone)
+        # Parse ISO 8601 timestamp
         dt_str = activity_start_date_local.replace('Z', '+00:00')
         if '+' not in dt_str and dt_str.count(':') == 2:
             # No timezone info, assume UTC
             dt = datetime.fromisoformat(dt_str)
         else:
             dt = datetime.fromisoformat(dt_str)
+        
+        # Get user timezone (with fallback to US Eastern)
+        tz = timezone_utils.get_user_timezone(user_timezone, activity_timezone)
+        
+        # If dt is timezone-aware, convert to user's timezone
+        # If dt is naive, assume it's already in local time
+        if dt.tzinfo is not None:
+            dt = dt.astimezone(tz).replace(tzinfo=None)
         
         # Week: ISO week format, Monday is start of week
         # Window key format: week_YYYY-MM-DD (Monday of the week)
@@ -159,7 +174,9 @@ def recalculate_leaderboard():
             a.strava_activity_id,
             a.distance_on_trail as distance,
             a.start_date_local,
-            a.type
+            a.type,
+            a.timezone as activity_timezone,
+            u.timezone as user_timezone
         FROM activities a
         JOIN users u ON a.athlete_id = u.athlete_id
         WHERE u.show_on_leaderboards = true
@@ -167,6 +184,15 @@ def recalculate_leaderboard():
           AND a.distance_on_trail IS NOT NULL
         ORDER BY a.athlete_id, a.start_date_local
         """
+        
+        # Define column indices for clarity and maintainability
+        COL_ATHLETE_ID = 0
+        COL_STRAVA_ACTIVITY_ID = 1
+        COL_DISTANCE = 2
+        COL_START_DATE_LOCAL = 3
+        COL_TYPE = 4
+        COL_ACTIVITY_TIMEZONE = 5
+        COL_USER_TIMEZONE = 6
         
         params = [
             {"name": "start_date", "value": {"stringValue": RECALC_START_DATE}}
@@ -190,11 +216,11 @@ def recalculate_leaderboard():
         athletes_seen = set()
         
         for record in records:
-            athlete_id = int(record[0].get("longValue", 0))
-            strava_activity_id = int(record[1].get("longValue", 0))
+            athlete_id = int(record[COL_ATHLETE_ID].get("longValue", 0))
+            strava_activity_id = int(record[COL_STRAVA_ACTIVITY_ID].get("longValue", 0))
             
             # Distance can be NUMERIC which comes back as stringValue
-            distance_field = record[2]
+            distance_field = record[COL_DISTANCE]
             if "doubleValue" in distance_field:
                 distance = float(distance_field["doubleValue"])
             elif "stringValue" in distance_field:
@@ -202,13 +228,24 @@ def recalculate_leaderboard():
             else:
                 distance = 0.0
             
-            start_date_local = record[3].get("stringValue", "")
-            activity_type = record[4].get("stringValue", "")
+            start_date_local = record[COL_START_DATE_LOCAL].get("stringValue", "")
+            activity_type = record[COL_TYPE].get("stringValue", "")
+            
+            # Extract timezones (may be NULL)
+            activity_timezone = None
+            if len(record) > COL_ACTIVITY_TIMEZONE and record[COL_ACTIVITY_TIMEZONE]:
+                if "stringValue" in record[COL_ACTIVITY_TIMEZONE]:
+                    activity_timezone = record[COL_ACTIVITY_TIMEZONE]["stringValue"]
+            
+            user_timezone = None
+            if len(record) > COL_USER_TIMEZONE and record[COL_USER_TIMEZONE]:
+                if "stringValue" in record[COL_USER_TIMEZONE]:
+                    user_timezone = record[COL_USER_TIMEZONE]["stringValue"]
             
             athletes_seen.add(athlete_id)
             
-            # Calculate window keys
-            window_keys = get_window_keys(start_date_local)
+            # Calculate window keys using user's timezone
+            window_keys = get_window_keys(start_date_local, user_timezone, activity_timezone)
             if not window_keys:
                 print(f"WARNING: Could not calculate window keys for activity {strava_activity_id}, skipping")
                 continue

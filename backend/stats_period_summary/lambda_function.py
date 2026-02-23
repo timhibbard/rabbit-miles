@@ -29,9 +29,10 @@ from zoneinfo import ZoneInfo
 from urllib.parse import urlparse
 import boto3
 
-# Add parent directory to path to import admin_utils
+# Add parent directory to path to import admin_utils and timezone_utils
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, parent_dir)
+import timezone_utils
 
 rds = boto3.client("rds-data")
 
@@ -425,37 +426,30 @@ def handler(event, context):
         
         print(f"Authenticated as athlete_id: {athlete_id}")
         
-        # Query the athlete's timezone from their most recent activity
+        # Query the athlete's timezone preference and most recent activity timezone
         # This ensures period calculations match the athlete's local timezone
-        # First, check what activities exist for this athlete
-        print(f"\n--- ACTIVITY DATA DEBUG ---")
-        activity_check_query = """
-            SELECT 
-                id, 
-                start_date_local, 
-                timezone, 
-                distance_on_trail
-            FROM activities
+        print(f"\n--- TIMEZONE DETERMINATION ---")
+        
+        # Get user timezone preference from users table
+        user_tz_query = """
+            SELECT timezone
+            FROM users
             WHERE athlete_id = :athlete_id
-            ORDER BY start_date_local DESC
-            LIMIT 5
         """
-        activity_check_params = [{"name": "athlete_id", "value": {"longValue": athlete_id}}]
-        activity_check_result = exec_sql(activity_check_query, activity_check_params)
+        user_tz_params = [{"name": "athlete_id", "value": {"longValue": athlete_id}}]
+        user_tz_result = exec_sql(user_tz_query, user_tz_params)
         
-        print(f"Recent activities for athlete {athlete_id}:")
-        if activity_check_result.get("records"):
-            for idx, record in enumerate(activity_check_result["records"], 1):
-                activity_id = record[0].get("longValue", "N/A")
-                start_date = record[1].get("stringValue", "N/A")
-                tz = record[2].get("stringValue", "N/A") if record[2] else "NULL"
-                distance = record[3].get("doubleValue") or record[3].get("longValue", 0) if record[3] else 0
-                print(f"  {idx}. Activity {activity_id}: start_date_local={start_date}, timezone={tz}, distance_on_trail={distance}m")
+        user_timezone = None
+        if user_tz_result.get("records") and user_tz_result["records"][0] and user_tz_result["records"][0][0]:
+            tz_field = user_tz_result["records"][0][0]
+            if "stringValue" in tz_field:
+                user_timezone = tz_field["stringValue"]
+                print(f"User timezone preference: {user_timezone}")
         else:
-            print(f"  No activities found for athlete {athlete_id}")
-        print("--- END ACTIVITY DATA DEBUG ---\n")
+            print(f"No user timezone preference stored")
         
-        timezone_query = """
+        # Get most recent activity timezone as fallback
+        activity_tz_query = """
             SELECT timezone
             FROM activities
             WHERE athlete_id = :athlete_id
@@ -463,48 +457,27 @@ def handler(event, context):
             ORDER BY start_date_local DESC
             LIMIT 1
         """
-        timezone_params = [{"name": "athlete_id", "value": {"longValue": athlete_id}}]
-        print(f"Executing timezone query for athlete_id={athlete_id}")
-        timezone_result = exec_sql(timezone_query, timezone_params)
+        activity_tz_params = [{"name": "athlete_id", "value": {"longValue": athlete_id}}]
+        activity_tz_result = exec_sql(activity_tz_query, activity_tz_params)
         
-        print(f"Timezone query raw result: {timezone_result}")
-        
-        athlete_timezone = None
-        if timezone_result.get("records") and timezone_result["records"][0]:
-            tz_field = timezone_result["records"][0][0]
-            print(f"Timezone field from result: {tz_field}")
+        activity_timezone = None
+        if activity_tz_result.get("records") and activity_tz_result["records"][0] and activity_tz_result["records"][0][0]:
+            tz_field = activity_tz_result["records"][0][0]
             if "stringValue" in tz_field:
-                athlete_timezone = tz_field["stringValue"]
-                print(f"Athlete timezone from recent activity: {athlete_timezone}")
-            else:
-                print(f"No stringValue in timezone field")
+                activity_timezone = tz_field["stringValue"]
+                print(f"Most recent activity timezone: {activity_timezone}")
         else:
-            print(f"No timezone records found in query result")
+            print(f"No activity timezone found")
         
-        # Get current time
-        # If we have the athlete's timezone, use it; otherwise fall back to UTC
-        if athlete_timezone:
-            try:
-                # Strava timezone format is typically "(GMT-08:00) America/Los_Angeles"
-                # but may also be just "America/Los_Angeles"
-                # Extract the IANA timezone identifier (part after the space if present)
-                tz_name = athlete_timezone
-                if " " in athlete_timezone:
-                    tz_name = athlete_timezone.split(" ", 1)[1]
-                
-                # Validate and use the timezone
-                tz = ZoneInfo(tz_name)
-                now = datetime.now(tz).replace(tzinfo=None)  # Convert to naive datetime in athlete's timezone
-                print(f"Current time in athlete timezone ({tz_name}): {now.isoformat()}")
-            except Exception as e:
-                # If timezone is invalid or not available, fall back to UTC
-                print(f"Warning: Could not use athlete timezone '{athlete_timezone}': {e}")
-                now = datetime.now(timezone.utc).replace(tzinfo=None)
-                print(f"Falling back to UTC time: {now.isoformat()}")
-        else:
-            print("No athlete timezone found, using UTC")
-            now = datetime.now(timezone.utc).replace(tzinfo=None)
-            print(f"Current UTC time: {now.isoformat()}")
+        # Get timezone with proper fallback to US Eastern
+        tz = timezone_utils.get_user_timezone(user_timezone, activity_timezone)
+        tz_name = str(tz)
+        print(f"Using timezone: {tz_name}")
+        print("--- END TIMEZONE DETERMINATION ---\n")
+        
+        # Get current time in user's timezone
+        now = datetime.now(tz).replace(tzinfo=None)  # Convert to naive datetime in user's timezone
+        print(f"Current time in user timezone: {now.isoformat()}")
         
         # Calculate period boundaries
         periods = get_period_boundaries(now)

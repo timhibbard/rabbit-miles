@@ -1,15 +1,28 @@
 import { useEffect, useState } from 'react';
 import { fetchMe, resetTrailMatching, updateActivities, updateUserSettings } from '../utils/api';
 
+// Common US timezones for the dropdown
+const TIMEZONES = [
+  { value: 'America/New_York', label: 'Eastern Time (ET)' },
+  { value: 'America/Chicago', label: 'Central Time (CT)' },
+  { value: 'America/Denver', label: 'Mountain Time (MT)' },
+  { value: 'America/Phoenix', label: 'Arizona (no DST)' },
+  { value: 'America/Los_Angeles', label: 'Pacific Time (PT)' },
+  { value: 'America/Anchorage', label: 'Alaska Time (AKT)' },
+  { value: 'Pacific/Honolulu', label: 'Hawaii Time (HT)' },
+];
+
 function Settings() {
   const [authState, setAuthState] = useState({
     loading: true,
     isConnected: false,
     showOnLeaderboards: true,
+    timezone: null,
   });
   const [resetting, setResetting] = useState(false);
   const [updatingActivities, setUpdatingActivities] = useState(false);
   const [updatingLeaderboardSettings, setUpdatingLeaderboardSettings] = useState(false);
+  const [updatingTimezone, setUpdatingTimezone] = useState(false);
 
   useEffect(() => {
     // Check if user is connected via /me endpoint
@@ -19,6 +32,7 @@ function Settings() {
         loading: false,
         isConnected: result.success,
         showOnLeaderboards: result.user?.show_on_leaderboards ?? true,
+        timezone: result.user?.timezone || 'America/New_York', // Default to Eastern
       });
     };
     
@@ -94,6 +108,27 @@ function Settings() {
       alert('An unexpected error occurred. Please try again.');
     } finally {
       setUpdatingLeaderboardSettings(false);
+    }
+  };
+
+  const handleTimezoneChange = async (event) => {
+    const newTimezone = event.target.value;
+    setUpdatingTimezone(true);
+    try {
+      const result = await updateUserSettings({ timezone: newTimezone });
+      if (result.success) {
+        setAuthState(prev => ({
+          ...prev,
+          timezone: result.data.timezone || newTimezone
+        }));
+      } else {
+        alert(`Failed to update timezone: ${result.error || 'Unknown error'}`);
+      }
+    } catch (error) {
+      console.error('Error updating timezone:', error);
+      alert('An unexpected error occurred. Please try again.');
+    } finally {
+      setUpdatingTimezone(false);
     }
   };
 
@@ -186,6 +221,38 @@ function Settings() {
               </div>
             </div>
           </div>
+
+          {/* Timezone Section */}
+          {authState.isConnected && (
+            <div className="p-6 border-b border-gray-200">
+              <h2 className="text-xl font-semibold text-gray-900 mb-4">
+                Timezone
+              </h2>
+              <div>
+                <p className="text-sm text-gray-600 mb-4">
+                  Set your timezone to ensure accurate weekly, monthly, and yearly statistics. This affects when your weeks start (Monday at midnight in your timezone) and leaderboard calculations.
+                </p>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Your Timezone
+                </label>
+                <select
+                  value={authState.timezone || 'America/New_York'}
+                  onChange={handleTimezoneChange}
+                  disabled={updatingTimezone}
+                  className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-orange-500 focus:border-orange-500 sm:text-sm rounded-md disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {TIMEZONES.map((tz) => (
+                    <option key={tz.value} value={tz.value}>
+                      {tz.label}
+                    </option>
+                  ))}
+                </select>
+                {updatingTimezone && (
+                  <p className="text-sm text-gray-500 mt-2">Updating timezone...</p>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Activities Section */}
           {authState.isConnected && (
