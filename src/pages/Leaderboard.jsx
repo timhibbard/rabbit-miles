@@ -136,19 +136,19 @@ function Leaderboard() {
             <div className="mt-2 flex flex-wrap gap-2 text-xs text-gray-500">
               <span>Layout options:</span>
               <button
-                onClick={() => setSearchParams({ layout: '1' })}
+                onClick={() => setSearchParams({ ...Object.fromEntries(searchParams), layout: '1' })}
                 className={`underline hover:text-orange-600 ${layout === '1' ? 'font-bold text-orange-600' : ''}`}
               >
                 Stacked
               </button>
               <button
-                onClick={() => setSearchParams({ layout: '2' })}
+                onClick={() => setSearchParams({ ...Object.fromEntries(searchParams), layout: '2' })}
                 className={`underline hover:text-orange-600 ${layout === '2' ? 'font-bold text-orange-600' : ''}`}
               >
                 Inline
               </button>
               <button
-                onClick={() => setSearchParams({ layout: '3' })}
+                onClick={() => setSearchParams({ ...Object.fromEntries(searchParams), layout: '3' })}
                 className={`underline hover:text-orange-600 ${layout === '3' ? 'font-bold text-orange-600' : ''}`}
               >
                 Compact
