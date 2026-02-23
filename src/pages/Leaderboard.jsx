@@ -106,6 +106,11 @@ function Leaderboard() {
     }
   };
 
+  // Handle layout change while preserving other query parameters
+  const handleLayoutChange = (layoutNumber) => {
+    setSearchParams({ ...Object.fromEntries(searchParams), layout: layoutNumber });
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -136,19 +141,19 @@ function Leaderboard() {
             <div className="mt-2 flex flex-wrap gap-2 text-xs text-gray-500">
               <span>Layout options:</span>
               <button
-                onClick={() => setSearchParams({ ...Object.fromEntries(searchParams), layout: '1' })}
+                onClick={() => handleLayoutChange('1')}
                 className={`underline hover:text-orange-600 ${layout === '1' ? 'font-bold text-orange-600' : ''}`}
               >
                 Stacked
               </button>
               <button
-                onClick={() => setSearchParams({ ...Object.fromEntries(searchParams), layout: '2' })}
+                onClick={() => handleLayoutChange('2')}
                 className={`underline hover:text-orange-600 ${layout === '2' ? 'font-bold text-orange-600' : ''}`}
               >
                 Inline
               </button>
               <button
-                onClick={() => setSearchParams({ ...Object.fromEntries(searchParams), layout: '3' })}
+                onClick={() => handleLayoutChange('3')}
                 className={`underline hover:text-orange-600 ${layout === '3' ? 'font-bold text-orange-600' : ''}`}
               >
                 Compact
@@ -344,6 +349,7 @@ function Leaderboard() {
                   <div className="inline-flex w-full rounded border border-gray-300 bg-white">
                     <button
                       onClick={() => toggleActivityType('bike')}
+                      aria-label="Filter by bike activities"
                       className={`flex-1 px-3 py-2 text-xs font-medium rounded-l transition-colors ${
                         selectedBike
                           ? 'bg-orange-600 text-white'
@@ -354,6 +360,7 @@ function Leaderboard() {
                     </button>
                     <button
                       onClick={() => toggleActivityType('foot')}
+                      aria-label="Filter by foot activities"
                       className={`flex-1 px-3 py-2 text-xs font-medium rounded-r border-l transition-colors ${
                         selectedFoot
                           ? 'bg-orange-600 text-white border-orange-600'
