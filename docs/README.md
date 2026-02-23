@@ -66,6 +66,40 @@ This directory contains comprehensive documentation about analytics options and 
 
 ---
 
+### 5. [google-analytics-analysis.md](./google-analytics-analysis.md)
+**Comprehensive Google Analytics 4 analysis**
+
+**What's inside:**
+- Industry consensus on GA privacy (🚨 HIGH RISK)
+- What would need to be changed to implement GA4
+- Complete code examples for GA4 implementation
+- Privacy policy impact (complete rewrite required)
+- Consent management requirements
+- Legal compliance analysis (GDPR violations)
+- GA4 vs Plausible comparison
+- Strong recommendation: DO NOT use GA
+
+**Read this if:** You're considering Google Analytics or want to understand why we don't recommend it.
+
+---
+
+### 6. [google-analytics-vs-plausible.md](./google-analytics-vs-plausible.md)
+**Visual comparison: GA4 vs Plausible**
+
+**What's inside:**
+- Side-by-side visual comparisons
+- Privacy scores with visual bars
+- Legal risk assessment
+- Implementation complexity comparison
+- User experience impact
+- Cost comparison (financial + privacy)
+- Trust impact analysis
+- Quick decision matrix
+
+**Read this if:** You want a quick visual reference showing why Plausible is better than Google Analytics for RabbitMiles.
+
+---
+
 ## 🎯 Quick Start
 
 **If you're in a hurry, follow this path:**
@@ -95,6 +129,32 @@ This directory contains comprehensive documentation about analytics options and 
 **Privacy Impact:** Minimal  
 **User Trust Impact:** None (if transparent)  
 **Implementation Effort:** Low
+
+---
+
+## ❌ What About Google Analytics?
+
+**We strongly recommend AGAINST Google Analytics for RabbitMiles.**
+
+**Industry Consensus on GA Privacy:** 🚨 **PROBLEMATIC**
+- Multiple EU courts ruled GA violates GDPR (Austria, France, Italy, Denmark, Netherlands, Finland)
+- Requires complex consent management and intrusive cookie banners
+- Data transferred to US with inadequate safeguards
+- Associated with surveillance and privacy violations
+- Would break RabbitMiles' "no third-party tracking" promise
+
+**What would need to change:**
+- 3-5 days implementation (vs 2-4 hours for Plausible)
+- Complete privacy policy rewrite (+1,700 words)
+- Cookie consent banner (legally required)
+- Ongoing compliance burden
+- High legal risk in EU
+
+**See detailed analysis:**
+- [google-analytics-analysis.md](./google-analytics-analysis.md) - Complete GA4 analysis
+- [google-analytics-vs-plausible.md](./google-analytics-vs-plausible.md) - Visual comparison
+
+**Bottom line:** Google Analytics is free software but costs privacy, user trust, and legal safety. Not worth it for RabbitMiles.
 
 ---
 
