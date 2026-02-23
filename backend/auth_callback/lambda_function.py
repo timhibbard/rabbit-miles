@@ -387,6 +387,45 @@ def handler(event, context):
     _exec_sql(sql, params)
     print(f"LOG - Database upsert SUCCESS for user {athlete_id} ({display_name})")
 
+    # For new users, set timezone from most recent activity
+    if is_new_user:
+        print(f"LOG - New user onboarding: attempting to set timezone from most recent activity")
+        try:
+            # Query most recent activity timezone
+            tz_query = """
+                SELECT timezone
+                FROM activities
+                WHERE athlete_id = :athlete_id
+                  AND timezone IS NOT NULL
+                ORDER BY start_date_local DESC
+                LIMIT 1
+            """
+            tz_params = [{"name": "athlete_id", "value": {"longValue": athlete_id}}]
+            tz_result = _exec_sql(tz_query, tz_params)
+            
+            if tz_result.get("records") and tz_result["records"][0]:
+                activity_tz = tz_result["records"][0][0].get("stringValue")
+                if activity_tz:
+                    # Update user timezone
+                    update_tz_sql = """
+                        UPDATE users
+                        SET timezone = :timezone
+                        WHERE athlete_id = :athlete_id
+                    """
+                    update_tz_params = [
+                        {"name": "timezone", "value": {"stringValue": activity_tz}},
+                        {"name": "athlete_id", "value": {"longValue": athlete_id}}
+                    ]
+                    _exec_sql(update_tz_sql, update_tz_params)
+                    print(f"LOG - Set user timezone to: {activity_tz}")
+                else:
+                    print(f"LOG - Most recent activity has no timezone")
+            else:
+                print(f"LOG - No activities found with timezone for new user")
+        except Exception as e:
+            # Don't fail auth flow if timezone update fails
+            print(f"WARNING - Failed to set timezone from activity: {e}")
+
     # Trigger activity fetch for new users
     if is_new_user and FETCH_ACTIVITIES_LAMBDA_ARN:
         print(f"LOG - Triggering automatic activity fetch for new user {athlete_id}")

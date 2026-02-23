@@ -138,41 +138,64 @@ def handler(event, context):
                     "body": json.dumps({"error": "invalid JSON"})
                 }
         
-        # Get showOnLeaderboards value from request
+        # Get settings from request
         show_on_leaderboards = body.get("show_on_leaderboards")
+        timezone = body.get("timezone")
         
-        if show_on_leaderboards is None:
-            print("ERROR - Missing show_on_leaderboards field")
+        # At least one field must be provided
+        if show_on_leaderboards is None and timezone is None:
+            print("ERROR - No fields to update")
             return {
                 "statusCode": 400,
                 "headers": cors_headers,
-                "body": json.dumps({"error": "show_on_leaderboards field required"})
+                "body": json.dumps({"error": "at least one field required (show_on_leaderboards or timezone)"})
             }
         
-        # Validate boolean value
-        if not isinstance(show_on_leaderboards, bool):
-            print(f"ERROR - Invalid show_on_leaderboards value: {show_on_leaderboards}")
-            return {
-                "statusCode": 400,
-                "headers": cors_headers,
-                "body": json.dumps({"error": "show_on_leaderboards must be a boolean"})
-            }
+        # Build dynamic UPDATE query
+        set_clauses = []
+        params = []
         
-        print(f"LOG - Updating show_on_leaderboards to {show_on_leaderboards} for user {athlete_id}")
+        # Validate and add show_on_leaderboards if provided
+        if show_on_leaderboards is not None:
+            if not isinstance(show_on_leaderboards, bool):
+                print(f"ERROR - Invalid show_on_leaderboards value: {show_on_leaderboards}")
+                return {
+                    "statusCode": 400,
+                    "headers": cors_headers,
+                    "body": json.dumps({"error": "show_on_leaderboards must be a boolean"})
+                }
+            set_clauses.append("show_on_leaderboards = :show_on_leaderboards")
+            params.append({"name": "show_on_leaderboards", "value": {"booleanValue": show_on_leaderboards}})
+            print(f"LOG - Updating show_on_leaderboards to {show_on_leaderboards}")
         
-        # Update user settings
-        sql = """
+        # Validate and add timezone if provided
+        if timezone is not None:
+            if not isinstance(timezone, str) or len(timezone) > 100:
+                print(f"ERROR - Invalid timezone value: {timezone}")
+                return {
+                    "statusCode": 400,
+                    "headers": cors_headers,
+                    "body": json.dumps({"error": "timezone must be a string (max 100 chars)"})
+                }
+            set_clauses.append("timezone = :timezone")
+            params.append({"name": "timezone", "value": {"stringValue": timezone}})
+            print(f"LOG - Updating timezone to {timezone}")
+        
+        # Always update updated_at
+        set_clauses.append("updated_at = now()")
+        
+        # Add athlete_id parameter
+        params.append({"name": "athlete_id", "value": {"longValue": athlete_id}})
+        
+        # Build SQL query
+        sql = f"""
         UPDATE users
-        SET show_on_leaderboards = :show_on_leaderboards, updated_at = now()
+        SET {", ".join(set_clauses)}
         WHERE athlete_id = :athlete_id
-        RETURNING show_on_leaderboards
+        RETURNING show_on_leaderboards, timezone
         """
         
-        params = [
-            {"name": "show_on_leaderboards", "value": {"booleanValue": show_on_leaderboards}},
-            {"name": "athlete_id", "value": {"longValue": athlete_id}},
-        ]
-        
+        print(f"LOG - Updating settings for user {athlete_id}")
         result = exec_sql(sql, params)
         records = result.get("records", [])
         
@@ -184,10 +207,15 @@ def handler(event, context):
                 "body": json.dumps({"error": "user not found"})
             }
         
-        # Get updated value
-        updated_value = records[0][0].get("booleanValue", False)
+        # Get updated values
+        show_on_leaderboards_value = records[0][0].get("booleanValue", False)
+        timezone_value = None
+        if len(records[0]) > 1 and records[0][1]:
+            timezone_value = records[0][1].get("stringValue")
         
-        print(f"LOG - Successfully updated show_on_leaderboards to {updated_value} for user {athlete_id}")
+        print(f"LOG - Successfully updated settings for user {athlete_id}")
+        print(f"LOG -   show_on_leaderboards: {show_on_leaderboards_value}")
+        print(f"LOG -   timezone: {timezone_value}")
         print("=" * 80)
         print("UPDATE USER SETTINGS - SUCCESS")
         print("=" * 80)
@@ -197,7 +225,8 @@ def handler(event, context):
             "headers": cors_headers,
             "body": json.dumps({
                 "success": True,
-                "show_on_leaderboards": updated_value
+                "show_on_leaderboards": show_on_leaderboards_value,
+                "timezone": timezone_value
             })
         }
         
