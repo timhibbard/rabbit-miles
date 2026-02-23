@@ -14,9 +14,6 @@ function Leaderboard() {
   const [selectedFoot, setSelectedFoot] = useState(true); // Default to Foot only
   const [leaderboardData, setLeaderboardData] = useState(null);
   const [error, setError] = useState(null);
-  
-  // Use "Compact Top 3" (layout 5) as the default and only layout
-  const layout = '5';
 
   // Check authentication (optional - leaderboard is public but we show user's rank if logged in)
   useEffect(() => {
