@@ -1,12 +1,10 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { fetchMe, fetchLeaderboard } from '../utils/api';
 
 // Number of top athletes to display in current rankings
 const TOP_ATHLETES_COUNT = 5;
 
 function Leaderboard() {
-  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [currentUserId, setCurrentUserId] = useState(null);
   const [selectedWindow, setSelectedWindow] = useState('week');
@@ -28,7 +26,7 @@ function Leaderboard() {
     };
     
     checkAuth();
-  }, [navigate]);
+  }, []);
 
   // Fetch leaderboard data when window or activity type changes
   useEffect(() => {
