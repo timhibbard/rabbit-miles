@@ -111,6 +111,84 @@ function Leaderboard() {
     setSearchParams({ ...Object.fromEntries(searchParams), layout: layoutNumber });
   };
 
+  // Render inline filters (used by layouts 4 and 5)
+  const renderInlineFilters = () => (
+    <div className="bg-white rounded-lg shadow p-3 sm:p-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
+        {/* Time Period */}
+        <div className="flex-1">
+          <label className="block text-xs font-medium text-gray-600 mb-1.5">
+            Time Period
+          </label>
+          <div className="flex gap-1.5">
+            <button
+              onClick={() => setSelectedWindow('week')}
+              className={`flex-1 px-2.5 py-1.5 rounded text-xs font-medium ${
+                selectedWindow === 'week'
+                  ? 'bg-orange-600 text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              Week
+            </button>
+            <button
+              onClick={() => setSelectedWindow('month')}
+              className={`flex-1 px-2.5 py-1.5 rounded text-xs font-medium ${
+                selectedWindow === 'month'
+                  ? 'bg-orange-600 text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              Month
+            </button>
+            <button
+              onClick={() => setSelectedWindow('year')}
+              className={`flex-1 px-2.5 py-1.5 rounded text-xs font-medium ${
+                selectedWindow === 'year'
+                  ? 'bg-orange-600 text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              Year
+            </button>
+          </div>
+        </div>
+        
+        {/* Divider */}
+        <div className="hidden sm:block h-12 w-px bg-gray-200"></div>
+        
+        {/* Activity Type */}
+        <div className="flex-1">
+          <label className="block text-xs font-medium text-gray-600 mb-1.5">
+            Activity Type
+          </label>
+          <div className="inline-flex rounded border border-gray-300 bg-white">
+            <button
+              onClick={() => toggleActivityType('bike')}
+              className={`px-2.5 sm:px-3 py-1.5 text-xs font-medium rounded-l transition-colors ${
+                selectedBike
+                  ? 'bg-orange-600 text-white'
+                  : 'bg-white text-gray-700 hover:bg-gray-50'
+              }`}
+            >
+              Bike
+            </button>
+            <button
+              onClick={() => toggleActivityType('foot')}
+              className={`px-2.5 sm:px-3 py-1.5 text-xs font-medium rounded-r border-l transition-colors ${
+                selectedFoot
+                  ? 'bg-orange-600 text-white border-orange-600'
+                  : 'bg-white text-gray-700 hover:bg-gray-50 border-gray-300'
+              }`}
+            >
+              Foot
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -572,160 +650,14 @@ function Leaderboard() {
         {/* Filters - Layout 4: Inline Horizontal Below Current Rankings */}
         {layout === '4' && leaderboardData && (
           <div className="mt-4 sm:mt-6">
-            <div className="bg-white rounded-lg shadow p-3 sm:p-4">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
-                {/* Time Period */}
-                <div className="flex-1">
-                  <label className="block text-xs font-medium text-gray-600 mb-1.5">
-                    Time Period
-                  </label>
-                  <div className="flex gap-1.5">
-                    <button
-                      onClick={() => setSelectedWindow('week')}
-                      className={`flex-1 px-2.5 py-1.5 rounded text-xs font-medium ${
-                        selectedWindow === 'week'
-                          ? 'bg-orange-600 text-white'
-                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                      }`}
-                    >
-                      Week
-                    </button>
-                    <button
-                      onClick={() => setSelectedWindow('month')}
-                      className={`flex-1 px-2.5 py-1.5 rounded text-xs font-medium ${
-                        selectedWindow === 'month'
-                          ? 'bg-orange-600 text-white'
-                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                      }`}
-                    >
-                      Month
-                    </button>
-                    <button
-                      onClick={() => setSelectedWindow('year')}
-                      className={`flex-1 px-2.5 py-1.5 rounded text-xs font-medium ${
-                        selectedWindow === 'year'
-                          ? 'bg-orange-600 text-white'
-                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                      }`}
-                    >
-                      Year
-                    </button>
-                  </div>
-                </div>
-                
-                {/* Divider */}
-                <div className="hidden sm:block h-12 w-px bg-gray-200"></div>
-                
-                {/* Activity Type */}
-                <div className="flex-1">
-                  <label className="block text-xs font-medium text-gray-600 mb-1.5">
-                    Activity Type
-                  </label>
-                  <div className="inline-flex rounded border border-gray-300 bg-white">
-                    <button
-                      onClick={() => toggleActivityType('bike')}
-                      className={`px-2.5 sm:px-3 py-1.5 text-xs font-medium rounded-l transition-colors ${
-                        selectedBike
-                          ? 'bg-orange-600 text-white'
-                          : 'bg-white text-gray-700 hover:bg-gray-50'
-                      }`}
-                    >
-                      Bike
-                    </button>
-                    <button
-                      onClick={() => toggleActivityType('foot')}
-                      className={`px-2.5 sm:px-3 py-1.5 text-xs font-medium rounded-r border-l transition-colors ${
-                        selectedFoot
-                          ? 'bg-orange-600 text-white border-orange-600'
-                          : 'bg-white text-gray-700 hover:bg-gray-50 border-gray-300'
-                      }`}
-                    >
-                      Foot
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
+            {renderInlineFilters()}
           </div>
         )}
 
         {/* Filters - Layout 5: Inline Horizontal Below Previous Top 3 */}
         {layout === '5' && leaderboardData && (
           <div className="mt-4 sm:mt-6">
-            <div className="bg-white rounded-lg shadow p-3 sm:p-4">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
-                {/* Time Period */}
-                <div className="flex-1">
-                  <label className="block text-xs font-medium text-gray-600 mb-1.5">
-                    Time Period
-                  </label>
-                  <div className="flex gap-1.5">
-                    <button
-                      onClick={() => setSelectedWindow('week')}
-                      className={`flex-1 px-2.5 py-1.5 rounded text-xs font-medium ${
-                        selectedWindow === 'week'
-                          ? 'bg-orange-600 text-white'
-                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                      }`}
-                    >
-                      Week
-                    </button>
-                    <button
-                      onClick={() => setSelectedWindow('month')}
-                      className={`flex-1 px-2.5 py-1.5 rounded text-xs font-medium ${
-                        selectedWindow === 'month'
-                          ? 'bg-orange-600 text-white'
-                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                      }`}
-                    >
-                      Month
-                    </button>
-                    <button
-                      onClick={() => setSelectedWindow('year')}
-                      className={`flex-1 px-2.5 py-1.5 rounded text-xs font-medium ${
-                        selectedWindow === 'year'
-                          ? 'bg-orange-600 text-white'
-                          : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                      }`}
-                    >
-                      Year
-                    </button>
-                  </div>
-                </div>
-                
-                {/* Divider */}
-                <div className="hidden sm:block h-12 w-px bg-gray-200"></div>
-                
-                {/* Activity Type */}
-                <div className="flex-1">
-                  <label className="block text-xs font-medium text-gray-600 mb-1.5">
-                    Activity Type
-                  </label>
-                  <div className="inline-flex rounded border border-gray-300 bg-white">
-                    <button
-                      onClick={() => toggleActivityType('bike')}
-                      className={`px-2.5 sm:px-3 py-1.5 text-xs font-medium rounded-l transition-colors ${
-                        selectedBike
-                          ? 'bg-orange-600 text-white'
-                          : 'bg-white text-gray-700 hover:bg-gray-50'
-                      }`}
-                    >
-                      Bike
-                    </button>
-                    <button
-                      onClick={() => toggleActivityType('foot')}
-                      className={`px-2.5 sm:px-3 py-1.5 text-xs font-medium rounded-r border-l transition-colors ${
-                        selectedFoot
-                          ? 'bg-orange-600 text-white border-orange-600'
-                          : 'bg-white text-gray-700 hover:bg-gray-50 border-gray-300'
-                      }`}
-                    >
-                      Foot
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
+            {renderInlineFilters()}
           </div>
         )}
       </div>
