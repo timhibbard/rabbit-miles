@@ -127,9 +127,18 @@ Add these routes to your API Gateway:
 - Target: `admin_update_activities` Lambda
 - CORS: Enabled with credentials
 
-### Step 5: Create EventBridge Schedule
+### Step 5: Deploy EventBridge Schedule
 
-Create a schedule to trigger `scheduled_activity_update` Lambda every 12 hours:
+The EventBridge schedule is **automatically deployed** via GitHub Actions when you push to the `main` branch (specifically when files in `backend/scheduled_activity_update/` or the workflow file change).
+
+The workflow (`.github/workflows/deploy-eventbridge-schedule.yml`) will:
+1. Create/update the EventBridge rule with `rate(12 hours)` schedule
+2. Configure the Lambda as the target
+3. Grant EventBridge permission to invoke the Lambda
+
+**Manual Setup (Only if needed):**
+
+If you need to manually configure the schedule:
 
 **Using AWS Console:**
 
@@ -240,9 +249,31 @@ Monitor scheduled rule:
 
 ### Scheduled Lambda Not Running
 
-1. Check EventBridge rule is enabled
-2. Verify Lambda permission for EventBridge
-3. Check CloudWatch Logs for errors
+1. **Verify EventBridge rule exists and is enabled:**
+   ```bash
+   aws events describe-rule --name scheduled-activity-update-every-12h
+   ```
+   Look for `"State": "ENABLED"`
+
+2. **Verify Lambda is configured as target:**
+   ```bash
+   aws events list-targets-by-rule --rule scheduled-activity-update-every-12h
+   ```
+
+3. **Check Lambda has EventBridge permission:**
+   ```bash
+   aws lambda get-policy --function-name <your-lambda-name>
+   ```
+   Look for `AllowEventBridgeInvoke` statement
+
+4. **Re-run the EventBridge deployment workflow:**
+   - Go to GitHub Actions
+   - Select "Deploy EventBridge Schedule" workflow
+   - Click "Run workflow" to manually trigger it
+
+5. **Check CloudWatch Logs for errors:**
+   - Go to `/aws/lambda/<your-lambda-name>`
+   - Look for invocation logs every 12 hours
 
 ### User/Admin Update Fails
 

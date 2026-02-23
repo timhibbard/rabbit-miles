@@ -1,0 +1,80 @@
+name: Deploy EventBridge Schedule
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'backend/scheduled_activity_update/**'
+      - '.github/workflows/deploy-eventbridge-schedule.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy-schedule:
+    name: Configure EventBridge Schedule
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Create/Update EventBridge Rule
+        run: |
+          # Create or update the EventBridge rule
+          aws events put-rule \
+            --name scheduled-activity-update-every-12h \
+            --description "Updates activities from Strava every 12 hours" \
+            --schedule-expression "rate(12 hours)" \
+            --state ENABLED
+
+      - name: Add Lambda as Target
+        run: |
+          # Get Lambda ARN
+          LAMBDA_ARN=$(aws lambda get-function \
+            --function-name ${{ secrets.LAMBDA_SCHEDULED_ACTIVITY_UPDATE }} \
+            --query 'Configuration.FunctionArn' \
+            --output text)
+          
+          echo "Lambda ARN: $LAMBDA_ARN"
+          
+          # Add Lambda as target to the EventBridge rule
+          aws events put-targets \
+            --rule scheduled-activity-update-every-12h \
+            --targets "Id"="1","Arn"="$LAMBDA_ARN"
+
+      - name: Grant EventBridge Permission to Invoke Lambda
+        run: |
+          # Get AWS Account ID
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          
+          # Get AWS Region
+          REGION=${{ secrets.AWS_REGION }}
+          
+          # Remove existing permission if it exists (ignore errors)
+          aws lambda remove-permission \
+            --function-name ${{ secrets.LAMBDA_SCHEDULED_ACTIVITY_UPDATE }} \
+            --statement-id AllowEventBridgeInvoke \
+            2>/dev/null || true
+          
+          # Add permission for EventBridge to invoke Lambda
+          aws lambda add-permission \
+            --function-name ${{ secrets.LAMBDA_SCHEDULED_ACTIVITY_UPDATE }} \
+            --statement-id AllowEventBridgeInvoke \
+            --action lambda:InvokeFunction \
+            --principal events.amazonaws.com \
+            --source-arn "arn:aws:events:${REGION}:${ACCOUNT_ID}:rule/scheduled-activity-update-every-12h"
+
+      - name: Verify EventBridge Rule
+        run: |
+          echo "Verifying EventBridge rule configuration..."
+          aws events describe-rule --name scheduled-activity-update-every-12h
+          
+          echo ""
+          echo "Rule targets:"
+          aws events list-targets-by-rule --rule scheduled-activity-update-every-12h

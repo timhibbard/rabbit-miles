@@ -27,18 +27,29 @@ Ensures that activity data (including `athlete_count` for group activities) is k
 
 ## Deployment
 
-### 1. Deploy Lambda Function
+Both the Lambda function and EventBridge schedule are automatically deployed via GitHub Actions when code is pushed to the `main` branch.
 
-The Lambda is automatically deployed via GitHub Actions when code is pushed to the `main` branch.
+### Required GitHub Secrets
 
 ```bash
-# GitHub Actions secret needed:
 LAMBDA_SCHEDULED_ACTIVITY_UPDATE=<lambda-function-name>
+AWS_ACCESS_KEY_ID=<your-aws-access-key>
+AWS_SECRET_ACCESS_KEY=<your-aws-secret-key>
+AWS_REGION=<your-aws-region>
 ```
 
-### 2. Create EventBridge Schedule
+### What Gets Deployed
 
-Create an Amazon EventBridge rule to trigger the Lambda every 12 hours:
+1. **Lambda Function** - Deployed by `.github/workflows/deploy-lambdas.yml`
+2. **EventBridge Schedule** - Configured by `.github/workflows/deploy-eventbridge-schedule.yml`
+   - Rule name: `scheduled-activity-update-every-12h`
+   - Schedule: `rate(12 hours)`
+   - Target: The Lambda function specified in `LAMBDA_SCHEDULED_ACTIVITY_UPDATE`
+   - Permissions: Automatically grants EventBridge permission to invoke the Lambda
+
+### Manual Deployment (Optional)
+
+If you need to manually configure the EventBridge schedule, you can use the AWS Console or CLI:
 
 **Using AWS Console:**
 
