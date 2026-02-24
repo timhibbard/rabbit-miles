@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { fetchMe, fetchLeaderboard } from '../utils/api';
 
 // Number of top athletes to display in current rankings
-const TOP_ATHLETES_COUNT = 5;
+const TOP_ATHLETES_COUNT = 15;
 
 function Leaderboard() {
   const [loading, setLoading] = useState(true);
