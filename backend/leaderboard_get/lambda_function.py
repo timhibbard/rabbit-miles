@@ -223,25 +223,15 @@ def get_user_rank(window_key, metric, activity_type, athlete_id):
     }
 
 
-def get_total_athletes_count(window_key, metric, activity_type):
-    """Get the total count of athletes on the leaderboard"""
+def get_total_athletes_count():
+    """Get the total count of athletes who have opted into leaderboards"""
     sql = """
     SELECT COUNT(*)
-    FROM leaderboard_agg l
-    JOIN users u ON l.athlete_id = u.athlete_id
-    WHERE l.window_key = :window_key
-      AND l.metric = :metric
-      AND l.activity_type = :activity_type
-      AND u.show_on_leaderboards = true
+    FROM users
+    WHERE show_on_leaderboards = true
     """
     
-    params = [
-        {"name": "window_key", "value": {"stringValue": window_key}},
-        {"name": "metric", "value": {"stringValue": metric}},
-        {"name": "activity_type", "value": {"stringValue": activity_type}},
-    ]
-    
-    result = exec_sql(sql, params)
+    result = exec_sql(sql)
     records = result.get("records", [])
     
     if not records:
@@ -365,7 +355,7 @@ def handler(event, context):
                 print(f"WARNING - Invalid user_id parameter: {user_id}")
         
         # Get total athletes count
-        total_athletes = get_total_athletes_count(window_key, metric, activity_type)
+        total_athletes = get_total_athletes_count()
         print(f"LOG - Total athletes on leaderboard: {total_athletes}")
         
         # Get previous period top 3
