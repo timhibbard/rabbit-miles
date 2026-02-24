@@ -174,7 +174,12 @@ function Leaderboard() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-xs sm:text-sm text-blue-600 font-medium">Your Rank</p>
-                    <p className="text-xl sm:text-2xl font-bold text-blue-900">#{leaderboardData.my_rank.rank}</p>
+                    <p className="text-xl sm:text-2xl font-bold text-blue-900">
+                      #{leaderboardData.my_rank.rank}
+                      {leaderboardData.total_athletes && (
+                        <span className="text-base sm:text-lg font-normal text-blue-700"> out of {leaderboardData.total_athletes}</span>
+                      )}
+                    </p>
                   </div>
                   <div className="text-right">
                     <p className="text-xs sm:text-sm text-blue-600 font-medium">Your Total</p>
