@@ -73,6 +73,7 @@ jobs:
             secret: LAMBDA_USER_UPDATE_ACTIVITIES
           - name: stats_period_summary
             secret: LAMBDA_STATS_PERIOD_SUMMARY
+            needs_timezone_utils: true
           - name: leaderboard_get
             secret: LAMBDA_LEADERBOARD_GET
             needs_utils: true
@@ -85,6 +86,7 @@ jobs:
           - name: admin_recalculate_leaderboard
             secret: LAMBDA_ADMIN_RECALCULATE_LEADERBOARD
             needs_utils: true
+            needs_timezone_utils: true
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -103,6 +105,10 @@ jobs:
           # Include admin_utils.py for admin Lambdas
           if [ "${{ matrix.lambda.needs_utils }}" = "true" ]; then
             zip -j function.zip ../admin_utils.py
+          fi
+          # Include timezone_utils.py for Lambdas that need timezone handling
+          if [ "${{ matrix.lambda.needs_timezone_utils }}" = "true" ]; then
+            zip -j function.zip ../timezone_utils.py
           fi
 
       - name: Deploy ${{ matrix.lambda.name }} Lambda
