@@ -23,15 +23,11 @@ import json
 import base64
 import hmac
 import hashlib
-import sys
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 from urllib.parse import urlparse
 import boto3
 
-# Add parent directory to path to import admin_utils and timezone_utils
-parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, parent_dir)
 import timezone_utils
 
 rds = boto3.client("rds-data")

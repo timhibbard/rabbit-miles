@@ -8,16 +8,11 @@
 # ADMIN_ATHLETE_IDS (comma-separated list of admin athlete IDs)
 
 import os
-import sys
 import json
 import time
 from datetime import datetime, timedelta
 from urllib.parse import urlparse
 import boto3
-
-# Add parent directory to path to import admin_utils and timezone_utils
-parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, parent_dir)
 
 import admin_utils
 import timezone_utils
