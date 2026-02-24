@@ -96,6 +96,7 @@ declare -a EXPECTED_ROUTES=(
     "GET /admin/users|admin_list_users|List all users (admin)"
     "GET /admin/users/{athlete_id}/activities|admin_user_activities|Get user activities (admin)"
     "DELETE /admin/users/{athlete_id}|admin_delete_user|Delete user (admin)"
+    "POST /admin/leaderboard/recalculate|admin_recalculate_leaderboard|Recalculate leaderboard (admin)"
 )
 
 echo "=================================="
@@ -198,6 +199,8 @@ else
         IFS='|' read -r route_key lambda_name <<< "$missing"
         if [ "$route_key" = "DELETE /admin/users/{athlete_id}" ]; then
             echo "  ./scripts/setup-admin-delete-user-route.sh"
+        elif [ "$route_key" = "POST /admin/leaderboard/recalculate" ]; then
+            echo "  ./scripts/setup-admin-recalculate-leaderboard-route.sh"
         else
             echo "  # Create route for: $route_key -> $lambda_name"
         fi

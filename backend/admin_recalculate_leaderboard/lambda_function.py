@@ -208,112 +208,154 @@ def recalculate_leaderboard():
         aggregates = {}
         
         activities_processed = 0
+        activities_skipped = 0
         athletes_seen = set()
+        athletes_with_errors = set()
         
         for record in records:
-            athlete_id = int(record[COL_ATHLETE_ID].get("longValue", 0))
-            strava_activity_id = int(record[COL_STRAVA_ACTIVITY_ID].get("longValue", 0))
+            try:
+                athlete_id = int(record[COL_ATHLETE_ID].get("longValue", 0))
+                strava_activity_id = int(record[COL_STRAVA_ACTIVITY_ID].get("longValue", 0))
+                
+                # Distance can be NUMERIC which comes back as stringValue
+                distance_field = record[COL_DISTANCE]
+                if "doubleValue" in distance_field:
+                    distance = float(distance_field["doubleValue"])
+                elif "stringValue" in distance_field:
+                    distance = float(distance_field["stringValue"])
+                else:
+                    distance = 0.0
+                
+                start_date_local = record[COL_START_DATE_LOCAL].get("stringValue", "")
+                activity_type = record[COL_TYPE].get("stringValue", "")
+                
+                # Extract timezones (may be NULL)
+                activity_timezone = None
+                if COL_ACTIVITY_TIMEZONE < len(record) and record[COL_ACTIVITY_TIMEZONE]:
+                    if "stringValue" in record[COL_ACTIVITY_TIMEZONE]:
+                        activity_timezone = record[COL_ACTIVITY_TIMEZONE]["stringValue"]
+                
+                user_timezone = None
+                if COL_USER_TIMEZONE < len(record) and record[COL_USER_TIMEZONE]:
+                    if "stringValue" in record[COL_USER_TIMEZONE]:
+                        user_timezone = record[COL_USER_TIMEZONE]["stringValue"]
+                
+                athletes_seen.add(athlete_id)
+                
+                # Calculate window keys using user's timezone
+                window_keys = get_window_keys(start_date_local, user_timezone, activity_timezone)
+                if not window_keys:
+                    print(f"WARNING: Could not calculate window keys for activity {strava_activity_id} (athlete {athlete_id}), skipping")
+                    activities_skipped += 1
+                    athletes_with_errors.add(athlete_id)
+                    continue
+                
+                # Determine aggregate activity types to update
+                agg_types = ["all"]  # Always update 'all'
+                if activity_type in ["Run", "Walk"]:
+                    agg_types.append("foot")
+                elif activity_type == "Ride":
+                    agg_types.append("bike")
+                
+                # Accumulate distance for each window and activity type
+                metric = "distance"
+                for window, window_key in window_keys.items():
+                    for agg_activity_type in agg_types:
+                        key = (window_key, metric, agg_activity_type, athlete_id)
+                        aggregates[key] = aggregates.get(key, 0.0) + distance
+                
+                activities_processed += 1
+                
+                # Log progress every 100 activities
+                if activities_processed % 100 == 0:
+                    print(f"LOG - Processed {activities_processed} activities...")
             
-            # Distance can be NUMERIC which comes back as stringValue
-            distance_field = record[COL_DISTANCE]
-            if "doubleValue" in distance_field:
-                distance = float(distance_field["doubleValue"])
-            elif "stringValue" in distance_field:
-                distance = float(distance_field["stringValue"])
-            else:
-                distance = 0.0
-            
-            start_date_local = record[COL_START_DATE_LOCAL].get("stringValue", "")
-            activity_type = record[COL_TYPE].get("stringValue", "")
-            
-            # Extract timezones (may be NULL)
-            activity_timezone = None
-            if len(record) > COL_ACTIVITY_TIMEZONE and record[COL_ACTIVITY_TIMEZONE]:
-                if "stringValue" in record[COL_ACTIVITY_TIMEZONE]:
-                    activity_timezone = record[COL_ACTIVITY_TIMEZONE]["stringValue"]
-            
-            user_timezone = None
-            if len(record) > COL_USER_TIMEZONE and record[COL_USER_TIMEZONE]:
-                if "stringValue" in record[COL_USER_TIMEZONE]:
-                    user_timezone = record[COL_USER_TIMEZONE]["stringValue"]
-            
-            athletes_seen.add(athlete_id)
-            
-            # Calculate window keys using user's timezone
-            window_keys = get_window_keys(start_date_local, user_timezone, activity_timezone)
-            if not window_keys:
-                print(f"WARNING: Could not calculate window keys for activity {strava_activity_id}, skipping")
+            except Exception as e:
+                # Don't let one bad activity break the entire recalculation
+                # Safely extract IDs for logging (may fail if record is malformed)
+                athlete_id = None
+                strava_activity_id = None
+                try:
+                    if COL_ATHLETE_ID < len(record):
+                        athlete_id = int(record[COL_ATHLETE_ID].get("longValue", 0))
+                    if COL_STRAVA_ACTIVITY_ID < len(record):
+                        strava_activity_id = int(record[COL_STRAVA_ACTIVITY_ID].get("longValue", 0))
+                except Exception:
+                    pass  # Use defaults
+                
+                print(f"WARNING: Failed to process activity {strava_activity_id or 'unknown'} (athlete {athlete_id or 'unknown'}): {e}")
+                activities_skipped += 1
+                if athlete_id is not None:
+                    athletes_with_errors.add(athlete_id)
                 continue
-            
-            # Determine aggregate activity types to update
-            agg_types = ["all"]  # Always update 'all'
-            if activity_type in ["Run", "Walk"]:
-                agg_types.append("foot")
-            elif activity_type == "Ride":
-                agg_types.append("bike")
-            
-            # Accumulate distance for each window and activity type
-            metric = "distance"
-            for window, window_key in window_keys.items():
-                for agg_activity_type in agg_types:
-                    key = (window_key, metric, agg_activity_type, athlete_id)
-                    aggregates[key] = aggregates.get(key, 0.0) + distance
-            
-            activities_processed += 1
-            
-            # Log progress every 100 activities
-            if activities_processed % 100 == 0:
-                print(f"LOG - Processed {activities_processed} activities...")
         
         print(f"LOG - Finished processing {activities_processed} activities")
+        if activities_skipped > 0:
+            print(f"LOG - Skipped {activities_skipped} activities due to errors")
         print(f"LOG - Found {len(athletes_seen)} unique athletes")
+        if len(athletes_with_errors) > 0:
+            print(f"LOG - {len(athletes_with_errors)} athletes had errors: {sorted(athletes_with_errors)}")
         print(f"LOG - Generated {len(aggregates)} aggregate entries")
         
         # Step 4: Insert aggregates into leaderboard_agg table
         print("LOG - Inserting aggregates into leaderboard_agg table")
         
         insert_count = 0
+        insert_failed = 0
         for (window_key, metric, activity_type, athlete_id), value in aggregates.items():
-            # Extract window type from window_key (e.g., "week_2026-02-09" -> "week")
-            window = window_key.split('_')[0]
+            try:
+                # Extract window type from window_key (e.g., "week_2026-02-09" -> "week")
+                window = window_key.split('_')[0]
+                
+                insert_sql = """
+                INSERT INTO leaderboard_agg ("window", window_key, metric, activity_type, athlete_id, value, last_updated)
+                VALUES (:window, :window_key, :metric, :activity_type, :athlete_id, :value, now())
+                ON CONFLICT (window_key, metric, activity_type, athlete_id)
+                DO UPDATE SET
+                    "window" = EXCLUDED."window",
+                    value = EXCLUDED.value,
+                    last_updated = now()
+                """
+                
+                insert_params = [
+                    {"name": "window", "value": {"stringValue": window}},
+                    {"name": "window_key", "value": {"stringValue": window_key}},
+                    {"name": "metric", "value": {"stringValue": metric}},
+                    {"name": "activity_type", "value": {"stringValue": activity_type}},
+                    {"name": "athlete_id", "value": {"longValue": athlete_id}},
+                    {"name": "value", "value": {"doubleValue": value}},
+                ]
+                
+                exec_sql(insert_sql, insert_params)
+                insert_count += 1
+                
+                # Log progress every 100 inserts
+                if insert_count % 100 == 0:
+                    print(f"LOG - Inserted {insert_count} aggregates...")
             
-            insert_sql = """
-            INSERT INTO leaderboard_agg ("window", window_key, metric, activity_type, athlete_id, value, last_updated)
-            VALUES (:window, :window_key, :metric, :activity_type, :athlete_id, :value, now())
-            ON CONFLICT (window_key, metric, activity_type, athlete_id)
-            DO UPDATE SET
-                "window" = EXCLUDED."window",
-                value = EXCLUDED.value,
-                last_updated = now()
-            """
-            
-            insert_params = [
-                {"name": "window", "value": {"stringValue": window}},
-                {"name": "window_key", "value": {"stringValue": window_key}},
-                {"name": "metric", "value": {"stringValue": metric}},
-                {"name": "activity_type", "value": {"stringValue": activity_type}},
-                {"name": "athlete_id", "value": {"longValue": athlete_id}},
-                {"name": "value", "value": {"doubleValue": value}},
-            ]
-            
-            exec_sql(insert_sql, insert_params)
-            insert_count += 1
-            
-            # Log progress every 100 inserts
-            if insert_count % 100 == 0:
-                print(f"LOG - Inserted {insert_count} aggregates...")
+            except Exception as e:
+                # Don't let one bad insert break the entire recalculation
+                print(f"WARNING: Failed to insert aggregate for athlete {athlete_id}, window {window_key}: {e}")
+                insert_failed += 1
+                athletes_with_errors.add(athlete_id)
+                continue
         
         print(f"LOG - Inserted {insert_count} aggregate entries")
+        if insert_failed > 0:
+            print(f"LOG - Failed to insert {insert_failed} aggregates")
+        if len(athletes_with_errors) > 0:
+            print(f"LOG - Athletes with errors (activities skipped or inserts failed): {sorted(athletes_with_errors)}")
         print(f"=== recalculate_leaderboard END: SUCCESS ===")
         
-        return activities_processed, len(athletes_seen), None
+        # Return tuple with additional metrics
+        return activities_processed, len(athletes_seen), None, activities_skipped, insert_failed, list(athletes_with_errors)
         
     except Exception as e:
         error = f"Recalculation failed: {e}"
         print(f"ERROR: {error}")
         import traceback
         traceback.print_exc()
-        return 0, 0, error
+        return 0, 0, error, 0, 0, []
 
 
 def handler(event, context):
@@ -396,7 +438,8 @@ def handler(event, context):
         )
         
         # Perform recalculation
-        activities_processed, athletes_processed, error_message = recalculate_leaderboard()
+        result = recalculate_leaderboard()
+        activities_processed, athletes_processed, error_message, activities_skipped, insert_failed, athletes_with_errors = result
         
         if error_message:
             print(f"ERROR - Recalculation failed: {error_message}")
@@ -412,19 +455,32 @@ def handler(event, context):
         duration_ms = (time.time() - start_time) * 1000
         print(f"LOG - Recalculation successful in {duration_ms:.2f}ms")
         print(f"LOG - Processed {activities_processed} activities from {athletes_processed} athletes")
+        if activities_skipped > 0 or insert_failed > 0:
+            print(f"LOG - Skipped {activities_skipped} activities and {insert_failed} inserts due to errors")
         print("=" * 80)
         print("ADMIN RECALCULATE LEADERBOARD - SUCCESS")
         print("=" * 80)
         
+        response_data = {
+            "message": "Leaderboard recalculation completed successfully",
+            "activities_processed": activities_processed,
+            "athletes_processed": athletes_processed,
+            "duration_ms": round(duration_ms, 2)
+        }
+        
+        # Include warning information if there were errors
+        if activities_skipped > 0 or insert_failed > 0:
+            response_data["warnings"] = {
+                "activities_skipped": activities_skipped,
+                "insert_failed": insert_failed,
+                "athletes_with_errors": athletes_with_errors
+            }
+            response_data["message"] = f"Leaderboard recalculation completed with {activities_skipped + insert_failed} items skipped due to errors"
+        
         return {
             "statusCode": 200,
             "headers": headers,
-            "body": json.dumps({
-                "message": "Leaderboard recalculation completed successfully",
-                "activities_processed": activities_processed,
-                "athletes_processed": athletes_processed,
-                "duration_ms": round(duration_ms, 2)
-            })
+            "body": json.dumps(response_data)
         }
     
     except Exception as e:
