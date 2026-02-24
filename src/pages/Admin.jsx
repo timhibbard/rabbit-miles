@@ -239,9 +239,11 @@ function Admin() {
       let message = `Successfully recalculated leaderboard: ${activities_processed} activities from ${athletes_processed} athletes processed in ${duration_ms.toFixed(0)}ms`;
       
       // Add warning if some activities were skipped
-      if (warnings && (warnings.activities_skipped > 0 || warnings.insert_failed > 0)) {
+      if (warnings) {
         const skippedCount = (warnings.activities_skipped || 0) + (warnings.insert_failed || 0);
-        message += ` (${skippedCount} items skipped due to errors - check CloudWatch logs for details)`;
+        if (skippedCount > 0) {
+          message += ` (${skippedCount} items skipped due to errors - check CloudWatch logs for details)`;
+        }
       }
       
       setSuccessMessage(message);
