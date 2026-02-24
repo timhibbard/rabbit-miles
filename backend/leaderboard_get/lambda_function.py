@@ -223,7 +223,7 @@ def get_user_rank(window_key, metric, activity_type, athlete_id):
     }
 
 
-def get_total_athletes_count(window_key, metric, activity_type):
+def get_total_athletes_count():
     """Get the total count of athletes who have opted into leaderboards"""
     sql = """
     SELECT COUNT(*)
@@ -355,7 +355,7 @@ def handler(event, context):
                 print(f"WARNING - Invalid user_id parameter: {user_id}")
         
         # Get total athletes count
-        total_athletes = get_total_athletes_count(window_key, metric, activity_type)
+        total_athletes = get_total_athletes_count()
         print(f"LOG - Total athletes on leaderboard: {total_athletes}")
         
         # Get previous period top 3
