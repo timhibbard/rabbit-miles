@@ -114,15 +114,38 @@ The Lambda will be automatically deployed by the GitHub Actions workflow when ch
 cd backend/admin_recalculate_leaderboard
 zip -r function.zip lambda_function.py
 zip -j function.zip ../admin_utils.py
+zip -j function.zip ../timezone_utils.py
 
 aws lambda update-function-code \
   --function-name rabbitmiles-admin-recalculate-leaderboard \
   --zip-file fileb://function.zip
 ```
 
+### 4.5. Configure Lambda Timeout and Memory (CRITICAL)
+
+⚠️ **REQUIRED**: The Lambda needs sufficient timeout and memory to process all activities:
+
+**Quick Configuration:**
+```bash
+./scripts/configure-admin-recalculate-leaderboard-lambda.sh
+```
+
+**Manual Configuration:**
+```bash
+aws lambda update-function-configuration \
+  --function-name rabbitmiles-admin-recalculate-leaderboard \
+  --timeout 600 \
+  --memory-size 1024
+```
+
+**Why this is needed:**
+- Processing hundreds/thousands of activities can take several minutes
+- Default Lambda timeout is only 3 seconds
+- Insufficient timeout causes 503 errors (intermittent based on activity count)
+
 ### 5. Run the Recalculation
 
-Once deployed, trigger the recalculation endpoint:
+Once deployed and configured, trigger the recalculation endpoint:
 
 ```bash
 curl -X POST https://api.rabbitmiles.com/admin/leaderboard/recalculate \
@@ -242,15 +265,35 @@ You cannot easily test this Lambda locally as it requires:
 
 ## Troubleshooting
 
-### Issue: Lambda times out
+### Issue: 503 Service Unavailable (Intermittent)
 
-**Solution**: Increase Lambda timeout to 10 minutes or memory to 1024 MB
+**Cause**: Lambda is timing out during execution
 
-### Issue: "not authenticated" error
+**Solution**: Increase Lambda timeout and memory:
+```bash
+./scripts/configure-admin-recalculate-leaderboard-lambda.sh
+```
 
-**Solution**: Ensure your session cookie is valid and you're in the admin allowlist
+Or manually:
+```bash
+aws lambda update-function-configuration \
+  --function-name rabbitmiles-admin-recalculate-leaderboard \
+  --timeout 600 \
+  --memory-size 1024
+```
 
-### Issue: 503 Service Unavailable
+**Why it's intermittent:**
+- Works when there are few activities (quick processing)
+- Fails when there are many activities (exceeds timeout)
+- Cold starts add 1-2 seconds of latency
+
+**Recommended settings:**
+- Timeout: 600 seconds (10 minutes)
+- Memory: 1024 MB
+
+See [FIX_503_ADMIN_RECALCULATE_LEADERBOARD.md](./FIX_503_ADMIN_RECALCULATE_LEADERBOARD.md) for detailed instructions.
+
+### Issue: 503 Service Unavailable (Consistent)
 
 **Cause**: The API Gateway route for `/admin/leaderboard/recalculate` is missing
 
@@ -264,7 +307,9 @@ Verify the route was created:
 ./scripts/verify-api-gateway-routes.sh
 ```
 
-See [FIX_503_ADMIN_RECALCULATE_LEADERBOARD.md](./FIX_503_ADMIN_RECALCULATE_LEADERBOARD.md) for detailed instructions.
+### Issue: Lambda times out even with 10 minute timeout
+
+**Solution**: Check CloudWatch logs for specific errors. May need to optimize query or process in batches.
 
 ### Issue: "no activities found"
 
