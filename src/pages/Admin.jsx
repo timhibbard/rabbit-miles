@@ -239,8 +239,8 @@ function Admin() {
       // Handle async processing response (202 status with "processing" status)
       if (status === 'processing') {
         setSuccessMessage(message || 'Leaderboard recalculation started successfully. This process runs in the background and may take up to 1 minute to complete.');
-      } else {
-        // Handle sync response (legacy - should not happen anymore)
+      } else if (activities_processed !== undefined) {
+        // Sync response with actual results (should not happen with async implementation)
         let successMsg = message || `Successfully recalculated leaderboard: ${activities_processed} activities from ${athletes_processed} athletes processed in ${duration_ms.toFixed(0)}ms`;
         
         // Add warning if some activities were skipped
@@ -252,6 +252,9 @@ function Admin() {
         }
         
         setSuccessMessage(successMsg);
+      } else {
+        // Fallback for unexpected response format
+        setSuccessMessage(message || 'Leaderboard recalculation request submitted successfully.');
       }
     } else {
       setError(result.error || 'Failed to recalculate leaderboard');

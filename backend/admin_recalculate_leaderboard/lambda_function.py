@@ -523,8 +523,19 @@ def handler(event, context):
             status_code = response.get('StatusCode')
             print(f"LOG - Successfully triggered async recalculation: Lambda invocation status {status_code}")
             
+            # Status codes: 202 = Accepted (async), 200 = OK (sync but shouldn't happen)
+            # Any other status code indicates a problem
             if status_code not in [200, 202]:
-                print(f"WARNING - Unexpected Lambda invocation status code: {status_code}")
+                error_msg = f"Lambda invocation returned unexpected status code: {status_code}"
+                print(f"ERROR - {error_msg}")
+                return {
+                    "statusCode": 500,
+                    "headers": headers,
+                    "body": json.dumps({
+                        "error": "Failed to trigger recalculation",
+                        "message": error_msg
+                    })
+                }
         
         except Exception as e:
             print(f"ERROR - Failed to trigger async recalculation: {e}")
