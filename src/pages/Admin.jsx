@@ -234,19 +234,28 @@ function Admin() {
 
     const result = await recalculateLeaderboard();
     if (result.success) {
-      const { activities_processed, athletes_processed, duration_ms, warnings } = result.data;
+      const { message, status, activities_processed, athletes_processed, duration_ms, warnings } = result.data;
       
-      let message = `Successfully recalculated leaderboard: ${activities_processed} activities from ${athletes_processed} athletes processed in ${duration_ms.toFixed(0)}ms`;
-      
-      // Add warning if some activities were skipped
-      if (warnings) {
-        const skippedCount = (warnings.activities_skipped || 0) + (warnings.insert_failed || 0);
-        if (skippedCount > 0) {
-          message += ` (${skippedCount} items skipped due to errors - check CloudWatch logs for details)`;
+      // Handle async processing response (202 status with "processing" status)
+      if (status === 'processing') {
+        setSuccessMessage(message || 'Leaderboard recalculation started successfully. This process runs in the background and may take up to 1 minute to complete.');
+      } else if (activities_processed !== undefined) {
+        // Sync response with actual results (should not happen with async implementation)
+        let successMsg = message || `Successfully recalculated leaderboard: ${activities_processed} activities from ${athletes_processed} athletes processed in ${duration_ms.toFixed(0)}ms`;
+        
+        // Add warning if some activities were skipped
+        if (warnings) {
+          const skippedCount = (warnings.activities_skipped || 0) + (warnings.insert_failed || 0);
+          if (skippedCount > 0) {
+            successMsg += ` (${skippedCount} items skipped due to errors - check CloudWatch logs for details)`;
+          }
         }
+        
+        setSuccessMessage(successMsg);
+      } else {
+        // Fallback for unexpected response format
+        setSuccessMessage(message || 'Leaderboard recalculation request submitted successfully.');
       }
-      
-      setSuccessMessage(message);
     } else {
       setError(result.error || 'Failed to recalculate leaderboard');
     }
