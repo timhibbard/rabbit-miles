@@ -273,19 +273,19 @@ def recalculate_leaderboard():
             except Exception as e:
                 # Don't let one bad activity break the entire recalculation
                 # Safely extract IDs for logging (may fail if record is malformed)
-                athlete_id = 0
-                strava_activity_id = 0
+                athlete_id = None
+                strava_activity_id = None
                 try:
                     if isinstance(record, list) and COL_ATHLETE_ID < len(record):
-                        athlete_id = record[COL_ATHLETE_ID].get("longValue", 0)
+                        athlete_id = int(record[COL_ATHLETE_ID].get("longValue", 0))
                     if isinstance(record, list) and COL_STRAVA_ACTIVITY_ID < len(record):
-                        strava_activity_id = record[COL_STRAVA_ACTIVITY_ID].get("longValue", 0)
+                        strava_activity_id = int(record[COL_STRAVA_ACTIVITY_ID].get("longValue", 0))
                 except Exception:
                     pass  # Use defaults
                 
-                print(f"WARNING: Failed to process activity {strava_activity_id} (athlete {athlete_id}): {e}")
+                print(f"WARNING: Failed to process activity {strava_activity_id or 'unknown'} (athlete {athlete_id or 'unknown'}): {e}")
                 activities_skipped += 1
-                if athlete_id and isinstance(athlete_id, int):
+                if athlete_id is not None and isinstance(athlete_id, int):
                     athletes_with_errors.add(athlete_id)
                 continue
         
