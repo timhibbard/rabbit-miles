@@ -18,6 +18,7 @@ import admin_utils
 import timezone_utils
 
 rds = boto3.client("rds-data")
+lambda_client = boto3.client("lambda")
 
 # Get environment variables
 DB_CLUSTER_ARN = os.environ.get("DB_CLUSTER_ARN", "")
@@ -26,6 +27,7 @@ DB_NAME = os.environ.get("DB_NAME", "postgres")
 APP_SECRET_STR = os.environ.get("APP_SECRET", "")
 APP_SECRET = APP_SECRET_STR.encode() if APP_SECRET_STR else b""
 FRONTEND_URL = os.environ.get("FRONTEND_URL", "").rstrip("/")
+LAMBDA_FUNCTION_NAME = os.environ.get("AWS_LAMBDA_FUNCTION_NAME", "")
 
 # Filter activities starting from Jan 1, 2026 00:00:00 UTC
 RECALC_START_DATE = "2026-01-01 00:00:00"
@@ -368,76 +370,22 @@ def handler(event, context):
     cors_origin = get_cors_origin()
     headers = admin_utils.get_admin_headers(cors_origin)
     
-    # Handle OPTIONS preflight requests
-    if event.get("requestContext", {}).get("http", {}).get("method") == "OPTIONS":
-        print("LOG - OPTIONS preflight request")
-        return {
-            "statusCode": 200,
-            "headers": {
-                **headers,
-                "Access-Control-Allow-Methods": "POST, OPTIONS",
-                "Access-Control-Allow-Headers": "Content-Type, Cookie",
-                "Access-Control-Max-Age": "86400"
-            },
-            "body": ""
-        }
+    # Check if this is an async invocation (no API Gateway requestContext)
+    # When invoked asynchronously by itself, skip auth and run recalculation directly
+    is_async_invocation = event.get("async_invocation") is True
     
-    try:
+    if is_async_invocation:
+        print("LOG - Running as async invocation (background task)")
+        
         # Validate required environment variables
         if not DB_CLUSTER_ARN or not DB_SECRET_ARN:
             print("ERROR - Missing DB_CLUSTER_ARN or DB_SECRET_ARN")
             return {
                 "statusCode": 500,
-                "headers": headers,
                 "body": json.dumps({"error": "server configuration error"})
             }
         
-        if not APP_SECRET:
-            print("ERROR - Missing APP_SECRET")
-            return {
-                "statusCode": 500,
-                "headers": headers,
-                "body": json.dumps({"error": "server configuration error"})
-            }
-        
-        # Verify session and admin status
-        print("LOG - Verifying admin session")
-        athlete_id, is_admin = admin_utils.verify_admin_session(event, APP_SECRET)
-        
-        if not athlete_id:
-            print("ERROR - Not authenticated")
-            return {
-                "statusCode": 401,
-                "headers": headers,
-                "body": json.dumps({"error": "not authenticated"})
-            }
-        
-        if not is_admin:
-            print(f"ERROR - User {athlete_id} is not an admin")
-            admin_utils.audit_log_admin_action(
-                athlete_id,
-                "/admin/leaderboard/recalculate",
-                "access_denied",
-                {"reason": "not in admin allowlist"}
-            )
-            return {
-                "statusCode": 403,
-                "headers": headers,
-                "body": json.dumps({"error": "forbidden"})
-            }
-        
-        print(f"LOG - Admin {athlete_id} authenticated successfully")
-        print("LOG - Starting leaderboard recalculation")
-        
-        # Audit log
-        admin_utils.audit_log_admin_action(
-            athlete_id,
-            "/admin/leaderboard/recalculate",
-            "recalculate_leaderboard",
-            {"start_date": RECALC_START_DATE}
-        )
-        
-        # Perform recalculation
+        # Perform recalculation directly (no auth check needed - already verified)
         result = recalculate_leaderboard()
         activities_processed, athletes_processed, error_message, activities_skipped, insert_failed, athletes_with_errors = result
         
@@ -445,7 +393,6 @@ def handler(event, context):
             print(f"ERROR - Recalculation failed: {error_message}")
             return {
                 "statusCode": 500,
-                "headers": headers,
                 "body": json.dumps({
                     "error": "recalculation failed",
                     "message": error_message
@@ -479,8 +426,132 @@ def handler(event, context):
         
         return {
             "statusCode": 200,
-            "headers": headers,
             "body": json.dumps(response_data)
+        }
+    
+    # Handle OPTIONS preflight requests
+    if event.get("requestContext", {}).get("http", {}).get("method") == "OPTIONS":
+        print("LOG - OPTIONS preflight request")
+        return {
+            "statusCode": 200,
+            "headers": {
+                **headers,
+                "Access-Control-Allow-Methods": "POST, OPTIONS",
+                "Access-Control-Allow-Headers": "Content-Type, Cookie",
+                "Access-Control-Max-Age": "86400"
+            },
+            "body": ""
+        }
+    
+    try:
+        # Validate required environment variables
+        if not DB_CLUSTER_ARN or not DB_SECRET_ARN:
+            print("ERROR - Missing DB_CLUSTER_ARN or DB_SECRET_ARN")
+            return {
+                "statusCode": 500,
+                "headers": headers,
+                "body": json.dumps({"error": "server configuration error"})
+            }
+        
+        if not APP_SECRET:
+            print("ERROR - Missing APP_SECRET")
+            return {
+                "statusCode": 500,
+                "headers": headers,
+                "body": json.dumps({"error": "server configuration error"})
+            }
+        
+        if not LAMBDA_FUNCTION_NAME:
+            print("ERROR - Missing AWS_LAMBDA_FUNCTION_NAME")
+            return {
+                "statusCode": 500,
+                "headers": headers,
+                "body": json.dumps({"error": "server configuration error"})
+            }
+        
+        # Verify session and admin status
+        print("LOG - Verifying admin session")
+        athlete_id, is_admin = admin_utils.verify_admin_session(event, APP_SECRET)
+        
+        if not athlete_id:
+            print("ERROR - Not authenticated")
+            return {
+                "statusCode": 401,
+                "headers": headers,
+                "body": json.dumps({"error": "not authenticated"})
+            }
+        
+        if not is_admin:
+            print(f"ERROR - User {athlete_id} is not an admin")
+            admin_utils.audit_log_admin_action(
+                athlete_id,
+                "/admin/leaderboard/recalculate",
+                "access_denied",
+                {"reason": "not in admin allowlist"}
+            )
+            return {
+                "statusCode": 403,
+                "headers": headers,
+                "body": json.dumps({"error": "forbidden"})
+            }
+        
+        print(f"LOG - Admin {athlete_id} authenticated successfully")
+        print("LOG - Triggering asynchronous leaderboard recalculation")
+        
+        # Audit log
+        admin_utils.audit_log_admin_action(
+            athlete_id,
+            "/admin/leaderboard/recalculate",
+            "recalculate_leaderboard_triggered",
+            {"start_date": RECALC_START_DATE}
+        )
+        
+        # Invoke this Lambda asynchronously to perform the actual recalculation
+        # This allows us to return immediately to the client (avoiding 30s API Gateway timeout)
+        try:
+            async_event = {
+                "async_invocation": True,
+                "triggered_by_athlete_id": athlete_id
+            }
+            
+            response = lambda_client.invoke(
+                FunctionName=LAMBDA_FUNCTION_NAME,
+                InvocationType='Event',  # Async invocation - returns immediately
+                Payload=json.dumps(async_event)
+            )
+            
+            status_code = response.get('StatusCode')
+            print(f"LOG - Successfully triggered async recalculation: Lambda invocation status {status_code}")
+            
+            if status_code not in [200, 202]:
+                print(f"WARNING - Unexpected Lambda invocation status code: {status_code}")
+        
+        except Exception as e:
+            print(f"ERROR - Failed to trigger async recalculation: {e}")
+            import traceback
+            traceback.print_exc()
+            return {
+                "statusCode": 500,
+                "headers": headers,
+                "body": json.dumps({
+                    "error": "Failed to trigger recalculation",
+                    "message": str(e)
+                })
+            }
+        
+        duration_ms = (time.time() - start_time) * 1000
+        print(f"LOG - Async trigger completed in {duration_ms:.2f}ms")
+        print("=" * 80)
+        print("ADMIN RECALCULATE LEADERBOARD - ASYNC TRIGGERED")
+        print("=" * 80)
+        
+        return {
+            "statusCode": 202,  # 202 Accepted - processing in background
+            "headers": headers,
+            "body": json.dumps({
+                "message": "Leaderboard recalculation started successfully. This process runs in the background and may take up to 1 minute to complete.",
+                "status": "processing"
+            })
         }
     
     except Exception as e:
