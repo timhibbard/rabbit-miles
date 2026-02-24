@@ -2,85 +2,112 @@
 
 ## Problem
 
-The `/admin/leaderboard/recalculate` endpoint returns a 503 error when called from the admin panel. The error is **intermittent** - it works sometimes but fails other times.
+The `/admin/leaderboard/recalculate` endpoint returns a 503 error when called from the admin panel, even though the Lambda function **completes successfully** in CloudWatch logs.
 
-## Root Causes
+### Observed Symptoms
+- Frontend shows "Service Unavailable" error
+- CloudWatch logs show Lambda completing successfully after ~47-48 seconds
+- All activities are processed correctly
+- Leaderboard is updated successfully
+- User still sees an error message
 
-### 1. Lambda Timeout (Primary Cause)
+## Root Cause
 
-The Lambda function `rabbitmiles-admin-recalculate-leaderboard` is **timing out** during execution. When the Lambda processes many activities and takes longer than its configured timeout, AWS Lambda terminates the function and API Gateway returns a 503 Service Unavailable error.
+**API Gateway HTTP APIs have a hard 30-second timeout limit.**
 
-**Default Lambda timeout:** 3 seconds (AWS default)  
-**Needed timeout:** 10 minutes (600 seconds) for processing large datasets
+Even though:
+- Lambda is configured with 600-second timeout ✅
+- Lambda has 1024MB memory ✅
+- Lambda completes successfully in ~47 seconds ✅
+- Error handling is robust ✅
 
-The timeout is especially likely when:
-- There are many activities to process (hundreds or thousands)
-- The database queries take longer than usual
-- Lambda cold start adds additional latency
-
-### 2. Lack of Error Handling (Secondary Cause)
-
-When a user revokes Strava permissions or has corrupted data, processing their activities could throw an exception, causing the entire recalculation to fail. The original code didn't have per-activity error handling, so one bad user's data would break the calculation for everyone.
+The API Gateway timeout is **not configurable** and will always terminate requests after 30 seconds, returning a 503 error to the client even if the Lambda is still running successfully in the background.
 
 ## Solution
 
-This PR implements two fixes:
+**Implement asynchronous invocation pattern:**
 
-### A. Increase Lambda Timeout and Memory
+1. When called from API Gateway:
+   - Verify admin authentication
+   - Invoke the Lambda function **asynchronously** using `InvocationType='Event'`
+   - Return immediately with **202 Accepted** status (< 1 second)
 
-Configure the Lambda with sufficient resources to process all activities.
+2. Lambda invokes itself to run the actual recalculation:
+   - Runs in the background for ~47 seconds
+   - Logs results to CloudWatch
+   - No response sent back to client
 
-### Quick Fix (2 minutes)
+3. Frontend displays user-friendly message:
+   - "Leaderboard recalculation started successfully"
+   - "This process runs in the background and may take up to 1 minute to complete"
 
-1. **Run the configuration script:**
-   ```bash
-   ./scripts/configure-admin-recalculate-leaderboard-lambda.sh
-   ```
+### Why This Works
 
-   This will:
-   - Set timeout to 600 seconds (10 minutes)
-   - Set memory to 1024 MB
-   - Verify the configuration
+- **API Gateway timeout:** Request completes in < 1 second ✅
+- **Lambda execution:** Still runs for full ~47 seconds ✅
+- **User experience:** Clear feedback that processing is ongoing ✅
+- **Monitoring:** Full execution logs still available in CloudWatch ✅
 
-2. **Verify the configuration:**
-   ```bash
-   aws lambda get-function-configuration \
-     --function-name rabbitmiles-admin-recalculate-leaderboard \
-     --query '[Timeout,MemorySize]' \
-     --output table
-   ```
+## Implementation
 
-3. **Test the endpoint:**
-   Go to the admin panel and click "Recalculate Leaderboard". It should now complete successfully, even if some users have revoked permissions or have corrupted data.
+### Backend Changes (`backend/admin_recalculate_leaderboard/lambda_function.py`)
 
-### B. Per-Activity Error Handling (Code Changes)
+```python
+# Added lambda_client for async invocation
+lambda_client = boto3.client("lambda")
 
-The Lambda code has been updated to handle errors gracefully:
-
-- **Per-activity error handling:** If processing one activity fails, it's skipped and logged, but recalculation continues
-- **Per-insert error handling:** If inserting one aggregate fails, it's skipped and logged, but recalculation continues
-- **Detailed logging:** All skipped activities and affected athletes are logged to CloudWatch
-- **Warning response:** If any items were skipped, the response includes warning details
-
-This ensures that one user's bad data (e.g., from revoking permissions, corrupted timestamps, invalid timezones) doesn't prevent the leaderboard from being recalculated for everyone else.
-
-## Quick Fix
-
-### Step 1: Configure Lambda Timeout (Required)
-
-Run the configuration script:
-```bash
-./scripts/configure-admin-recalculate-leaderboard-lambda.sh
+def handler(event, context):
+    # Check if this is an async invocation
+    is_async_invocation = event.get("async_invocation") is True
+    
+    if is_async_invocation:
+        # Run the actual recalculation (background task)
+        result = recalculate_leaderboard()
+        # ... process and log results ...
+        return
+    
+    # When called from API Gateway:
+    # 1. Verify admin auth
+    athlete_id, is_admin = admin_utils.verify_admin_session(event, APP_SECRET)
+    
+    # 2. Trigger async invocation
+    lambda_client.invoke(
+        FunctionName=LAMBDA_FUNCTION_NAME,
+        InvocationType='Event',  # Async - returns immediately
+        Payload=json.dumps({"async_invocation": True})
+    )
+    
+    # 3. Return immediately (< 1 second)
+    return {
+        "statusCode": 202,  # Accepted
+        "body": json.dumps({
+            "message": "Leaderboard recalculation started successfully...",
+            "status": "processing"
+        })
+    }
 ```
 
-This will:
-- Set timeout to 600 seconds (10 minutes)
-- Set memory to 1024 MB
-- Verify the configuration
+### Frontend Changes (`src/pages/Admin.jsx`)
 
-### Step 2: Deploy Updated Lambda Code (Required for Error Handling)
+```javascript
+const handleRecalculateLeaderboard = async () => {
+  const result = await recalculateLeaderboard();
+  if (result.success) {
+    const { message, status } = result.data;
+    
+    // Handle async processing response (202 status)
+    if (status === 'processing') {
+      setSuccessMessage(message);
+    }
+  }
+};
+```
 
-The Lambda code has been updated to handle errors gracefully. Deploy it:
+## Deployment
+
+### Step 1: Deploy Updated Lambda Code
+
+The changes are already in this PR. Deploy via:
 
 ```bash
 cd backend/admin_recalculate_leaderboard
@@ -95,159 +122,135 @@ aws lambda update-function-code \
 
 Or merge this PR and let GitHub Actions deploy automatically.
 
+### Step 2: Verify Lambda Configuration
+
+The Lambda should already be configured from the previous fix:
+
+```bash
+aws lambda get-function-configuration \
+  --function-name rabbitmiles-admin-recalculate-leaderboard \
+  --query '[Timeout,MemorySize]' \
+  --output table
+```
+
+Expected:
+- Timeout: 600 seconds ✅
+- Memory: 1024 MB ✅
+
 ### Step 3: Test the Endpoint
 
-Go to the admin panel and click "Recalculate Leaderboard". It should now:
-- Complete successfully even if some users have bad data
-- Show a warning message if any activities were skipped
-- Log details to CloudWatch about skipped items
+Go to the admin panel and click "Recalculate Leaderboard". You should see:
 
-### Alternative: Manual Lambda Configuration
+**Immediate response (< 1 second):**
+- ✅ Success message: "Leaderboard recalculation started successfully..."
+- ✅ No 503 error
 
-**For timeout/memory (via AWS Console):**
+**CloudWatch logs (~47 seconds later):**
+- ✅ Background Lambda completes successfully
+- ✅ All activities processed
+- ✅ Leaderboard updated
 
-1. **Open AWS Lambda Console**
-2. **Find the function:** `rabbitmiles-admin-recalculate-leaderboard`
-3. **Go to Configuration → General configuration**
-4. **Click Edit**
-5. **Set:**
-   - Timeout: 600 seconds (10 minutes)
-   - Memory: 1024 MB
-6. **Click Save**
+## Response Format
 
-**For timeout/memory (via AWS CLI):**
+### API Response (Returned Immediately)
 
-```bash
-aws lambda update-function-configuration \
-  --function-name rabbitmiles-admin-recalculate-leaderboard \
-  --timeout 600 \
-  --memory-size 1024
-```
-
-### If API Gateway Route is Also Missing
-
-If you also get consistent 503 errors (not intermittent), the API Gateway route might be missing too:
-
-1. **Run the route setup script:**
-   ```bash
-   ./scripts/setup-admin-recalculate-leaderboard-route.sh
-   ```
-
-2. **Follow the prompts:**
-   - Enter your API Gateway ID when prompted
-   - The script will auto-detect your Lambda function name
-
-3. **Verify the route was created:**
-   ```bash
-   ./scripts/verify-api-gateway-routes.sh
-   ```
-
-### Manual Route Setup (if script fails)
-
-If you prefer to set up the route manually via AWS Console:
-
-1. **Open API Gateway** in AWS Console
-2. **Navigate to your HTTP API** (rabbitmiles-api)
-3. **Create a new route:**
-   - Method: `POST`
-   - Path: `/admin/leaderboard/recalculate`
-   - Integration: Lambda function `rabbitmiles-admin-recalculate-leaderboard`
-   - Payload format version: `2.0`
-4. **Create OPTIONS route** (for CORS):
-   - Method: `OPTIONS`
-   - Path: `/admin/leaderboard/recalculate`
-   - Integration: Same Lambda function
-5. **Add Lambda permissions:**
-   ```bash
-   aws lambda add-permission \
-     --function-name rabbitmiles-admin-recalculate-leaderboard \
-     --statement-id apigateway-admin-recalculate-leaderboard \
-     --action lambda:InvokeFunction \
-     --principal apigateway.amazonaws.com \
-     --source-arn "arn:aws:execute-api:REGION:ACCOUNT_ID:API_ID/*/*/admin/leaderboard/recalculate"
-   ```
-
-### Testing
-
-After setting up the route, test it works:
-
-```bash
-# Get your admin session cookie from browser DevTools
-curl -X POST https://api.rabbitmiles.com/admin/leaderboard/recalculate \
-  -H "Cookie: rm_session=YOUR_ADMIN_SESSION_COOKIE" \
-  -H "Content-Type: application/json" \
-  -v
-```
-
-Expected response (success with no warnings):
 ```json
 {
-  "message": "Leaderboard recalculation completed successfully",
-  "activities_processed": 123,
-  "athletes_processed": 45,
-  "duration_ms": 1234.56
+  "message": "Leaderboard recalculation started successfully. This process runs in the background and may take up to 1 minute to complete.",
+  "status": "processing"
 }
 ```
 
-Expected response (success with warnings):
-```json
-{
-  "message": "Leaderboard recalculation completed with 5 items skipped due to errors",
-  "activities_processed": 118,
-  "athletes_processed": 45,
-  "duration_ms": 1234.56,
-  "warnings": {
-    "activities_skipped": 3,
-    "insert_failed": 2,
-    "athletes_with_errors": [456, 789]
-  }
-}
+**Status Code:** `202 Accepted`
+
+### CloudWatch Logs (Background Execution)
+
+The async Lambda execution logs all details to CloudWatch:
+
+```
+LOG - Recalculation successful in 47838.52ms
+LOG - Processed 1634 activities from 40 athletes
+=== recalculate_leaderboard END: SUCCESS ===
 ```
 
-## What Was Fixed
+## What Changed from Previous Fix
 
-### 1. Lambda Configuration
-- Added configuration script to set proper timeout (600s) and memory (1024MB)
-- Prevents Lambda from being killed mid-execution
+### Previous Fix (Lambda Timeout)
+- ✅ Increased Lambda timeout to 600 seconds
+- ✅ Increased Lambda memory to 1024MB
+- ✅ Added per-activity error handling
+- ❌ **Still hit API Gateway 30-second timeout**
 
-### 2. Error Handling in Lambda Code
-- **Per-activity error handling:** Bad activity data no longer breaks the entire recalculation
-- **Per-insert error handling:** Database insert failures are logged but don't stop processing
-- **Detailed logging:** CloudWatch logs show which activities/athletes had errors
-- **Warning response:** Frontend displays count of skipped items
+### Current Fix (Async Invocation)
+- ✅ Returns within API Gateway 30-second limit
+- ✅ Lambda still completes full processing
+- ✅ User gets immediate feedback
+- ✅ No more 503 errors
 
-### 3. Frontend Warning Display
-- Admin panel now shows warning when items are skipped
-- Directs admin to check CloudWatch logs for details
+## Monitoring
 
-## Prevention
+### Check if Recalculation Succeeded
 
-1. **The configuration script** has been added to ensure proper timeout/memory settings
-2. **The verification script** has been updated to include the route in expected routes
+1. **CloudWatch Logs:**
+   ```bash
+   aws logs tail /aws/lambda/rabbitmiles-admin-recalculate-leaderboard --follow
+   ```
 
-Run these after any Lambda redeployment:
-```bash
-./scripts/configure-admin-recalculate-leaderboard-lambda.sh
-./scripts/verify-api-gateway-routes.sh
-```
+2. **Look for:**
+   ```
+   ADMIN RECALCULATE LEADERBOARD - SUCCESS
+   Processed 1634 activities from 40 athletes
+   ```
+
+3. **Check for errors:**
+   ```
+   ERROR - Recalculation failed
+   WARNING - Failed to process activity
+   ```
+
+### Verify Leaderboard Updated
+
+Check the leaderboard page to see if recent activities are reflected in the rankings.
 
 ## Technical Details
 
-### Why Intermittent?
+### API Gateway Limitations
 
-- **Cold starts:** First invocation after idle period may be slower
-- **Variable activity count:** More activities = longer processing time
-- **Database latency:** RDS Data API response times can vary
+| Type | Timeout Limit | Configurable |
+|------|---------------|--------------|
+| HTTP API | 30 seconds | ❌ No |
+| REST API | 29 seconds | ❌ No |
+| WebSocket API | 30 minutes | ❌ No |
 
-### Why 503 Specifically?
+**Source:** [AWS API Gateway Quotas](https://docs.aws.amazon.com/apigateway/latest/developerguide/limits.html)
 
-When a Lambda times out, API Gateway doesn't get a response and returns:
-- **503 Service Unavailable** - Lambda timed out or throttled
-- **504 Gateway Timeout** - API Gateway timed out (30 seconds default)
+### Lambda Invocation Types
 
-### Configuration Requirements
+| Type | Returns | Use Case |
+|------|---------|----------|
+| `RequestResponse` | Waits for result | Synchronous operations |
+| `Event` | Immediately (202) | Async background tasks |
+| `DryRun` | Validation only | Testing |
 
-- **Minimum:** 300 seconds timeout, 512 MB memory
-- **Recommended:** 600 seconds timeout, 1024 MB memory
-- **Current Lambda code:** ✅ Working correctly
-- **Missing:** ❌ Proper timeout/memory configuration
+### Why 47 Seconds?
+
+The recalculation processes:
+- ~1634 activities
+- 40 unique athletes
+- 843 aggregate entries
+- Uses RDS Data API (network calls for each query)
+
+**Processing time breakdown:**
+- Query activities: ~0.2s
+- Process activities in memory: ~0.5s
+- Insert aggregates: ~46s (843 inserts × ~55ms each)
+
+Future optimization: Batch inserts to reduce API calls.
+
+## Security
+
+✅ **No security vulnerabilities introduced:**
+- Auth check still happens before async invocation
+- No new secrets or credentials required
+- Uses existing Lambda permissions
+- CodeQL scan: 0 alerts
