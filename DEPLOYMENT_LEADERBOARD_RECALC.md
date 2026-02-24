@@ -90,6 +90,22 @@ Add a new route to your API Gateway:
 - **Integration**: Lambda function `rabbitmiles-admin-recalculate-leaderboard`
 - **Authorization**: None (uses cookie-based session auth)
 
+**Quick Setup:**
+
+```bash
+./scripts/setup-admin-recalculate-leaderboard-route.sh
+```
+
+This script will automatically:
+- Find your API Gateway
+- Create the POST route
+- Create the OPTIONS route (for CORS)
+- Add Lambda invoke permissions
+
+**Manual Setup:**
+
+If you prefer to configure manually via AWS Console, see the script for detailed steps.
+
 ### 4. Deploy the Lambda Code
 
 The Lambda will be automatically deployed by the GitHub Actions workflow when changes are merged to `main`. Alternatively, deploy manually:
@@ -233,6 +249,22 @@ You cannot easily test this Lambda locally as it requires:
 ### Issue: "not authenticated" error
 
 **Solution**: Ensure your session cookie is valid and you're in the admin allowlist
+
+### Issue: 503 Service Unavailable
+
+**Cause**: The API Gateway route for `/admin/leaderboard/recalculate` is missing
+
+**Solution**: Run the setup script to create the route:
+```bash
+./scripts/setup-admin-recalculate-leaderboard-route.sh
+```
+
+Verify the route was created:
+```bash
+./scripts/verify-api-gateway-routes.sh
+```
+
+See [FIX_503_ADMIN_RECALCULATE_LEADERBOARD.md](./FIX_503_ADMIN_RECALCULATE_LEADERBOARD.md) for detailed instructions.
 
 ### Issue: "no activities found"
 
