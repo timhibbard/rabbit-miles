@@ -25,12 +25,16 @@ echo "  Memory: ${MEMORY}MB"
 echo ""
 
 # Update Lambda configuration
-if ! aws lambda update-function-configuration \
+OUTPUT=$(aws lambda update-function-configuration \
   --function-name "$LAMBDA_NAME" \
   --timeout "$TIMEOUT" \
-  --memory-size "$MEMORY" 2>&1; then
-    echo ""
+  --memory-size "$MEMORY" 2>&1)
+
+if [ $? -ne 0 ]; then
     echo "❌ Failed to update Lambda configuration"
+    echo ""
+    echo "Error details:"
+    echo "$OUTPUT"
     echo ""
     echo "Possible causes:"
     echo "  - Lambda function doesn't exist"
