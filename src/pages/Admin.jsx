@@ -234,8 +234,17 @@ function Admin() {
 
     const result = await recalculateLeaderboard();
     if (result.success) {
-      const { activities_processed, athletes_processed, duration_ms } = result.data;
-      setSuccessMessage(`Successfully recalculated leaderboard: ${activities_processed} activities from ${athletes_processed} athletes processed in ${duration_ms.toFixed(0)}ms`);
+      const { activities_processed, athletes_processed, duration_ms, warnings } = result.data;
+      
+      let message = `Successfully recalculated leaderboard: ${activities_processed} activities from ${athletes_processed} athletes processed in ${duration_ms.toFixed(0)}ms`;
+      
+      // Add warning if some activities were skipped
+      if (warnings && (warnings.activities_skipped > 0 || warnings.insert_failed > 0)) {
+        const skippedCount = (warnings.activities_skipped || 0) + (warnings.insert_failed || 0);
+        message += ` (${skippedCount} items skipped due to errors - check CloudWatch logs for details)`;
+      }
+      
+      setSuccessMessage(message);
     } else {
       setError(result.error || 'Failed to recalculate leaderboard');
     }
