@@ -4,7 +4,9 @@
 
 The `/admin/leaderboard/recalculate` endpoint returns a 503 error when called from the admin panel. The error is **intermittent** - it works sometimes but fails other times.
 
-## Root Cause
+## Root Causes
+
+### 1. Lambda Timeout (Primary Cause)
 
 The Lambda function `rabbitmiles-admin-recalculate-leaderboard` is **timing out** during execution. When the Lambda processes many activities and takes longer than its configured timeout, AWS Lambda terminates the function and API Gateway returns a 503 Service Unavailable error.
 
@@ -16,9 +18,17 @@ The timeout is especially likely when:
 - The database queries take longer than usual
 - Lambda cold start adds additional latency
 
+### 2. Lack of Error Handling (Secondary Cause)
+
+When a user revokes Strava permissions or has corrupted data, processing their activities could throw an exception, causing the entire recalculation to fail. The original code didn't have per-activity error handling, so one bad user's data would break the calculation for everyone.
+
 ## Solution
 
-Increase the Lambda timeout and memory configuration.
+This PR implements two fixes:
+
+### A. Increase Lambda Timeout and Memory
+
+Configure the Lambda with sufficient resources to process all activities.
 
 ### Quick Fix (2 minutes)
 
@@ -41,11 +51,60 @@ Increase the Lambda timeout and memory configuration.
    ```
 
 3. **Test the endpoint:**
-   Go to the admin panel and click "Recalculate Leaderboard". It should now complete successfully.
+   Go to the admin panel and click "Recalculate Leaderboard". It should now complete successfully, even if some users have revoked permissions or have corrupted data.
 
-### Alternative: Manual Configuration
+### B. Per-Activity Error Handling (Code Changes)
 
-If you prefer to configure via AWS Console:
+The Lambda code has been updated to handle errors gracefully:
+
+- **Per-activity error handling:** If processing one activity fails, it's skipped and logged, but recalculation continues
+- **Per-insert error handling:** If inserting one aggregate fails, it's skipped and logged, but recalculation continues
+- **Detailed logging:** All skipped activities and affected athletes are logged to CloudWatch
+- **Warning response:** If any items were skipped, the response includes warning details
+
+This ensures that one user's bad data (e.g., from revoking permissions, corrupted timestamps, invalid timezones) doesn't prevent the leaderboard from being recalculated for everyone else.
+
+## Quick Fix
+
+### Step 1: Configure Lambda Timeout (Required)
+
+Run the configuration script:
+```bash
+./scripts/configure-admin-recalculate-leaderboard-lambda.sh
+```
+
+This will:
+- Set timeout to 600 seconds (10 minutes)
+- Set memory to 1024 MB
+- Verify the configuration
+
+### Step 2: Deploy Updated Lambda Code (Required for Error Handling)
+
+The Lambda code has been updated to handle errors gracefully. Deploy it:
+
+```bash
+cd backend/admin_recalculate_leaderboard
+zip -r function.zip lambda_function.py
+zip -j function.zip ../admin_utils.py
+zip -j function.zip ../timezone_utils.py
+
+aws lambda update-function-code \
+  --function-name rabbitmiles-admin-recalculate-leaderboard \
+  --zip-file fileb://function.zip
+```
+
+Or merge this PR and let GitHub Actions deploy automatically.
+
+### Step 3: Test the Endpoint
+
+Go to the admin panel and click "Recalculate Leaderboard". It should now:
+- Complete successfully even if some users have bad data
+- Show a warning message if any activities were skipped
+- Log details to CloudWatch about skipped items
+
+### Alternative: Manual Lambda Configuration
+
+**For timeout/memory (via AWS Console):**
 
 1. **Open AWS Lambda Console**
 2. **Find the function:** `rabbitmiles-admin-recalculate-leaderboard`
@@ -56,7 +115,7 @@ If you prefer to configure via AWS Console:
    - Memory: 1024 MB
 6. **Click Save**
 
-### Alternative: AWS CLI Manual Command
+**For timeout/memory (via AWS CLI):**
 
 ```bash
 aws lambda update-function-configuration \
@@ -120,7 +179,7 @@ curl -X POST https://api.rabbitmiles.com/admin/leaderboard/recalculate \
   -v
 ```
 
-Expected response:
+Expected response (success with no warnings):
 ```json
 {
   "message": "Leaderboard recalculation completed successfully",
@@ -129,6 +188,37 @@ Expected response:
   "duration_ms": 1234.56
 }
 ```
+
+Expected response (success with warnings):
+```json
+{
+  "message": "Leaderboard recalculation completed with 5 items skipped due to errors",
+  "activities_processed": 118,
+  "athletes_processed": 45,
+  "duration_ms": 1234.56,
+  "warnings": {
+    "activities_skipped": 3,
+    "insert_failed": 2,
+    "athletes_with_errors": [456, 789]
+  }
+}
+```
+
+## What Was Fixed
+
+### 1. Lambda Configuration
+- Added configuration script to set proper timeout (600s) and memory (1024MB)
+- Prevents Lambda from being killed mid-execution
+
+### 2. Error Handling in Lambda Code
+- **Per-activity error handling:** Bad activity data no longer breaks the entire recalculation
+- **Per-insert error handling:** Database insert failures are logged but don't stop processing
+- **Detailed logging:** CloudWatch logs show which activities/athletes had errors
+- **Warning response:** Frontend displays count of skipped items
+
+### 3. Frontend Warning Display
+- Admin panel now shows warning when items are skipped
+- Directs admin to check CloudWatch logs for details
 
 ## Prevention
 
