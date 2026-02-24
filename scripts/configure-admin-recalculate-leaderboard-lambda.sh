@@ -25,10 +25,20 @@ echo "  Memory: ${MEMORY}MB"
 echo ""
 
 # Update Lambda configuration
-aws lambda update-function-configuration \
+if ! aws lambda update-function-configuration \
   --function-name "$LAMBDA_NAME" \
   --timeout "$TIMEOUT" \
-  --memory-size "$MEMORY"
+  --memory-size "$MEMORY" 2>&1; then
+    echo ""
+    echo "❌ Failed to update Lambda configuration"
+    echo ""
+    echo "Possible causes:"
+    echo "  - Lambda function doesn't exist"
+    echo "  - AWS credentials don't have Lambda update permissions"
+    echo "  - Function is currently being updated (wait 30 seconds and retry)"
+    echo ""
+    exit 1
+fi
 
 echo ""
 echo "✅ Configuration updated successfully"
