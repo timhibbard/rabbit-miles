@@ -231,12 +231,12 @@ def recalculate_leaderboard():
                 
                 # Extract timezones (may be NULL)
                 activity_timezone = None
-                if len(record) > COL_ACTIVITY_TIMEZONE and record[COL_ACTIVITY_TIMEZONE]:
+                if COL_ACTIVITY_TIMEZONE < len(record) and record[COL_ACTIVITY_TIMEZONE]:
                     if "stringValue" in record[COL_ACTIVITY_TIMEZONE]:
                         activity_timezone = record[COL_ACTIVITY_TIMEZONE]["stringValue"]
                 
                 user_timezone = None
-                if len(record) > COL_USER_TIMEZONE and record[COL_USER_TIMEZONE]:
+                if COL_USER_TIMEZONE < len(record) and record[COL_USER_TIMEZONE]:
                     if "stringValue" in record[COL_USER_TIMEZONE]:
                         user_timezone = record[COL_USER_TIMEZONE]["stringValue"]
                 
@@ -276,16 +276,16 @@ def recalculate_leaderboard():
                 athlete_id = None
                 strava_activity_id = None
                 try:
-                    if isinstance(record, list) and COL_ATHLETE_ID < len(record):
+                    if COL_ATHLETE_ID < len(record):
                         athlete_id = int(record[COL_ATHLETE_ID].get("longValue", 0))
-                    if isinstance(record, list) and COL_STRAVA_ACTIVITY_ID < len(record):
+                    if COL_STRAVA_ACTIVITY_ID < len(record):
                         strava_activity_id = int(record[COL_STRAVA_ACTIVITY_ID].get("longValue", 0))
                 except Exception:
                     pass  # Use defaults
                 
                 print(f"WARNING: Failed to process activity {strava_activity_id or 'unknown'} (athlete {athlete_id or 'unknown'}): {e}")
                 activities_skipped += 1
-                if athlete_id is not None and isinstance(athlete_id, int):
+                if athlete_id is not None:
                     athletes_with_errors.add(athlete_id)
                 continue
         
