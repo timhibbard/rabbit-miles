@@ -202,7 +202,7 @@ function Leaderboard() {
                         Athlete
                       </th>
                       <th className="px-2 sm:px-6 py-2 sm:py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Distance (miles)
+                        Distance on SRT (miles)
                       </th>
                     </tr>
                   </thead>
