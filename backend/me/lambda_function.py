@@ -287,7 +287,7 @@ def handler(event, context):
         print(f"LOG - Verified athlete_id: {aid}")
 
         print(f"LOG - Querying database for user data")
-        sql = "SELECT athlete_id, display_name, profile_picture, show_on_leaderboards, timezone FROM users WHERE athlete_id = :aid LIMIT 1"
+        sql = "SELECT athlete_id, display_name, profile_picture, show_on_leaderboards, timezone, email, notify_activity, notify_weekly_summary FROM users WHERE athlete_id = :aid LIMIT 1"
         res = exec_sql(sql, parameters=[{"name":"aid","value":{"longValue":aid}}])
         records = res.get("records") or []
         print(f"LOG - Database query returned {len(records)} records")
@@ -321,6 +321,18 @@ def handler(event, context):
         timezone = None
         if len(rec) > 4 and rec[4]:
             timezone = rec[4].get("stringValue")
+        # Handle email which may be NULL
+        email = None
+        if len(rec) > 5 and rec[5]:
+            email = rec[5].get("stringValue")
+        # Handle notify_activity (default to False if NULL)
+        notify_activity = False
+        if len(rec) > 6 and rec[6]:
+            notify_activity = rec[6].get("booleanValue", False)
+        # Handle notify_weekly_summary (default to False if NULL)
+        notify_weekly_summary = False
+        if len(rec) > 7 and rec[7]:
+            notify_weekly_summary = rec[7].get("booleanValue", False)
         
         print(f"LOG - User data:")
         print(f"LOG -   athlete_id: {athlete_id}")
@@ -328,6 +340,9 @@ def handler(event, context):
         print(f"LOG -   profile_picture: {bool(profile_picture)}")
         print(f"LOG -   show_on_leaderboards: {show_on_leaderboards}")
         print(f"LOG -   timezone: {timezone}")
+        print(f"LOG -   email: {bool(email)}")
+        print(f"LOG -   notify_activity: {notify_activity}")
+        print(f"LOG -   notify_weekly_summary: {notify_weekly_summary}")
         
         # Check if user is an admin
         is_user_admin = admin_utils.is_admin(athlete_id)
@@ -339,7 +354,10 @@ def handler(event, context):
             "profile_picture": profile_picture,
             "is_admin": is_user_admin,
             "show_on_leaderboards": show_on_leaderboards,
-            "timezone": timezone
+            "timezone": timezone,
+            "email": email,
+            "notify_activity": notify_activity,
+            "notify_weekly_summary": notify_weekly_summary
         }
         
         print(f"LOG - Returning success response")

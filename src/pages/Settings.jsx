@@ -18,22 +18,35 @@ function Settings() {
     isConnected: false,
     showOnLeaderboards: true,
     timezone: null,
+    email: '',
+    notifyActivity: false,
+    notifyWeeklySummary: false,
   });
   const [resetting, setResetting] = useState(false);
   const [updatingActivities, setUpdatingActivities] = useState(false);
   const [updatingLeaderboardSettings, setUpdatingLeaderboardSettings] = useState(false);
   const [updatingTimezone, setUpdatingTimezone] = useState(false);
+  const [emailInput, setEmailInput] = useState('');
+  const [updatingEmail, setUpdatingEmail] = useState(false);
+  const [emailError, setEmailError] = useState('');
+  const [emailSuccess, setEmailSuccess] = useState('');
+  const [updatingNotifications, setUpdatingNotifications] = useState(false);
 
   useEffect(() => {
     // Check if user is connected via /me endpoint
     const checkConnection = async () => {
       const result = await fetchMe();
+      const email = result.user?.email || '';
       setAuthState({
         loading: false,
         isConnected: result.success,
         showOnLeaderboards: result.user?.show_on_leaderboards ?? true,
         timezone: result.user?.timezone || 'America/New_York', // Default to Eastern
+        email,
+        notifyActivity: result.user?.notify_activity ?? false,
+        notifyWeeklySummary: result.user?.notify_weekly_summary ?? false,
       });
+      setEmailInput(email);
     };
     
     checkConnection();
@@ -44,6 +57,48 @@ function Settings() {
       // TODO: Call disconnect API endpoint when it becomes available
       // For now, just show a message
       alert('Disconnect functionality will be available soon. Please use the footer contact link to request account disconnection.');
+    }
+  };
+
+  const handleEmailSave = async (e) => {
+    e.preventDefault();
+    setEmailError('');
+    setEmailSuccess('');
+    setUpdatingEmail(true);
+    try {
+      const result = await updateUserSettings({ email: emailInput.trim() });
+      if (result.success) {
+        setAuthState(prev => ({ ...prev, email: result.data.email || '' }));
+        setEmailSuccess('Email address saved.');
+      } else {
+        setEmailError(result.error || 'Failed to save email address.');
+      }
+    } catch (error) {
+      console.error('Error saving email:', error);
+      setEmailError('An unexpected error occurred. Please try again.');
+    } finally {
+      setUpdatingEmail(false);
+    }
+  };
+
+  const handleNotificationToggle = async (field, newValue) => {
+    setUpdatingNotifications(true);
+    try {
+      const result = await updateUserSettings({ [field]: newValue });
+      if (result.success) {
+        setAuthState(prev => ({
+          ...prev,
+          notifyActivity: result.data.notify_activity ?? prev.notifyActivity,
+          notifyWeeklySummary: result.data.notify_weekly_summary ?? prev.notifyWeeklySummary,
+        }));
+      } else {
+        alert(`Failed to update notification settings: ${result.error || 'Unknown error'}`);
+      }
+    } catch (error) {
+      console.error('Error updating notification settings:', error);
+      alert('An unexpected error occurred. Please try again.');
+    } finally {
+      setUpdatingNotifications(false);
     }
   };
 
@@ -325,6 +380,87 @@ function Settings() {
                     {updatingLeaderboardSettings && ' (updating...)'}
                   </span>
                 </label>
+              </div>
+            </div>
+          )}
+
+          {/* Profile Section */}
+          {authState.isConnected && (
+            <div className="p-6 border-b border-gray-200">
+              <h2 className="text-xl font-semibold text-gray-900 mb-4">
+                Profile
+              </h2>
+              <p className="text-sm text-gray-600 mb-4">
+                Add your email address to receive notifications about your activities and weekly summaries.
+              </p>
+              <form onSubmit={handleEmailSave} className="space-y-4">
+                <div>
+                  <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-1">
+                    Email Address
+                  </label>
+                  <input
+                    id="email"
+                    type="email"
+                    value={emailInput}
+                    onChange={(e) => { setEmailInput(e.target.value); setEmailError(''); setEmailSuccess(''); }}
+                    placeholder="you@example.com"
+                    className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-orange-500 focus:border-orange-500 sm:text-sm"
+                  />
+                  {emailError && <p className="mt-1 text-sm text-red-600">{emailError}</p>}
+                  {emailSuccess && <p className="mt-1 text-sm text-green-600">{emailSuccess}</p>}
+                </div>
+                <button
+                  type="submit"
+                  disabled={updatingEmail}
+                  className="px-4 py-2 bg-orange-600 text-white rounded-md hover:bg-orange-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-orange-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {updatingEmail ? 'Saving...' : 'Save Email'}
+                </button>
+              </form>
+            </div>
+          )}
+
+          {/* Notifications Section */}
+          {authState.isConnected && (
+            <div className="p-6 border-b border-gray-200">
+              <h2 className="text-xl font-semibold text-gray-900 mb-4">
+                Email Notifications
+              </h2>
+              {!authState.email && (
+                <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-md p-3 mb-4">
+                  Add an email address in the Profile section above to enable notifications.
+                </p>
+              )}
+              <div className="space-y-4">
+                <label className="flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={authState.notifyActivity}
+                    onChange={(e) => handleNotificationToggle('notify_activity', e.target.checked)}
+                    disabled={updatingNotifications || !authState.email}
+                    className="sr-only peer"
+                  />
+                  <div className={`relative w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-orange-300 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-orange-600 ${!authState.email ? 'opacity-50 cursor-not-allowed' : ''}`}></div>
+                  <div className="ms-3">
+                    <span className="text-sm font-medium text-gray-900">Activity &amp; milestone alerts</span>
+                    <p className="text-xs text-gray-500">Get notified when a new activity is processed or you reach a new mile threshold.</p>
+                  </div>
+                </label>
+                <label className="flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={authState.notifyWeeklySummary}
+                    onChange={(e) => handleNotificationToggle('notify_weekly_summary', e.target.checked)}
+                    disabled={updatingNotifications || !authState.email}
+                    className="sr-only peer"
+                  />
+                  <div className={`relative w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-orange-300 rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-orange-600 ${!authState.email ? 'opacity-50 cursor-not-allowed' : ''}`}></div>
+                  <div className="ms-3">
+                    <span className="text-sm font-medium text-gray-900">Weekly summary</span>
+                    <p className="text-xs text-gray-500">Receive a weekly email summarizing your running activity.</p>
+                  </div>
+                </label>
+                {updatingNotifications && <p className="text-sm text-gray-500">Updating...</p>}
               </div>
             </div>
           )}
