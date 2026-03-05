@@ -141,14 +141,17 @@ def handler(event, context):
         # Get settings from request
         show_on_leaderboards = body.get("show_on_leaderboards")
         timezone = body.get("timezone")
+        email = body.get("email")
+        notify_activity = body.get("notify_activity")
+        notify_weekly_summary = body.get("notify_weekly_summary")
         
         # At least one field must be provided
-        if show_on_leaderboards is None and timezone is None:
+        if show_on_leaderboards is None and timezone is None and email is None and notify_activity is None and notify_weekly_summary is None:
             print("ERROR - No fields to update")
             return {
                 "statusCode": 400,
                 "headers": cors_headers,
-                "body": json.dumps({"error": "at least one field required (show_on_leaderboards or timezone)"})
+                "body": json.dumps({"error": "at least one field required (show_on_leaderboards, timezone, email, notify_activity, or notify_weekly_summary)"})
             }
         
         # Build dynamic UPDATE query
@@ -181,6 +184,57 @@ def handler(event, context):
             params.append({"name": "timezone", "value": {"stringValue": timezone}})
             print(f"LOG - Updating timezone to {timezone}")
         
+        # Validate and add email if provided
+        if email is not None:
+            if not isinstance(email, str) or len(email) > 255:
+                print(f"ERROR - Invalid email value")
+                return {
+                    "statusCode": 400,
+                    "headers": cors_headers,
+                    "body": json.dumps({"error": "email must be a string (max 255 chars)"})
+                }
+            # Basic email format check (local-part @ domain with at least one dot in domain)
+            import re
+            if email != "" and not re.match(r'^[^\s@]+@[^\s@]+\.[^\s@]+$', email):
+                print(f"ERROR - Invalid email format")
+                return {
+                    "statusCode": 400,
+                    "headers": cors_headers,
+                    "body": json.dumps({"error": "invalid email format"})
+                }
+            set_clauses.append("email = :email")
+            if email == "":
+                params.append({"name": "email", "value": {"isNull": True}})
+            else:
+                params.append({"name": "email", "value": {"stringValue": email}})
+            print(f"LOG - Updating email")
+        
+        # Validate and add notify_activity if provided
+        if notify_activity is not None:
+            if not isinstance(notify_activity, bool):
+                print(f"ERROR - Invalid notify_activity value: {notify_activity}")
+                return {
+                    "statusCode": 400,
+                    "headers": cors_headers,
+                    "body": json.dumps({"error": "notify_activity must be a boolean"})
+                }
+            set_clauses.append("notify_activity = :notify_activity")
+            params.append({"name": "notify_activity", "value": {"booleanValue": notify_activity}})
+            print(f"LOG - Updating notify_activity to {notify_activity}")
+        
+        # Validate and add notify_weekly_summary if provided
+        if notify_weekly_summary is not None:
+            if not isinstance(notify_weekly_summary, bool):
+                print(f"ERROR - Invalid notify_weekly_summary value: {notify_weekly_summary}")
+                return {
+                    "statusCode": 400,
+                    "headers": cors_headers,
+                    "body": json.dumps({"error": "notify_weekly_summary must be a boolean"})
+                }
+            set_clauses.append("notify_weekly_summary = :notify_weekly_summary")
+            params.append({"name": "notify_weekly_summary", "value": {"booleanValue": notify_weekly_summary}})
+            print(f"LOG - Updating notify_weekly_summary to {notify_weekly_summary}")
+        
         # Always update updated_at
         set_clauses.append("updated_at = now()")
         
@@ -192,7 +246,7 @@ def handler(event, context):
         UPDATE users
         SET {", ".join(set_clauses)}
         WHERE athlete_id = :athlete_id
-        RETURNING show_on_leaderboards, timezone
+        RETURNING show_on_leaderboards, timezone, email, notify_activity, notify_weekly_summary
         """
         
         print(f"LOG - Updating settings for user {athlete_id}")
@@ -212,10 +266,23 @@ def handler(event, context):
         timezone_value = None
         if len(records[0]) > 1 and records[0][1]:
             timezone_value = records[0][1].get("stringValue")
+        email_value = None
+        if len(records[0]) > 2 and records[0][2]:
+            email_value = records[0][2].get("stringValue")
+        notify_activity_value = False
+        if len(records[0]) > 3 and records[0][3]:
+            notify_activity_value = records[0][3].get("booleanValue", False)
+        notify_weekly_summary_value = False
+        if len(records[0]) > 4 and records[0][4]:
+            notify_weekly_summary_value = records[0][4].get("booleanValue", False)
         
         print(f"LOG - Successfully updated settings for user {athlete_id}")
         print(f"LOG -   show_on_leaderboards: {show_on_leaderboards_value}")
         print(f"LOG -   timezone: {timezone_value}")
+        email_log = f"<set: {email_value.split('@')[-1]}>" if email_value else "<not set>"
+        print(f"LOG -   email: {email_log}")
+        print(f"LOG -   notify_activity: {notify_activity_value}")
+        print(f"LOG -   notify_weekly_summary: {notify_weekly_summary_value}")
         print("=" * 80)
         print("UPDATE USER SETTINGS - SUCCESS")
         print("=" * 80)
@@ -226,7 +293,10 @@ def handler(event, context):
             "body": json.dumps({
                 "success": True,
                 "show_on_leaderboards": show_on_leaderboards_value,
-                "timezone": timezone_value
+                "timezone": timezone_value,
+                "email": email_value,
+                "notify_activity": notify_activity_value,
+                "notify_weekly_summary": notify_weekly_summary_value
             })
         }
         
