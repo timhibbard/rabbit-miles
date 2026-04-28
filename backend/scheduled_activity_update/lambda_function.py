@@ -33,6 +33,7 @@ DB_NAME = None
 
 STRAVA_TOKEN_URL = "https://www.strava.com/oauth/token"
 STRAVA_ACTIVITIES_URL = "https://www.strava.com/api/v3/athlete/activities"
+STRAVA_ATHLETE_URL = "https://www.strava.com/api/v3/athlete"
 
 # Filter activities starting from Jan 1, 2026 00:00:00 UTC
 # Unix timestamp: 1767225600
@@ -166,6 +167,59 @@ def fetch_strava_activities(access_token, after_timestamp, per_page=200):
         raise
 
 
+def fetch_strava_athlete(access_token):
+    """Fetch athlete profile from Strava API"""
+    req = Request(STRAVA_ATHLETE_URL, headers={"Authorization": f"Bearer {access_token}"})
+    
+    try:
+        with urlopen(req, timeout=20) as resp:
+            athlete = json.loads(resp.read().decode())
+        log("Fetched athlete profile from Strava", "INFO")
+        return athlete
+    except Exception as e:
+        log(f"Failed to fetch athlete profile from Strava: {e}", "WARNING")
+        if hasattr(e, 'code'):
+            log(f"Athlete profile HTTP status code: {e.code}", "WARNING")
+        if hasattr(e, 'read'):
+            try:
+                error_body = e.read().decode()
+                log(f"Athlete profile error response: {error_body}", "WARNING")
+            except Exception:
+                pass
+        return None
+
+
+def update_user_profile_picture(athlete_id, athlete):
+    """Update user profile picture in the database"""
+    if not isinstance(athlete, dict):
+        return False
+    
+    profile_picture = athlete.get("profile_medium") or athlete.get("profile") or ""
+    
+    sql = """
+    UPDATE users
+    SET profile_picture = :pic,
+        updated_at = now()
+    WHERE athlete_id = :aid
+    """
+    params = [
+        {"name": "aid", "value": {"longValue": athlete_id}},
+    ]
+    
+    if profile_picture:
+        params.append({"name": "pic", "value": {"stringValue": profile_picture}})
+    else:
+        params.append({"name": "pic", "value": {"isNull": True}})
+    
+    try:
+        _exec_sql(sql, params)
+        log(f"Updated profile picture for athlete {athlete_id}", "INFO")
+        return True
+    except Exception as e:
+        log(f"Failed to update profile picture for athlete {athlete_id}: {e}", "WARNING")
+        return False
+
+
 def store_activity(athlete_id, activity):
     """Store or update activity in database"""
     strava_activity_id = activity.get("id")
@@ -287,6 +341,11 @@ def update_recent_activities_for_user(user):
         
         # Ensure token is valid
         access_token = ensure_valid_token(athlete_id, access_token, refresh_token, expires_at)
+        
+        # Refresh profile picture in case the athlete updated their avatar
+        athlete_profile = fetch_strava_athlete(access_token)
+        if athlete_profile:
+            update_user_profile_picture(athlete_id, athlete_profile)
         
         # Calculate timestamp for 24 hours ago
         current_time = int(time.time())
