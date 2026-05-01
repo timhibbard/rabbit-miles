@@ -45,6 +45,8 @@ class StravaRateLimitError(Exception):
     pass
 
 
+STRAVA_RATE_LIMIT_MESSAGE = "Strava API rate limit exceeded. Please try again later."
+
 def get_cors_origin():
     """Extract origin (scheme + host) from FRONTEND_URL for CORS headers"""
     if not FRONTEND_URL:
@@ -208,10 +210,10 @@ def fetch_strava_activities(access_token, per_page=30, page=1):
         try:
             error_body = e.read().decode()
             print(f"Error response body: {error_body}")
-        except Exception:
-            pass
+        except (OSError, UnicodeDecodeError) as read_err:
+            print(f"Could not read error response body: {read_err}")
         if e.code == 429:
-            raise StravaRateLimitError("Strava API rate limit exceeded") from e
+            raise StravaRateLimitError(STRAVA_RATE_LIMIT_MESSAGE) from e
         raise
     except Exception as e:
         print(f"Failed to fetch activities from Strava: {e}")
@@ -474,7 +476,7 @@ def handler(event, context):
             print(f"Strava rate limit hit during direct invocation: {e}")
             return {
                 "statusCode": 429,
-                "body": json.dumps({"error": "Strava API rate limit exceeded. Please try again later."})
+                "body": json.dumps({"error": STRAVA_RATE_LIMIT_MESSAGE})
             }
         except Exception as e:
             print(f"Error in direct invocation: {e}")
@@ -596,7 +598,7 @@ def handler(event, context):
         return {
             "statusCode": 429,
             "headers": cors_headers,
-            "body": json.dumps({"error": "Strava API rate limit exceeded. Please try again later."})
+            "body": json.dumps({"error": STRAVA_RATE_LIMIT_MESSAGE})
         }
     except Exception as e:
         print(f"Error in fetch_activities handler: {e}")
