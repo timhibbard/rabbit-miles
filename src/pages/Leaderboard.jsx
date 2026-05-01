@@ -15,6 +15,7 @@ function Leaderboard() {
   const [selectedFoot, setSelectedFoot] = useState(true); // Default to Foot only
   const [leaderboardData, setLeaderboardData] = useState(null);
   const [error, setError] = useState(null);
+  const [isPolling, setIsPolling] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(null);
   const pollingIntervalRef = useRef(null);
   const isLoadingRef = useRef(false);
@@ -103,7 +104,6 @@ function Leaderboard() {
       if (pollingIntervalRef.current) {
         clearInterval(pollingIntervalRef.current);
       }
-      if (!isActive) return;
       const intervalId = setInterval(() => {
         loadLeaderboard(true);
       }, LEADERBOARD_POLL_INTERVAL);
@@ -112,6 +112,7 @@ function Leaderboard() {
         return;
       }
       pollingIntervalRef.current = intervalId;
+      setIsPolling(true);
     };
 
     startPolling();
@@ -121,6 +122,7 @@ function Leaderboard() {
         clearInterval(pollingIntervalRef.current);
         pollingIntervalRef.current = null;
       }
+      setIsPolling(false);
     };
   }, [loadLeaderboard]);
 
@@ -174,7 +176,7 @@ function Leaderboard() {
             View athlete rankings by time period.
           </p>
           <div className="mt-2 flex flex-wrap items-center gap-2 text-xs sm:text-sm text-gray-500">
-            {pollingIntervalRef.current && (
+            {isPolling && (
               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
                 <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
                 Auto-updating every {LEADERBOARD_POLL_INTERVAL / 1000}s
