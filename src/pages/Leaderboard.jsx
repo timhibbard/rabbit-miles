@@ -5,6 +5,8 @@ import { fetchMe, fetchLeaderboard } from '../utils/api';
 const TOP_ATHLETES_COUNT = 15;
 const LEADERBOARD_POLL_INTERVAL = 30000; // Poll every 30 seconds
 const LEADERBOARD_POLL_SECONDS = Math.round(LEADERBOARD_POLL_INTERVAL / 1000);
+const RELOAD_TYPE_SILENT = 'silent';
+const RELOAD_TYPE_NON_SILENT = 'non-silent';
 
 function Leaderboard() {
   const [loading, setLoading] = useState(true);
@@ -46,9 +48,11 @@ function Leaderboard() {
   const loadLeaderboard = useCallback(async (silent = false) => {
     if (isLoadingRef.current) {
       if (silent) {
-        pendingReloadRef.current = pendingReloadRef.current === 'non-silent' ? 'non-silent' : 'silent';
+        pendingReloadRef.current = pendingReloadRef.current === RELOAD_TYPE_NON_SILENT
+          ? RELOAD_TYPE_NON_SILENT
+          : RELOAD_TYPE_SILENT;
       } else {
-        pendingReloadRef.current = 'non-silent';
+        pendingReloadRef.current = RELOAD_TYPE_NON_SILENT;
       }
       return;
     }
@@ -84,41 +88,39 @@ function Leaderboard() {
     } finally {
       isLoadingRef.current = false;
       if (pendingReloadRef.current) {
-        const isSilent = pendingReloadRef.current === 'silent';
+        const isSilent = pendingReloadRef.current === RELOAD_TYPE_SILENT;
         pendingReloadRef.current = null;
         loadLeaderboard(isSilent);
       }
     }
   }, [currentUserId, getActivityType, selectedWindow]);
 
-  const startPolling = useCallback(() => {
-    if (pollingIntervalRef.current) return;
-    setIsPolling(true);
-    pollingIntervalRef.current = setInterval(() => {
-      loadLeaderboard(true);
-    }, LEADERBOARD_POLL_INTERVAL);
-  }, [loadLeaderboard]);
-
-  const stopPolling = useCallback(() => {
-    if (pollingIntervalRef.current) {
-      clearInterval(pollingIntervalRef.current);
-      pollingIntervalRef.current = null;
-    }
-    setIsPolling(false);
-  }, []);
-
-  // Fetch leaderboard data when window or activity type changes
+  // Fetch leaderboard data when window or activity type changes, then start polling
   useEffect(() => {
-    loadLeaderboard(false);
-  }, [loadLeaderboard]);
+    let isActive = true;
 
-  // Start automatic polling for leaderboard updates
-  useEffect(() => {
+    const startPolling = async () => {
+      await loadLeaderboard(false);
+      if (!isActive) return;
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+      }
+      pollingIntervalRef.current = setInterval(() => {
+        loadLeaderboard(true);
+      }, LEADERBOARD_POLL_INTERVAL);
+      setIsPolling(true);
+    };
+
     startPolling();
     return () => {
-      stopPolling();
+      isActive = false;
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+        pollingIntervalRef.current = null;
+      }
+      setIsPolling(false);
     };
-  }, [startPolling, stopPolling]);
+  }, [loadLeaderboard]);
 
   // Format distance in meters to miles
   const formatDistance = (meters) => {
