@@ -572,7 +572,7 @@ def handler(event, context):
         print(f"Authenticated as athlete_id: {athlete_id}")
         
         # Get user's tokens and last fetch timestamp from database
-        sql = "SELECT access_token, refresh_token, expires_at, EXTRACT(EPOCH FROM last_strava_fetch)::BIGINT FROM users WHERE athlete_id = :aid"
+        sql = "SELECT access_token, refresh_token, expires_at, EXTRACT(EPOCH FROM last_strava_fetch)::BIGINT AS last_strava_fetch_epoch FROM users WHERE athlete_id = :aid"
         params = [{"name": "aid", "value": {"longValue": athlete_id}}]
         result = _exec_sql(sql, params)
         
@@ -606,7 +606,7 @@ def handler(event, context):
             seconds_since_fetch = int(time.time()) - last_fetch_ts
             remaining = FETCH_COOLDOWN_SECONDS - seconds_since_fetch
             if remaining > 0:
-                minutes_remaining = (remaining + 59) // 60
+                minutes_remaining = (remaining + 59) // 60  # Round up to the next full minute
                 print(f"Fetch cooldown active for athlete {athlete_id}: {remaining}s remaining")
                 return {
                     "statusCode": 429,
