@@ -31,3 +31,4 @@ psql -h DATABASE_HOST -U USERNAME -d postgres -f backend/migrations/001_create_o
 - `003_create_activities_table.sql` - Creates the `activities` table for storing Strava activity data
 - `004_add_trail_time_distance.sql` - Adds `time_on_trail` and `distance_on_trail` columns to track trail-specific metrics
 - `006_add_athlete_count.sql` - Adds `athlete_count` column to track the number of athletes who participated in group activities
+- `010_add_last_strava_fetch.sql` - Adds `last_strava_fetch` column to `users` table to track the last successful Strava fetch per athlete and enforce a per-user cooldown

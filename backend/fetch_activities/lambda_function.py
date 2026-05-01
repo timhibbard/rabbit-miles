@@ -45,7 +45,18 @@ class StravaRateLimitError(Exception):
     pass
 
 
+class FetchCooldownError(Exception):
+    """Raised when a fetch is attempted too soon after the previous successful fetch."""
+    def __init__(self, seconds_remaining):
+        self.seconds_remaining = seconds_remaining
+        super().__init__(f"Please wait {seconds_remaining} more seconds before syncing again.")
+
+
 STRAVA_RATE_LIMIT_MESSAGE = "Strava API rate limit exceeded. Please try again later."
+
+# Minimum seconds between user-initiated Strava fetches per athlete.
+# Strava's rate-limit window is 15 minutes, so 900 s is a natural floor.
+FETCH_COOLDOWN_SECONDS = 900
 
 def get_cors_origin():
     """Extract origin (scheme + host) from FRONTEND_URL for CORS headers"""
@@ -144,6 +155,18 @@ def _exec_sql(sql, parameters=None):
     if parameters:
         kwargs["parameters"] = parameters
     return rds.execute_statement(**kwargs)
+
+
+def _update_last_strava_fetch(athlete_id):
+    """Record the current time as the most recent successful Strava fetch for this athlete."""
+    sql = "UPDATE users SET last_strava_fetch = now() WHERE athlete_id = :aid"
+    params = [{"name": "aid", "value": {"longValue": athlete_id}}]
+    try:
+        _exec_sql(sql, params)
+        print(f"Updated last_strava_fetch for athlete {athlete_id}")
+    except Exception as e:
+        # Non-fatal: log but don't abort the overall flow
+        print(f"WARNING: Failed to update last_strava_fetch for athlete {athlete_id}: {e}")
 
 
 def refresh_access_token(athlete_id, refresh_token):
@@ -409,6 +432,10 @@ def fetch_activities_for_athlete(athlete_id, access_token, refresh_token, expire
         print(f"ERROR: Failed to fetch activities from Strava: {e}")
         raise
     
+    # Record that a successful Strava fetch just happened for this athlete.
+    # Do this before storing so the cooldown is set even if storage partially fails.
+    _update_last_strava_fetch(athlete_id)
+    
     # Store activities in database
     print(f"Storing {len(all_activities)} activities in database...")
     try:
@@ -544,8 +571,8 @@ def handler(event, context):
         
         print(f"Authenticated as athlete_id: {athlete_id}")
         
-        # Get user's tokens from database
-        sql = "SELECT access_token, refresh_token, expires_at FROM users WHERE athlete_id = :aid"
+        # Get user's tokens and last fetch timestamp from database
+        sql = "SELECT access_token, refresh_token, expires_at, EXTRACT(EPOCH FROM last_strava_fetch)::BIGINT FROM users WHERE athlete_id = :aid"
         params = [{"name": "aid", "value": {"longValue": athlete_id}}]
         result = _exec_sql(sql, params)
         
@@ -562,6 +589,7 @@ def handler(event, context):
         access_token = record[0].get("stringValue", "")
         refresh_token = record[1].get("stringValue", "")
         expires_at = int(record[2].get("longValue", 0))
+        last_fetch_ts = record[3].get("longValue") if not record[3].get("isNull") else None
         
         print(f"Retrieved tokens from database: access_token={'***' if access_token else 'MISSING'}, refresh_token={'***' if refresh_token else 'MISSING'}, expires_at={expires_at}")
         
@@ -572,6 +600,21 @@ def handler(event, context):
                 "headers": cors_headers,
                 "body": json.dumps({"error": "user not connected to Strava"})
             }
+        
+        # Enforce per-user fetch cooldown to avoid Strava rate limiting
+        if last_fetch_ts is not None:
+            seconds_since_fetch = int(time.time()) - last_fetch_ts
+            remaining = FETCH_COOLDOWN_SECONDS - seconds_since_fetch
+            if remaining > 0:
+                minutes_remaining = (remaining + 59) // 60
+                print(f"Fetch cooldown active for athlete {athlete_id}: {remaining}s remaining")
+                return {
+                    "statusCode": 429,
+                    "headers": cors_headers,
+                    "body": json.dumps({
+                        "error": f"Activities were recently synced. Please wait {minutes_remaining} more minute{'s' if minutes_remaining != 1 else ''} before syncing again."
+                    })
+                }
         
         # Fetch and store activities for this athlete
         print(f"Calling fetch_activities_for_athlete...")
