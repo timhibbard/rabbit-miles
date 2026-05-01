@@ -1,8 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { fetchMe, fetchLeaderboard } from '../utils/api';
 
 // Number of top athletes to display in current rankings
 const TOP_ATHLETES_COUNT = 15;
+const LEADERBOARD_POLL_INTERVAL = 30000; // Poll every 30 seconds
+const RELOAD_TYPE_SILENT = 'silent';
+const RELOAD_TYPE_NON_SILENT = 'non-silent';
 
 function Leaderboard() {
   const [loading, setLoading] = useState(true);
@@ -12,6 +15,11 @@ function Leaderboard() {
   const [selectedFoot, setSelectedFoot] = useState(true); // Default to Foot only
   const [leaderboardData, setLeaderboardData] = useState(null);
   const [error, setError] = useState(null);
+  const [isPolling, setIsPolling] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState(null);
+  const pollingIntervalRef = useRef(null);
+  const isLoadingRef = useRef(false);
+  const pendingReloadRef = useRef(null);
 
   // Check authentication (optional - leaderboard is public but we show user's rank if logged in)
   useEffect(() => {
@@ -28,42 +36,95 @@ function Leaderboard() {
     checkAuth();
   }, []);
 
-  // Fetch leaderboard data when window or activity type changes
-  useEffect(() => {
-    // Compute activity_type based on selected filters
-    const getActivityType = () => {
-      if (selectedBike && selectedFoot) return 'all';
-      if (selectedBike) return 'bike';
-      if (selectedFoot) return 'foot';
-      return 'all'; // If neither selected, show all
-    };
-    
-    const loadLeaderboard = async () => {
+  // Compute activity_type based on selected filters
+  const getActivityType = useCallback(() => {
+    if (selectedBike && selectedFoot) return 'all';
+    if (selectedBike) return 'bike';
+    if (selectedFoot) return 'foot';
+    return 'all'; // If neither selected, show all
+  }, [selectedBike, selectedFoot]);
+
+  const loadLeaderboard = useCallback(async (silent = false) => {
+    if (isLoadingRef.current) {
+      if (!silent) {
+        pendingReloadRef.current = RELOAD_TYPE_NON_SILENT;
+        return;
+      }
+      pendingReloadRef.current = pendingReloadRef.current || RELOAD_TYPE_SILENT;
+      return;
+    }
+    isLoadingRef.current = true;
+    if (!silent) {
       setError(null);
-      try {
-        const result = await fetchLeaderboard(selectedWindow, {
-          user_id: currentUserId,
-          activity_type: getActivityType(),
-        });
-        
-        if (result.success) {
-          setLeaderboardData(result.data);
+    }
+    try {
+      const activityType = getActivityType();
+      const result = await fetchLeaderboard(selectedWindow, {
+        user_id: currentUserId,
+        activity_type: activityType,
+      });
+      
+      if (result.success) {
+        setLeaderboardData(result.data);
+        setLastUpdated(new Date());
+        if (!silent) {
           console.log('TELEMETRY - leaderboard_page_view', {
             window: selectedWindow,
             window_key: result.data.window_key,
-            activity_type: getActivityType(),
+            activity_type: activityType,
           });
-        } else {
-          setError(result.error || 'Failed to load leaderboard');
         }
-      } catch (err) {
-        console.error('Error loading leaderboard:', err);
+      } else if (!silent) {
+        setError(result.error || 'Failed to load leaderboard');
+      } else {
+        console.error('Leaderboard auto-refresh failed:', result.error || 'Failed to load leaderboard');
+      }
+    } catch (err) {
+      console.error('Error loading leaderboard:', err);
+      if (!silent) {
         setError('An unexpected error occurred');
       }
+    } finally {
+      isLoadingRef.current = false;
+      if (pendingReloadRef.current) {
+        const isSilent = pendingReloadRef.current === RELOAD_TYPE_SILENT;
+        pendingReloadRef.current = null;
+        loadLeaderboard(isSilent);
+      }
+    }
+  }, [currentUserId, getActivityType, selectedWindow]);
+
+  // Fetch leaderboard data when window or activity type changes, then start polling
+  useEffect(() => {
+    let isActive = true;
+
+    const startPolling = async () => {
+      await loadLeaderboard(false);
+      if (!isActive) return;
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+      }
+      const intervalId = setInterval(() => {
+        loadLeaderboard(true);
+      }, LEADERBOARD_POLL_INTERVAL);
+      if (!isActive) {
+        clearInterval(intervalId);
+        return;
+      }
+      pollingIntervalRef.current = intervalId;
+      setIsPolling(true);
     };
-    
-    loadLeaderboard();
-  }, [selectedWindow, selectedBike, selectedFoot, currentUserId]);
+
+    startPolling();
+    return () => {
+      isActive = false;
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+        pollingIntervalRef.current = null;
+      }
+      setIsPolling(false);
+    };
+  }, [loadLeaderboard]);
 
   // Format distance in meters to miles
   const formatDistance = (meters) => {
@@ -76,6 +137,11 @@ function Leaderboard() {
     if (!dateString) return '';
     const date = new Date(dateString);
     return date.toLocaleDateString();
+  };
+
+  const formatTime = (dateValue) => {
+    if (!dateValue) return '';
+    return dateValue.toLocaleTimeString();
   };
 
   // Toggle activity type filter (Bike or Foot)
@@ -100,7 +166,7 @@ function Leaderboard() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto px-2 sm:px-4 lg:px-8 py-4 sm:py-8">
+      <div className="max-w-7xl mx-auto px-2 sm:px-4 lg:px-8 py-4 sm:py-8 flex flex-col min-h-screen">
         {/* Header */}
         <div className="mb-4 sm:mb-8">
           <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-2">
@@ -351,6 +417,19 @@ function Leaderboard() {
             </div>
           </div>
         )}
+        <div className="mt-auto pt-4 sm:pt-6 flex flex-wrap items-center justify-center gap-2 text-xs sm:text-sm text-gray-500">
+          {isPolling && (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+              <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+              Auto-updating every {LEADERBOARD_POLL_INTERVAL / 1000}s
+            </span>
+          )}
+          {lastUpdated && (
+            <span>
+              Last updated {formatTime(lastUpdated)}
+            </span>
+          )}
+        </div>
       </div>
     </div>
   );
