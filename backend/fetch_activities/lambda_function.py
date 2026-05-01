@@ -169,6 +169,33 @@ def _update_last_strava_fetch(athlete_id):
         print(f"WARNING: Failed to update last_strava_fetch for athlete {athlete_id}: {e}")
 
 
+def _get_latest_activity_timestamp(athlete_id):
+    """Return the Unix timestamp of the athlete's most recent stored activity start_date.
+
+    Falls back to ACTIVITIES_START_DATE when no activities exist yet, so the
+    first sync always pulls from the configured start of the season.
+    """
+    sql = """
+    SELECT EXTRACT(EPOCH FROM MAX(start_date))::BIGINT AS latest_ts
+    FROM activities
+    WHERE athlete_id = :aid
+    """
+    params = [{"name": "aid", "value": {"longValue": athlete_id}}]
+    try:
+        result = _exec_sql(sql, params)
+        records = result.get("records", [])
+        if records:
+            val = records[0][0]
+            if not val.get("isNull") and val.get("longValue") is not None:
+                ts = val["longValue"]
+                print(f"Incremental sync: most recent activity timestamp for athlete {athlete_id} is {ts}")
+                return ts
+    except Exception as e:
+        print(f"WARNING: Could not query latest activity timestamp for athlete {athlete_id}: {e}")
+    print(f"No existing activities for athlete {athlete_id}, using ACTIVITIES_START_DATE={ACTIVITIES_START_DATE}")
+    return ACTIVITIES_START_DATE
+
+
 def refresh_access_token(athlete_id, refresh_token):
     """Refresh expired Strava access token"""
     client_id, client_secret = _get_strava_creds()
@@ -214,9 +241,9 @@ def refresh_access_token(athlete_id, refresh_token):
         raise
 
 
-def fetch_strava_activities(access_token, per_page=30, page=1):
-    """Fetch activities from Strava API"""
-    url = f"{STRAVA_ACTIVITIES_URL}?per_page={per_page}&page={page}&after={ACTIVITIES_START_DATE}"
+def fetch_strava_activities(access_token, after_ts, per_page=30, page=1):
+    """Fetch activities from Strava API starting after `after_ts` (Unix timestamp)"""
+    url = f"{STRAVA_ACTIVITIES_URL}?per_page={per_page}&page={page}&after={after_ts}"
     req = Request(url, headers={"Authorization": f"Bearer {access_token}"})
     
     try:
@@ -397,17 +424,20 @@ def fetch_activities_for_athlete(athlete_id, access_token, refresh_token, expire
     else:
         print(f"Access token is valid, skipping refresh")
     
-    # Fetch all activities from Strava with pagination
-    # Strava API returns max 200 activities per page, we'll use 200 for efficiency
-    print(f"Fetching activities from Strava API for athlete {athlete_id}...")
+    # Fetch all activities from Strava with pagination.
+    # Use the most recent stored activity timestamp as the `after` parameter so
+    # only new activities are fetched (incremental sync).  Falls back to
+    # ACTIVITIES_START_DATE when no activities exist yet.
+    after_ts = _get_latest_activity_timestamp(athlete_id)
+    print(f"Fetching activities from Strava API for athlete {athlete_id} (after_ts={after_ts})...")
     all_activities = []
     page = 1
     per_page = 200  # Maximum allowed by Strava API
     
     try:
         while True:
-            print(f"Fetching page {page} (per_page={per_page})...")
-            activities = fetch_strava_activities(access_token, per_page=per_page, page=page)
+            print(f"Fetching page {page} (per_page={per_page}, after_ts={after_ts})...")
+            activities = fetch_strava_activities(access_token, after_ts, per_page=per_page, page=page)
             
             if not isinstance(activities, list):
                 print(f"ERROR: fetch_strava_activities returned non-list: {type(activities)}")
