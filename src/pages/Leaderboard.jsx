@@ -4,7 +4,7 @@ import { fetchMe, fetchLeaderboard } from '../utils/api';
 // Number of top athletes to display in current rankings
 const TOP_ATHLETES_COUNT = 15;
 const LEADERBOARD_POLL_INTERVAL = 30000; // Poll every 30 seconds
-const LEADERBOARD_POLL_SECONDS = Math.round(LEADERBOARD_POLL_INTERVAL / 1000);
+const LEADERBOARD_POLL_SECONDS = LEADERBOARD_POLL_INTERVAL / 1000;
 const RELOAD_TYPE_SILENT = 'silent';
 const RELOAD_TYPE_NON_SILENT = 'non-silent';
 
@@ -48,9 +48,7 @@ function Leaderboard() {
   const loadLeaderboard = useCallback(async (silent = false) => {
     if (isLoadingRef.current) {
       if (silent) {
-        pendingReloadRef.current = pendingReloadRef.current === RELOAD_TYPE_NON_SILENT
-          ? RELOAD_TYPE_NON_SILENT
-          : RELOAD_TYPE_SILENT;
+        pendingReloadRef.current = pendingReloadRef.current || RELOAD_TYPE_SILENT;
       } else {
         pendingReloadRef.current = RELOAD_TYPE_NON_SILENT;
       }
@@ -79,6 +77,8 @@ function Leaderboard() {
         }
       } else if (!silent) {
         setError(result.error || 'Failed to load leaderboard');
+      } else {
+        console.error('Leaderboard auto-refresh failed:', result.error || 'Failed to load leaderboard');
       }
     } catch (err) {
       console.error('Error loading leaderboard:', err);
@@ -98,6 +98,7 @@ function Leaderboard() {
   // Fetch leaderboard data when window or activity type changes, then start polling
   useEffect(() => {
     let isActive = true;
+    setIsPolling(false);
 
     const startPolling = async () => {
       await loadLeaderboard(false);
