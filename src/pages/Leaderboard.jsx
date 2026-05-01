@@ -166,7 +166,7 @@ function Leaderboard() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto px-2 sm:px-4 lg:px-8 py-4 sm:py-8">
+      <div className="max-w-7xl mx-auto px-2 sm:px-4 lg:px-8 py-4 sm:py-8 flex flex-col min-h-screen">
         {/* Header */}
         <div className="mb-4 sm:mb-8">
           <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 mb-2">
@@ -175,19 +175,6 @@ function Leaderboard() {
           <p className="text-sm sm:text-base text-gray-600">
             View athlete rankings by time period.
           </p>
-          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs sm:text-sm text-gray-500">
-            {isPolling && (
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
-                <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
-                Auto-updating every {LEADERBOARD_POLL_INTERVAL / 1000}s
-              </span>
-            )}
-            {lastUpdated && (
-              <span>
-                Last updated {formatTime(lastUpdated)}
-              </span>
-            )}
-          </div>
         </div>
 
 
@@ -430,6 +417,19 @@ function Leaderboard() {
             </div>
           </div>
         )}
+        <div className="mt-auto pt-4 sm:pt-6 flex flex-wrap items-center justify-center gap-2 text-xs sm:text-sm text-gray-500">
+          {isPolling && (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+              <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+              Auto-updating every {LEADERBOARD_POLL_INTERVAL / 1000}s
+            </span>
+          )}
+          {lastUpdated && (
+            <span>
+              Last updated {formatTime(lastUpdated)}
+            </span>
+          )}
+        </div>
       </div>
     </div>
   );
