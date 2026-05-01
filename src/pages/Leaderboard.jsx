@@ -4,6 +4,7 @@ import { fetchMe, fetchLeaderboard } from '../utils/api';
 // Number of top athletes to display in current rankings
 const TOP_ATHLETES_COUNT = 15;
 const LEADERBOARD_POLL_INTERVAL = 30000; // Poll every 30 seconds
+const LEADERBOARD_POLL_SECONDS = Math.round(LEADERBOARD_POLL_INTERVAL / 1000);
 
 function Leaderboard() {
   const [loading, setLoading] = useState(true);
@@ -45,9 +46,7 @@ function Leaderboard() {
   const loadLeaderboard = useCallback(async (silent = false) => {
     if (isLoadingRef.current) {
       if (silent) {
-        if (!pendingReloadRef.current) {
-          pendingReloadRef.current = 'silent';
-        }
+        pendingReloadRef.current = pendingReloadRef.current === 'non-silent' ? 'non-silent' : 'silent';
       } else {
         pendingReloadRef.current = 'non-silent';
       }
@@ -174,7 +173,7 @@ function Leaderboard() {
             {isPolling && (
               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
                 <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
-                Auto-updating every 30s
+                Auto-updating every {LEADERBOARD_POLL_SECONDS}s
               </span>
             )}
             {lastUpdated && (
