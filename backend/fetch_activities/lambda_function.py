@@ -58,6 +58,12 @@ STRAVA_RATE_LIMIT_MESSAGE = "Strava API rate limit exceeded. Please try again la
 # Strava's rate-limit window is 15 minutes, so 900 s is a natural floor.
 FETCH_COOLDOWN_SECONDS = 900
 
+# How far back (in seconds) to look when building the incremental sync cursor.
+# This ensures late-uploaded activities (e.g. manual entries, delayed Garmin
+# syncs) within the look-back window are always fetched even if their
+# start_date is older than the most recently stored activity.
+SYNC_LOOKBACK_SECONDS = 30 * 24 * 3600  # 30 days
+
 def get_cors_origin():
     """Extract origin (scheme + host) from FRONTEND_URL for CORS headers"""
     if not FRONTEND_URL:
@@ -170,7 +176,13 @@ def _update_last_strava_fetch(athlete_id):
 
 
 def _get_latest_activity_timestamp(athlete_id):
-    """Return the Unix timestamp of the athlete's most recent stored activity start_date.
+    """Return the incremental-sync cursor for the athlete.
+
+    Returns MAX(start_date) - SYNC_LOOKBACK_SECONDS so that activities with an
+    older start_date that were uploaded after the last sync (e.g. a manual entry
+    or a delayed Garmin upload) are still fetched.  The look-back window means
+    we always re-fetch the most recent 30 days; since store_activities uses
+    ON CONFLICT DO UPDATE this is safe.
 
     Falls back to ACTIVITIES_START_DATE when no activities exist yet, so the
     first sync always pulls from the configured start of the season.
@@ -188,8 +200,10 @@ def _get_latest_activity_timestamp(athlete_id):
         if records and len(records[0]) > 0:
             val = records[0][0]
             if not val.get("isNull") and val.get("longValue") is not None:
-                ts = val["longValue"]
-                print(f"Incremental sync: most recent activity timestamp for athlete {athlete_id} is {ts}")
+                ts = val["longValue"] - SYNC_LOOKBACK_SECONDS
+                # Never go before the configured start of the season
+                ts = max(ts, ACTIVITIES_START_DATE)
+                print(f"Incremental sync cursor for athlete {athlete_id}: {ts} (MAX(start_date) - {SYNC_LOOKBACK_SECONDS}s look-back)")
                 return ts
     except Exception as e:
         print(f"WARNING: Could not query latest activity timestamp for athlete {athlete_id}: {e}")
