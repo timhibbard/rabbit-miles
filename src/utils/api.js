@@ -136,6 +136,10 @@ export const refreshActivities = async () => {
       debug.log('User not authenticated (401)');
       return { success: false, notConnected: true };
     }
+    if (error.response?.status === 429) {
+      const message = error.response?.data?.error || 'Strava API rate limit exceeded. Please try again later.';
+      return { success: false, error: message };
+    }
     return { success: false, error: error.message };
   }
 };

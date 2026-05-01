@@ -15,6 +15,7 @@ import base64
 import hmac
 import hashlib
 from urllib.request import Request, urlopen
+from urllib.error import HTTPError
 from urllib.parse import urlencode, urlparse
 import boto3
 
@@ -37,6 +38,11 @@ STRAVA_TOKEN_URL = "https://www.strava.com/oauth/token"
 # Filter activities starting from Jan 1, 2026 00:00:00 UTC
 # Unix timestamp: 1767225600
 ACTIVITIES_START_DATE = 1767225600
+
+
+class StravaRateLimitError(Exception):
+    """Raised when Strava API returns HTTP 429 Too Many Requests."""
+    pass
 
 
 def get_cors_origin():
@@ -195,17 +201,21 @@ def fetch_strava_activities(access_token, per_page=30, page=1):
             activities = json.loads(response_body)
             print(f"Parsed {len(activities) if isinstance(activities, list) else 'non-list'} activities from Strava")
         return activities
+    except HTTPError as e:
+        print(f"Failed to fetch activities from Strava: {e}")
+        print(f"Exception type: {type(e).__name__}")
+        print(f"HTTP status code: {e.code}")
+        try:
+            error_body = e.read().decode()
+            print(f"Error response body: {error_body}")
+        except Exception:
+            pass
+        if e.code == 429:
+            raise StravaRateLimitError("Strava API rate limit exceeded") from e
+        raise
     except Exception as e:
         print(f"Failed to fetch activities from Strava: {e}")
         print(f"Exception type: {type(e).__name__}")
-        if hasattr(e, 'code'):
-            print(f"HTTP status code: {e.code}")
-        if hasattr(e, 'read'):
-            try:
-                error_body = e.read().decode()
-                print(f"Error response body: {error_body}")
-            except:
-                pass
         raise
 
 
@@ -460,6 +470,12 @@ def handler(event, context):
                     "total_activities_stored": stored_count
                 })
             }
+        except StravaRateLimitError as e:
+            print(f"Strava rate limit hit during direct invocation: {e}")
+            return {
+                "statusCode": 429,
+                "body": json.dumps({"error": "Strava API rate limit exceeded. Please try again later."})
+            }
         except Exception as e:
             print(f"Error in direct invocation: {e}")
             import traceback
@@ -574,6 +590,13 @@ def handler(event, context):
                 "message": message,
                 "total_activities_stored": stored_count
             })
+        }
+    except StravaRateLimitError as e:
+        print(f"Strava rate limit exceeded: {e}")
+        return {
+            "statusCode": 429,
+            "headers": cors_headers,
+            "body": json.dumps({"error": "Strava API rate limit exceeded. Please try again later."})
         }
     except Exception as e:
         print(f"Error in fetch_activities handler: {e}")
