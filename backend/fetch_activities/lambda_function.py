@@ -179,12 +179,13 @@ def _get_latest_activity_timestamp(athlete_id):
     SELECT EXTRACT(EPOCH FROM MAX(start_date))::BIGINT AS latest_ts
     FROM activities
     WHERE athlete_id = :aid
+      AND start_date <= NOW()
     """
     params = [{"name": "aid", "value": {"longValue": athlete_id}}]
     try:
         result = _exec_sql(sql, params)
         records = result.get("records", [])
-        if records:
+        if records and len(records[0]) > 0:
             val = records[0][0]
             if not val.get("isNull") and val.get("longValue") is not None:
                 ts = val["longValue"]
