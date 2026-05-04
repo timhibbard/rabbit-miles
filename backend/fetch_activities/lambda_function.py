@@ -15,6 +15,7 @@ import base64
 import hmac
 import hashlib
 from urllib.request import Request, urlopen
+from urllib.error import HTTPError
 from urllib.parse import urlencode, urlparse
 import boto3
 
@@ -38,6 +39,30 @@ STRAVA_TOKEN_URL = "https://www.strava.com/oauth/token"
 # Unix timestamp: 1767225600
 ACTIVITIES_START_DATE = 1767225600
 
+
+class StravaRateLimitError(Exception):
+    """Raised when Strava API returns HTTP 429 Too Many Requests."""
+    pass
+
+
+class FetchCooldownError(Exception):
+    """Raised when a fetch is attempted too soon after the previous successful fetch."""
+    def __init__(self, seconds_remaining):
+        self.seconds_remaining = seconds_remaining
+        super().__init__(f"Please wait {seconds_remaining} more seconds before syncing again.")
+
+
+STRAVA_RATE_LIMIT_MESSAGE = "Strava API rate limit exceeded. Please try again later."
+
+# Minimum seconds between user-initiated Strava fetches per athlete.
+# Strava's rate-limit window is 15 minutes, so 900 s is a natural floor.
+FETCH_COOLDOWN_SECONDS = 900
+
+# How far back (in seconds) to look when building the incremental sync cursor.
+# This ensures late-uploaded activities (e.g. manual entries, delayed Garmin
+# syncs) within the look-back window are always fetched even if their
+# start_date is older than the most recently stored activity.
+SYNC_LOOKBACK_SECONDS = 30 * 24 * 3600  # 30 days
 
 def get_cors_origin():
     """Extract origin (scheme + host) from FRONTEND_URL for CORS headers"""
@@ -138,6 +163,54 @@ def _exec_sql(sql, parameters=None):
     return rds.execute_statement(**kwargs)
 
 
+def _update_last_strava_fetch(athlete_id):
+    """Record the current time as the most recent successful Strava fetch for this athlete."""
+    sql = "UPDATE users SET last_strava_fetch = now() WHERE athlete_id = :aid"
+    params = [{"name": "aid", "value": {"longValue": athlete_id}}]
+    try:
+        _exec_sql(sql, params)
+        print(f"Updated last_strava_fetch for athlete {athlete_id}")
+    except Exception as e:
+        # Non-fatal: log but don't abort the overall flow
+        print(f"WARNING: Failed to update last_strava_fetch for athlete {athlete_id}: {e}")
+
+
+def _get_latest_activity_timestamp(athlete_id):
+    """Return the incremental-sync cursor for the athlete.
+
+    Returns MAX(start_date) - SYNC_LOOKBACK_SECONDS so that activities with an
+    older start_date that were uploaded after the last sync (e.g. a manual entry
+    or a delayed Garmin upload) are still fetched.  The look-back window means
+    we always re-fetch the most recent 30 days; since store_activities uses
+    ON CONFLICT DO UPDATE this is safe.
+
+    Falls back to ACTIVITIES_START_DATE when no activities exist yet, so the
+    first sync always pulls from the configured start of the season.
+    """
+    sql = """
+    SELECT EXTRACT(EPOCH FROM MAX(start_date))::BIGINT AS latest_ts
+    FROM activities
+    WHERE athlete_id = :aid
+      AND start_date <= NOW()
+    """
+    params = [{"name": "aid", "value": {"longValue": athlete_id}}]
+    try:
+        result = _exec_sql(sql, params)
+        records = result.get("records", [])
+        if records and len(records[0]) > 0:
+            val = records[0][0]
+            if not val.get("isNull") and val.get("longValue") is not None:
+                ts = val["longValue"] - SYNC_LOOKBACK_SECONDS
+                # Never go before the configured start of the season
+                ts = max(ts, ACTIVITIES_START_DATE)
+                print(f"Incremental sync cursor for athlete {athlete_id}: {ts} (MAX(start_date) - {SYNC_LOOKBACK_SECONDS}s look-back)")
+                return ts
+    except Exception as e:
+        print(f"WARNING: Could not query latest activity timestamp for athlete {athlete_id}: {e}")
+    print(f"No existing activities for athlete {athlete_id}, using ACTIVITIES_START_DATE={ACTIVITIES_START_DATE}")
+    return ACTIVITIES_START_DATE
+
+
 def refresh_access_token(athlete_id, refresh_token):
     """Refresh expired Strava access token"""
     client_id, client_secret = _get_strava_creds()
@@ -183,9 +256,9 @@ def refresh_access_token(athlete_id, refresh_token):
         raise
 
 
-def fetch_strava_activities(access_token, per_page=30, page=1):
-    """Fetch activities from Strava API"""
-    url = f"{STRAVA_ACTIVITIES_URL}?per_page={per_page}&page={page}&after={ACTIVITIES_START_DATE}"
+def fetch_strava_activities(access_token, after_ts, per_page=30, page=1):
+    """Fetch activities from Strava API starting after `after_ts` (Unix timestamp)"""
+    url = f"{STRAVA_ACTIVITIES_URL}?per_page={per_page}&page={page}&after={after_ts}"
     req = Request(url, headers={"Authorization": f"Bearer {access_token}"})
     
     try:
@@ -195,17 +268,21 @@ def fetch_strava_activities(access_token, per_page=30, page=1):
             activities = json.loads(response_body)
             print(f"Parsed {len(activities) if isinstance(activities, list) else 'non-list'} activities from Strava")
         return activities
+    except HTTPError as e:
+        print(f"Failed to fetch activities from Strava: {e}")
+        print(f"Exception type: {type(e).__name__}")
+        print(f"HTTP status code: {e.code}")
+        try:
+            error_body = e.read().decode()
+            print(f"Error response body: {error_body}")
+        except (OSError, UnicodeDecodeError) as read_err:
+            print(f"Could not read error response body: {read_err}")
+        if e.code == 429:
+            raise StravaRateLimitError(STRAVA_RATE_LIMIT_MESSAGE) from e
+        raise
     except Exception as e:
         print(f"Failed to fetch activities from Strava: {e}")
         print(f"Exception type: {type(e).__name__}")
-        if hasattr(e, 'code'):
-            print(f"HTTP status code: {e.code}")
-        if hasattr(e, 'read'):
-            try:
-                error_body = e.read().decode()
-                print(f"Error response body: {error_body}")
-            except:
-                pass
         raise
 
 
@@ -362,17 +439,20 @@ def fetch_activities_for_athlete(athlete_id, access_token, refresh_token, expire
     else:
         print(f"Access token is valid, skipping refresh")
     
-    # Fetch all activities from Strava with pagination
-    # Strava API returns max 200 activities per page, we'll use 200 for efficiency
-    print(f"Fetching activities from Strava API for athlete {athlete_id}...")
+    # Fetch all activities from Strava with pagination.
+    # Use the most recent stored activity timestamp as the `after` parameter so
+    # only new activities are fetched (incremental sync).  Falls back to
+    # ACTIVITIES_START_DATE when no activities exist yet.
+    after_ts = _get_latest_activity_timestamp(athlete_id)
+    print(f"Fetching activities from Strava API for athlete {athlete_id} (after_ts={after_ts})...")
     all_activities = []
     page = 1
     per_page = 200  # Maximum allowed by Strava API
     
     try:
         while True:
-            print(f"Fetching page {page} (per_page={per_page})...")
-            activities = fetch_strava_activities(access_token, per_page=per_page, page=page)
+            print(f"Fetching page {page} (per_page={per_page}, after_ts={after_ts})...")
+            activities = fetch_strava_activities(access_token, after_ts, per_page=per_page, page=page)
             
             if not isinstance(activities, list):
                 print(f"ERROR: fetch_strava_activities returned non-list: {type(activities)}")
@@ -396,6 +476,10 @@ def fetch_activities_for_athlete(athlete_id, access_token, refresh_token, expire
     except Exception as e:
         print(f"ERROR: Failed to fetch activities from Strava: {e}")
         raise
+    
+    # Record that a successful Strava fetch just happened for this athlete.
+    # Do this before storing so the cooldown is set even if storage partially fails.
+    _update_last_strava_fetch(athlete_id)
     
     # Store activities in database
     print(f"Storing {len(all_activities)} activities in database...")
@@ -459,6 +543,12 @@ def handler(event, context):
                     "message": "Successfully fetched activities",
                     "total_activities_stored": stored_count
                 })
+            }
+        except StravaRateLimitError as e:
+            print(f"Strava rate limit hit during direct invocation: {e}")
+            return {
+                "statusCode": 429,
+                "body": json.dumps({"error": STRAVA_RATE_LIMIT_MESSAGE})
             }
         except Exception as e:
             print(f"Error in direct invocation: {e}")
@@ -526,8 +616,8 @@ def handler(event, context):
         
         print(f"Authenticated as athlete_id: {athlete_id}")
         
-        # Get user's tokens from database
-        sql = "SELECT access_token, refresh_token, expires_at FROM users WHERE athlete_id = :aid"
+        # Get user's tokens and last fetch timestamp from database
+        sql = "SELECT access_token, refresh_token, expires_at, EXTRACT(EPOCH FROM last_strava_fetch)::BIGINT AS last_strava_fetch_epoch FROM users WHERE athlete_id = :aid"
         params = [{"name": "aid", "value": {"longValue": athlete_id}}]
         result = _exec_sql(sql, params)
         
@@ -544,6 +634,7 @@ def handler(event, context):
         access_token = record[0].get("stringValue", "")
         refresh_token = record[1].get("stringValue", "")
         expires_at = int(record[2].get("longValue", 0))
+        last_fetch_ts = record[3].get("longValue") if not record[3].get("isNull") else None
         
         print(f"Retrieved tokens from database: access_token={'***' if access_token else 'MISSING'}, refresh_token={'***' if refresh_token else 'MISSING'}, expires_at={expires_at}")
         
@@ -554,6 +645,21 @@ def handler(event, context):
                 "headers": cors_headers,
                 "body": json.dumps({"error": "user not connected to Strava"})
             }
+        
+        # Enforce per-user fetch cooldown to avoid Strava rate limiting
+        if last_fetch_ts is not None:
+            seconds_since_fetch = int(time.time()) - last_fetch_ts
+            remaining = FETCH_COOLDOWN_SECONDS - seconds_since_fetch
+            if remaining > 0:
+                minutes_remaining = (remaining + 59) // 60  # Round up to the next full minute
+                print(f"Fetch cooldown active for athlete {athlete_id}: {remaining}s remaining")
+                return {
+                    "statusCode": 429,
+                    "headers": cors_headers,
+                    "body": json.dumps({
+                        "error": f"Activities were recently synced. Please wait {minutes_remaining} more minute{'s' if minutes_remaining != 1 else ''} before syncing again."
+                    })
+                }
         
         # Fetch and store activities for this athlete
         print(f"Calling fetch_activities_for_athlete...")
@@ -574,6 +680,13 @@ def handler(event, context):
                 "message": message,
                 "total_activities_stored": stored_count
             })
+        }
+    except StravaRateLimitError as e:
+        print(f"Strava rate limit exceeded: {e}")
+        return {
+            "statusCode": 429,
+            "headers": cors_headers,
+            "body": json.dumps({"error": STRAVA_RATE_LIMIT_MESSAGE})
         }
     except Exception as e:
         print(f"Error in fetch_activities handler: {e}")
