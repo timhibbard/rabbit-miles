@@ -11,6 +11,7 @@ import json
 import time
 from datetime import datetime
 from urllib.request import Request, urlopen
+from urllib.error import HTTPError
 from urllib.parse import urlencode
 import boto3
 
@@ -54,6 +55,9 @@ RATE_LIMIT_SAFETY_MARGIN = 5
 
 # Maximum retries on HTTP 429
 MAX_RETRIES = 3
+
+# Maximum wait time between retries (15 minutes = one Strava rate limit window)
+MAX_RETRY_WAIT_SECONDS = 900
 
 
 def _get_strava_creds():
@@ -191,15 +195,14 @@ def _strava_get(req, timeout=30):
                 body = resp.read().decode()
                 _update_rate_limit_from_headers(dict(resp.headers))
                 return json.loads(body)
-        except Exception as e:
-            if hasattr(e, "code") and e.code == 429:
+        except HTTPError as e:
+            if e.code == 429:
                 if attempt < MAX_RETRIES:
-                    wait = min(60 * (2 ** attempt), 900)
+                    wait = min(60 * (2 ** attempt), MAX_RETRY_WAIT_SECONDS)
                     log(f"429 received, retrying in {wait}s (attempt {attempt + 1}/{MAX_RETRIES})", "WARNING")
                     time.sleep(wait)
                     continue
             raise
-    raise RuntimeError("Max retries exceeded")
 
 
 def fetch_strava_activities(access_token, after_timestamp, per_page=200):
