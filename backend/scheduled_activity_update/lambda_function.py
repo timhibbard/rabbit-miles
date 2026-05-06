@@ -11,6 +11,7 @@ import json
 import time
 from datetime import datetime
 from urllib.request import Request, urlopen
+from urllib.error import HTTPError
 from urllib.parse import urlencode
 import boto3
 
@@ -44,6 +45,19 @@ TOKEN_REFRESH_BUFFER_SECONDS = 300
 
 # Update activities from the last 24 hours
 UPDATE_WINDOW_SECONDS = 24 * 60 * 60
+
+# Strava rate limit state (module-level, shared across calls within a single invocation)
+_rate_limit_used = 0
+_rate_limit_limit = 100  # Strava default
+
+# Pause when this many requests remain in the current 15-minute window
+RATE_LIMIT_SAFETY_MARGIN = 5
+
+# Maximum retries on HTTP 429
+MAX_RETRIES = 3
+
+# Maximum wait time between retries (15 minutes = one Strava rate limit window)
+MAX_RETRY_WAIT_SECONDS = 900
 
 
 def _get_strava_creds():
@@ -143,16 +157,62 @@ def ensure_valid_token(athlete_id, access_token, refresh_token, expires_at):
     return access_token
 
 
+def _update_rate_limit_from_headers(headers):
+    """Parse and store Strava rate limit headers from a response."""
+    global _rate_limit_used, _rate_limit_limit
+    usage = headers.get("X-RateLimit-Usage") or headers.get("x-ratelimit-usage")
+    limit = headers.get("X-RateLimit-Limit") or headers.get("x-ratelimit-limit")
+    if usage:
+        try:
+            _rate_limit_used = int(usage.split(",")[0])
+        except (ValueError, IndexError):
+            pass
+    if limit:
+        try:
+            _rate_limit_limit = int(limit.split(",")[0])
+        except (ValueError, IndexError):
+            pass
+
+
+def _wait_if_rate_limited():
+    """Pause if we are approaching Strava's 15-minute rate limit."""
+    global _rate_limit_used
+    if _rate_limit_used >= _rate_limit_limit - RATE_LIMIT_SAFETY_MARGIN:
+        now = time.time()
+        seconds_into_window = now % (15 * 60)
+        wait = (15 * 60) - seconds_into_window + 5  # +5s buffer
+        log(f"Rate limit approaching ({_rate_limit_used}/{_rate_limit_limit}), sleeping {wait:.0f}s for window reset", "WARNING")
+        time.sleep(wait)
+        _rate_limit_used = 0
+
+
+def _strava_get(req, timeout=30):
+    """Shared Strava GET with rate-limit awareness and 429 retry."""
+    for attempt in range(MAX_RETRIES + 1):
+        _wait_if_rate_limited()
+        try:
+            with urlopen(req, timeout=timeout) as resp:
+                body = resp.read().decode()
+                _update_rate_limit_from_headers(dict(resp.headers))
+                return json.loads(body)
+        except HTTPError as e:
+            if e.code == 429:
+                if attempt < MAX_RETRIES:
+                    wait = min(60 * (2 ** attempt), MAX_RETRY_WAIT_SECONDS)
+                    log(f"429 received, retrying in {wait}s (attempt {attempt + 1}/{MAX_RETRIES})", "WARNING")
+                    time.sleep(wait)
+                    continue
+            raise
+
+
 def fetch_strava_activities(access_token, after_timestamp, per_page=200):
     """Fetch activities from Strava API after a given timestamp"""
     url = f"{STRAVA_ACTIVITIES_URL}?per_page={per_page}&page=1&after={after_timestamp}"
     req = Request(url, headers={"Authorization": f"Bearer {access_token}"})
     
     try:
-        with urlopen(req, timeout=30) as resp:
-            response_body = resp.read().decode()
-            activities = json.loads(response_body)
-            log(f"Fetched {len(activities) if isinstance(activities, list) else 'non-list'} activities from Strava", "INFO")
+        activities = _strava_get(req, timeout=30)
+        log(f"Fetched {len(activities) if isinstance(activities, list) else 'non-list'} activities from Strava", "INFO")
         return activities
     except Exception as e:
         log(f"Failed to fetch activities from Strava: {e}", "ERROR")
@@ -172,8 +232,7 @@ def fetch_strava_athlete(access_token):
     req = Request(STRAVA_ATHLETE_URL, headers={"Authorization": f"Bearer {access_token}"})
     
     try:
-        with urlopen(req, timeout=20) as resp:
-            athlete = json.loads(resp.read().decode())
+        athlete = _strava_get(req, timeout=20)
         log("Fetched athlete profile from Strava", "INFO")
         return athlete
     except Exception as e:
@@ -342,10 +401,13 @@ def update_recent_activities_for_user(user):
         # Ensure token is valid
         access_token = ensure_valid_token(athlete_id, access_token, refresh_token, expires_at)
         
-        # Refresh profile picture in case the athlete updated their avatar
-        athlete_profile = fetch_strava_athlete(access_token)
-        if athlete_profile:
-            update_user_profile_picture(athlete_id, athlete_profile)
+        # Refresh profile picture in case the athlete updated their avatar (best-effort)
+        try:
+            athlete_profile = fetch_strava_athlete(access_token)
+            if athlete_profile:
+                update_user_profile_picture(athlete_id, athlete_profile)
+        except Exception as profile_err:
+            log(f"Skipping profile update for athlete {athlete_id} due to error: {profile_err}", "WARNING")
         
         # Calculate timestamp for 24 hours ago
         current_time = int(time.time())
@@ -441,6 +503,7 @@ def handler(event, context):
         for user in users:
             result = update_recent_activities_for_user(user)
             results.append(result)
+            time.sleep(1)  # pace requests to avoid rate limit burst
         
         # Summary
         successful_updates = sum(1 for r in results if r.get("success"))
@@ -466,6 +529,7 @@ def handler(event, context):
         log(f"  Successful updates: {successful_updates}", "INFO")
         log(f"  Failed updates: {failed_updates}", "INFO")
         log(f"  Total activities stored: {total_activities_stored}", "INFO")
+        log(f"  Rate limit usage at end of run: {_rate_limit_used}/{_rate_limit_limit}", "INFO")
         log(SEPARATOR_LINE, "INFO")
         
         status = "SUCCESS" if failed_updates == 0 else "PARTIAL SUCCESS"
