@@ -40,7 +40,8 @@ DEFAULT_RATE_LIMIT_DEFER_SECONDS = 15 * 60
 # SQS caps per-message visibility-timeout extensions at 12 hours.
 MAX_VISIBILITY_TIMEOUT_SECONDS = 12 * 60 * 60
 # In-memory cooldown for warm Lambda containers to avoid repeated Strava 429 calls.
-STRAVA_RATE_LIMIT_UNTIL_EPOCH = 0
+# Lambda processes one invocation at a time per execution environment.
+STRAVA_RATE_LIMIT_COOLDOWN_UNTIL = 0
 
 # Get environment variables
 DB_CLUSTER_ARN = os.environ.get("DB_CLUSTER_ARN", "")
@@ -558,15 +559,15 @@ def _defer_message_for_rate_limit(record, retry_after_seconds):
 
 def _set_rate_limit_cooldown(retry_after_seconds):
     """Record a temporary in-memory cooldown for this warm Lambda runtime."""
-    global STRAVA_RATE_LIMIT_UNTIL_EPOCH
+    global STRAVA_RATE_LIMIT_COOLDOWN_UNTIL
     defer_seconds = max(60, min(retry_after_seconds or DEFAULT_RATE_LIMIT_DEFER_SECONDS, MAX_VISIBILITY_TIMEOUT_SECONDS))
-    STRAVA_RATE_LIMIT_UNTIL_EPOCH = max(STRAVA_RATE_LIMIT_UNTIL_EPOCH, int(time.time()) + defer_seconds)
+    STRAVA_RATE_LIMIT_COOLDOWN_UNTIL = max(STRAVA_RATE_LIMIT_COOLDOWN_UNTIL, int(time.time()) + defer_seconds)
     return defer_seconds
 
 
 def _get_rate_limit_cooldown_seconds():
     """Return remaining in-memory cooldown seconds, or 0 when no cooldown is active."""
-    remaining = STRAVA_RATE_LIMIT_UNTIL_EPOCH - int(time.time())
+    remaining = STRAVA_RATE_LIMIT_COOLDOWN_UNTIL - int(time.time())
     return max(0, remaining)
 
 
@@ -607,7 +608,7 @@ def handler(event, context):
             if rate_limited:
                 # We've already hit the rate limit on this batch; don't burn more
                 # of the budget. Defer the rest and let them retry later.
-                _defer_message_for_rate_limit(record, cooldown_seconds or None)
+                _defer_message_for_rate_limit(record, cooldown_seconds)
                 batch_item_failures.append({"itemIdentifier": message_id})
                 continue
 
