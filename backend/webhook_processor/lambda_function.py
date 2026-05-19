@@ -602,6 +602,7 @@ def handler(event, context):
     batch_item_failures = []
     rate_limited = False
     cooldown_seconds = _get_rate_limit_cooldown_seconds()
+    defer_seconds_for_batch = cooldown_seconds or None
     if cooldown_seconds > 0:
         print(f"Strava cooldown active; deferring entire batch for ~{cooldown_seconds}s")
         rate_limited = True
@@ -617,7 +618,7 @@ def handler(event, context):
             if rate_limited:
                 # We've already hit the rate limit on this batch; don't burn more
                 # of the budget. Defer the rest and let them retry later.
-                _defer_message_for_rate_limit(record, cooldown_seconds)
+                _defer_message_for_rate_limit(record, defer_seconds_for_batch)
                 batch_item_failures.append({"itemIdentifier": message_id})
                 continue
 
@@ -631,6 +632,7 @@ def handler(event, context):
             # while Strava is throttling us. Defer this message and every
             # remaining message in the batch.
             cooldown_seconds = _set_rate_limit_cooldown(rle.retry_after_seconds)
+            defer_seconds_for_batch = cooldown_seconds
             print(f"Strava rate-limited; deferring {message_id} (retry_after={rle.retry_after_seconds}, cooldown={cooldown_seconds}s)")
             _defer_message_for_rate_limit(record, cooldown_seconds)
             batch_item_failures.append({"itemIdentifier": message_id})
