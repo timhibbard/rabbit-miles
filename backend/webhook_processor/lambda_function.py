@@ -602,9 +602,9 @@ def handler(event, context):
     batch_item_failures = []
     rate_limited = False
     cooldown_seconds = _get_rate_limit_cooldown_seconds()
-    defer_seconds_for_batch = cooldown_seconds or None
+    defer_seconds_for_batch = None if cooldown_seconds == 0 else cooldown_seconds
     if cooldown_seconds > 0:
-        print(f"Strava cooldown active; deferring entire batch for ~{cooldown_seconds}s")
+        print(f"Strava cooldown active; deferring entire batch for {cooldown_seconds}s")
         rate_limited = True
 
     for record in records:
