@@ -40,10 +40,10 @@ DEFAULT_RATE_LIMIT_DEFER_SECONDS = 15 * 60
 MIN_RATE_LIMIT_DEFER_SECONDS = 60
 # SQS caps per-message visibility-timeout extensions at 12 hours.
 MAX_VISIBILITY_TIMEOUT_SECONDS = 12 * 60 * 60
-# In-memory cooldown expiry timestamp for warm Lambda containers to avoid
-# repeated Strava 429 calls. Lambda processes one invocation at a time per
-# execution environment.
-_strava_cooldown_expires_at = 0
+# In-memory cooldown expiry timestamp (epoch seconds) for warm Lambda containers
+# to avoid repeated Strava 429 calls. Assumes Lambda's single-invocation-per-
+# execution-environment model.
+_strava_cooldown_expires_epoch = 0
 
 # Get environment variables
 DB_CLUSTER_ARN = os.environ.get("DB_CLUSTER_ARN", "")
@@ -560,15 +560,15 @@ def _defer_message_for_rate_limit(record, retry_after_seconds):
 
 def _set_rate_limit_cooldown(retry_after_seconds):
     """Record a temporary in-memory cooldown for this warm Lambda runtime."""
-    global _strava_cooldown_expires_at
+    global _strava_cooldown_expires_epoch
     defer_seconds = _normalize_defer_seconds(retry_after_seconds)
-    _strava_cooldown_expires_at = max(_strava_cooldown_expires_at, int(time.time()) + defer_seconds)
+    _strava_cooldown_expires_epoch = max(_strava_cooldown_expires_epoch, int(time.time()) + defer_seconds)
     return defer_seconds
 
 
 def _get_rate_limit_cooldown_seconds():
     """Return remaining in-memory cooldown seconds, or 0 when no cooldown is active."""
-    remaining = _strava_cooldown_expires_at - int(time.time())
+    remaining = _strava_cooldown_expires_epoch - int(time.time())
     return max(0, remaining)
 
 
@@ -603,8 +603,9 @@ def handler(event, context):
     batch_item_failures = []
     rate_limited = False
     cooldown_seconds = _get_rate_limit_cooldown_seconds()
-    defer_seconds_for_batch = None if cooldown_seconds == 0 else cooldown_seconds
+    defer_seconds_for_batch = None
     if cooldown_seconds > 0:
+        defer_seconds_for_batch = cooldown_seconds
         print(f"Strava cooldown active; deferring entire batch for {cooldown_seconds}s")
         rate_limited = True
 
