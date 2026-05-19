@@ -40,9 +40,10 @@ DEFAULT_RATE_LIMIT_DEFER_SECONDS = 15 * 60
 MIN_RATE_LIMIT_DEFER_SECONDS = 60
 # SQS caps per-message visibility-timeout extensions at 12 hours.
 MAX_VISIBILITY_TIMEOUT_SECONDS = 12 * 60 * 60
-# In-memory cooldown for warm Lambda containers to avoid repeated Strava 429 calls.
-# Lambda processes one invocation at a time per execution environment.
-_strava_rate_limit_cooldown_until = 0
+# In-memory cooldown expiry timestamp for warm Lambda containers to avoid
+# repeated Strava 429 calls. Lambda processes one invocation at a time per
+# execution environment.
+_strava_cooldown_expires_at = 0
 
 # Get environment variables
 DB_CLUSTER_ARN = os.environ.get("DB_CLUSTER_ARN", "")
@@ -542,8 +543,7 @@ def _defer_message_for_rate_limit(record, retry_after_seconds):
     region, account, queue_name = parts[3], parts[4], parts[5]
     queue_url = f"https://sqs.{region}.amazonaws.com/{account}/{queue_name}"
 
-    timeout = retry_after_seconds or DEFAULT_RATE_LIMIT_DEFER_SECONDS
-    timeout = max(MIN_RATE_LIMIT_DEFER_SECONDS, min(timeout, MAX_VISIBILITY_TIMEOUT_SECONDS))
+    timeout = _normalize_defer_seconds(retry_after_seconds)
 
     try:
         sqs.change_message_visibility(
@@ -560,16 +560,24 @@ def _defer_message_for_rate_limit(record, retry_after_seconds):
 
 def _set_rate_limit_cooldown(retry_after_seconds):
     """Record a temporary in-memory cooldown for this warm Lambda runtime."""
-    global _strava_rate_limit_cooldown_until
-    defer_seconds = max(MIN_RATE_LIMIT_DEFER_SECONDS, min(retry_after_seconds or DEFAULT_RATE_LIMIT_DEFER_SECONDS, MAX_VISIBILITY_TIMEOUT_SECONDS))
-    _strava_rate_limit_cooldown_until = max(_strava_rate_limit_cooldown_until, int(time.time()) + defer_seconds)
+    global _strava_cooldown_expires_at
+    defer_seconds = _normalize_defer_seconds(retry_after_seconds)
+    _strava_cooldown_expires_at = max(_strava_cooldown_expires_at, int(time.time()) + defer_seconds)
     return defer_seconds
 
 
 def _get_rate_limit_cooldown_seconds():
     """Return remaining in-memory cooldown seconds, or 0 when no cooldown is active."""
-    remaining = _strava_rate_limit_cooldown_until - int(time.time())
+    remaining = _strava_cooldown_expires_at - int(time.time())
     return max(0, remaining)
+
+
+def _normalize_defer_seconds(retry_after_seconds):
+    """Clamp retry/defer duration into the SQS-supported visibility timeout range."""
+    return max(
+        MIN_RATE_LIMIT_DEFER_SECONDS,
+        min(retry_after_seconds or DEFAULT_RATE_LIMIT_DEFER_SECONDS, MAX_VISIBILITY_TIMEOUT_SECONDS),
+    )
 
 
 def handler(event, context):
