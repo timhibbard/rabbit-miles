@@ -37,6 +37,8 @@ jobs:
             secret: LAMBDA_WEBHOOK
           - name: webhook_processor
             secret: LAMBDA_WEBHOOK_PROCESSOR
+            needs_timezone_utils: true
+            needs_leaderboard_agg: true
           - name: reset_last_matched
             secret: LAMBDA_RESET_LAST_MATCHED
           - name: update_trail_data
@@ -45,6 +47,8 @@ jobs:
             secret: LAMBDA_UPDATE_ACTIVITIES
           - name: match_activity_trail
             secret: LAMBDA_MATCH_ACTIVITY_TRAIL
+            needs_timezone_utils: true
+            needs_leaderboard_agg: true
           - name: match_unmatched_activities
             secret: LAMBDA_MATCH_UNMATCHED_ACTIVITIES
           - name: admin_list_users
@@ -109,6 +113,10 @@ jobs:
           # Include timezone_utils.py for Lambdas that need timezone handling
           if [ "${{ matrix.lambda.needs_timezone_utils }}" = "true" ]; then
             zip -j function.zip ../timezone_utils.py
+          fi
+          # Include leaderboard_agg.py for Lambdas that recompute leaderboards
+          if [ "${{ matrix.lambda.needs_leaderboard_agg }}" = "true" ]; then
+            zip -j function.zip ../leaderboard_agg.py
           fi
 
       - name: Deploy ${{ matrix.lambda.name }} Lambda
