@@ -37,11 +37,12 @@ sqs = boto3.client("sqs")
 # Default visibility-timeout extension when Strava returns 429 with no Retry-After.
 # 15 minutes is one full Strava rate-limit window.
 DEFAULT_RATE_LIMIT_DEFER_SECONDS = 15 * 60
+MIN_RATE_LIMIT_DEFER_SECONDS = 60
 # SQS caps per-message visibility-timeout extensions at 12 hours.
 MAX_VISIBILITY_TIMEOUT_SECONDS = 12 * 60 * 60
 # In-memory cooldown for warm Lambda containers to avoid repeated Strava 429 calls.
 # Lambda processes one invocation at a time per execution environment.
-STRAVA_RATE_LIMIT_COOLDOWN_UNTIL = 0
+_strava_rate_limit_cooldown_until = 0
 
 # Get environment variables
 DB_CLUSTER_ARN = os.environ.get("DB_CLUSTER_ARN", "")
@@ -542,7 +543,7 @@ def _defer_message_for_rate_limit(record, retry_after_seconds):
     queue_url = f"https://sqs.{region}.amazonaws.com/{account}/{queue_name}"
 
     timeout = retry_after_seconds or DEFAULT_RATE_LIMIT_DEFER_SECONDS
-    timeout = max(60, min(timeout, MAX_VISIBILITY_TIMEOUT_SECONDS))
+    timeout = max(MIN_RATE_LIMIT_DEFER_SECONDS, min(timeout, MAX_VISIBILITY_TIMEOUT_SECONDS))
 
     try:
         sqs.change_message_visibility(
@@ -559,15 +560,15 @@ def _defer_message_for_rate_limit(record, retry_after_seconds):
 
 def _set_rate_limit_cooldown(retry_after_seconds):
     """Record a temporary in-memory cooldown for this warm Lambda runtime."""
-    global STRAVA_RATE_LIMIT_COOLDOWN_UNTIL
-    defer_seconds = max(60, min(retry_after_seconds or DEFAULT_RATE_LIMIT_DEFER_SECONDS, MAX_VISIBILITY_TIMEOUT_SECONDS))
-    STRAVA_RATE_LIMIT_COOLDOWN_UNTIL = max(STRAVA_RATE_LIMIT_COOLDOWN_UNTIL, int(time.time()) + defer_seconds)
+    global _strava_rate_limit_cooldown_until
+    defer_seconds = max(MIN_RATE_LIMIT_DEFER_SECONDS, min(retry_after_seconds or DEFAULT_RATE_LIMIT_DEFER_SECONDS, MAX_VISIBILITY_TIMEOUT_SECONDS))
+    _strava_rate_limit_cooldown_until = max(_strava_rate_limit_cooldown_until, int(time.time()) + defer_seconds)
     return defer_seconds
 
 
 def _get_rate_limit_cooldown_seconds():
     """Return remaining in-memory cooldown seconds, or 0 when no cooldown is active."""
-    remaining = STRAVA_RATE_LIMIT_COOLDOWN_UNTIL - int(time.time())
+    remaining = _strava_rate_limit_cooldown_until - int(time.time())
     return max(0, remaining)
 
 
