@@ -15,13 +15,19 @@
 # - Implements idempotency to avoid duplicate processing
 
 import os
+import sys
 import json
 import time
-from datetime import datetime, timezone, timedelta
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError
 from urllib.parse import urlencode
 import boto3
+
+# Add parent directory to path to import shared modules
+parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, parent_dir)
+
+import leaderboard_agg
 
 rds = boto3.client("rds-data")
 sm = boto3.client("secretsmanager")
@@ -305,219 +311,66 @@ def trigger_trail_matching(activity_id):
         return False
 
 
-def get_window_keys(activity_start_date_local):
+def get_activity_window_metadata(athlete_id, strava_activity_id):
+    """Fetch the metadata needed to recompute leaderboard windows for an activity.
+
+    Returns a dict {start_date_local, activity_timezone, user_timezone} or None
+    if the activity isn't in the DB yet. Must be called BEFORE delete_activity
+    on the delete path so we still know which windows to recompute.
     """
-    Calculate window keys for current week, month, and year based on activity date.
-    
-    Args:
-        activity_start_date_local: ISO 8601 timestamp string (e.g., "2026-02-15T10:30:00Z")
-    
-    Returns:
-        Dict with 'week', 'month', 'year' keys containing window_key strings
+    sql = """
+    SELECT a.start_date_local, a.timezone AS activity_timezone, u.timezone AS user_timezone
+      FROM activities a
+      LEFT JOIN users u ON u.athlete_id = a.athlete_id
+     WHERE a.athlete_id = :aid AND a.strava_activity_id = :sid
     """
+    params = [
+        {"name": "aid", "value": {"longValue": athlete_id}},
+        {"name": "sid", "value": {"longValue": strava_activity_id}},
+    ]
     try:
-        # Parse ISO 8601 timestamp
-        dt = datetime.fromisoformat(activity_start_date_local.replace('Z', '+00:00'))
-        
-        # Week: ISO week format, Monday is start of week
-        # Window key format: week_YYYY-MM-DD (Monday of the week)
-        # Get Monday of the current week
-        days_since_monday = dt.weekday()  # Monday is 0
-        monday = dt.replace(hour=0, minute=0, second=0, microsecond=0)
-        if days_since_monday > 0:
-            monday = monday - timedelta(days=days_since_monday)
-        week_key = f"week_{monday.strftime('%Y-%m-%d')}"
-        
-        # Month: YYYY-MM
-        month_key = f"month_{dt.strftime('%Y-%m')}"
-        
-        # Year: YYYY
-        year_key = f"year_{dt.strftime('%Y')}"
-        
-        return {
-            'week': week_key,
-            'month': month_key,
-            'year': year_key
-        }
+        result = _exec_sql(sql, params)
     except Exception as e:
-        print(f"ERROR: Failed to parse activity date {activity_start_date_local}: {e}")
+        print(f"ERROR: Failed to read activity metadata for {strava_activity_id}: {e}")
         return None
 
-
-def check_user_leaderboard_opt_in(athlete_id):
-    """Check if user has opted in to leaderboards (show_on_leaderboards = true)"""
-    sql = "SELECT show_on_leaderboards FROM users WHERE athlete_id = :aid"
-    params = [{"name": "aid", "value": {"longValue": athlete_id}}]
-    
-    try:
-        result = _exec_sql(sql, params)
-        records = result.get("records", [])
-        if not records:
-            print(f"User {athlete_id} not found in database")
-            return False
-        
-        # Get boolean value - handle both booleanValue and stringValue
-        field = records[0][0]
-        if "booleanValue" in field:
-            return field["booleanValue"]
-        elif "stringValue" in field:
-            return field["stringValue"].lower() in ('true', 't', '1')
-        
-        # Default to False if field is NULL or unexpected type
-        return False
-    except Exception as e:
-        print(f"ERROR: Failed to check leaderboard opt-in for user {athlete_id}: {e}")
-        # Default to False on error - safer to not include than to include incorrectly
-        return False
+    records = result.get("records", [])
+    if not records:
+        return None
+    record = records[0]
+    return {
+        "start_date_local": record[0].get("stringValue", "") if not record[0].get("isNull") else "",
+        "activity_timezone": record[1].get("stringValue") if not record[1].get("isNull") else None,
+        "user_timezone": record[2].get("stringValue") if not record[2].get("isNull") else None,
+    }
 
 
-def update_leaderboard_aggregates(athlete_id, activity):
+def recompute_leaderboard_for_activity_window(athlete_id, metadata):
+    """Recompute leaderboard_agg for the user's windows that contain this activity.
+
+    Set-based: derives the user's totals from the current `activities` rows. Run
+    this after a create/update/delete to keep the leaderboard consistent without
+    incremental delta math.
     """
-    Update leaderboard aggregates for an activity (create or update).
-    Increments aggregate values for current week, month, and year.
-    
-    Args:
-        athlete_id: The athlete ID
-        activity: The activity dict from Strava API
-    
-    Returns:
-        True if successful, False otherwise
-    """
-    start_time = time.time()
-    print(f"TELEMETRY - leaderboard_agg_update_start athlete_id={athlete_id} activity_id={activity.get('id')}")
-    
-    try:
-        # Check if user has opted in to leaderboards
-        if not check_user_leaderboard_opt_in(athlete_id):
-            print(f"User {athlete_id} has opted out of leaderboards, skipping aggregation")
-            return True  # Not an error, just skip
-        
-        # Extract activity data from Strava
-        strava_activity_id = activity.get("id")
-        start_date_local = activity.get("start_date_local", "")
-        activity_type = activity.get("type", "")
-        
-        if not start_date_local:
-            print(f"WARNING: Activity {strava_activity_id} has no start_date_local, skipping aggregation")
-            return True
-        
-        # NOTE: Leaderboard uses distance_on_trail, which is calculated by trail matching,
-        # not by Strava webhooks. Strava webhooks update the activity data but preserve
-        # distance_on_trail. Therefore, webhook updates don't change leaderboard rankings.
-        # Trail matching will trigger leaderboard updates when distance_on_trail is calculated.
-        
-        # For now, we skip leaderboard updates in webhook processor since:
-        # - New activities have distance_on_trail = NULL (no change to leaderboard)
-        # - Updated activities preserve distance_on_trail (no change to leaderboard)
-        # - Only trail matching changes distance_on_trail (handled separately)
-        
-        print(f"Skipping leaderboard update for activity {strava_activity_id} - will be updated after trail matching")
+    if not metadata or not metadata.get("start_date_local"):
         return True
-        
-    except Exception as e:
-        duration_ms = (time.time() - start_time) * 1000
-        print(f"TELEMETRY - leaderboard_agg_error athlete_id={athlete_id} error={str(e)} duration_ms={duration_ms:.2f}")
-        print(f"ERROR: Failed to update leaderboard aggregates for athlete {athlete_id}: {e}")
-        import traceback
-        traceback.print_exc()
-        # Don't fail the entire webhook processing if leaderboard update fails
-        return False
 
-
-def delete_leaderboard_aggregates(athlete_id, strava_activity_id):
-    """
-    Remove activity contribution from leaderboard aggregates when activity is deleted.
-    
-    Args:
-        athlete_id: The athlete ID
-        strava_activity_id: The Strava activity ID being deleted
-    
-    Returns:
-        True if successful, False otherwise
-    """
     start_time = time.time()
-    print(f"TELEMETRY - leaderboard_agg_delete_start athlete_id={athlete_id} activity_id={strava_activity_id}")
-    
+    print(f"TELEMETRY - leaderboard_agg_recompute_start athlete_id={athlete_id}")
     try:
-        # Check if user has opted in to leaderboards
-        if not check_user_leaderboard_opt_in(athlete_id):
-            print(f"User {athlete_id} has opted out of leaderboards, no aggregates to delete")
-            return True
-        
-        # Get the activity details before deletion to know what to subtract
-        sql = "SELECT COALESCE(distance_on_trail, 0) as distance, start_date_local, type FROM activities WHERE athlete_id = :aid AND strava_activity_id = :sid"
-        params = [
-            {"name": "aid", "value": {"longValue": athlete_id}},
-            {"name": "sid", "value": {"longValue": strava_activity_id}},
-        ]
-        result = _exec_sql(sql, params)
-        
-        records = result.get("records", [])
-        if not records:
-            print(f"Activity {strava_activity_id} not found, no aggregates to delete")
-            return True
-        
-        # Extract distance, date, and type
-        record = records[0]
-        distance_field = record[0]
-        distance = 0
-        if "doubleValue" in distance_field:
-            distance = float(distance_field["doubleValue"])
-        elif "stringValue" in distance_field:
-            distance = float(distance_field["stringValue"])
-        
-        start_date_local_field = record[1]
-        start_date_local = start_date_local_field.get("stringValue", "")
-        
-        activity_type_field = record[2]
-        activity_type = activity_type_field.get("stringValue", "")
-        
-        if not start_date_local:
-            print(f"Activity {strava_activity_id} has no start_date_local, skipping aggregate deletion")
-            return True
-        
-        # Calculate window keys
-        window_keys = get_window_keys(start_date_local)
-        if not window_keys:
-            print(f"Failed to calculate window keys for activity {strava_activity_id}")
-            return True
-        
-        # Determine which aggregate types to update
-        metric = "distance"
-        agg_types = ["all"]  # Always update 'all'
-        if activity_type in ["Run", "Walk"]:
-            agg_types.append("foot")
-        elif activity_type == "Ride":
-            agg_types.append("bike")
-        
-        # Subtract distance from each window aggregate for each activity type
-        for window, window_key in window_keys.items():
-            for agg_activity_type in agg_types:
-                sql = """
-                UPDATE leaderboard_agg
-                SET value = value - :value, last_updated = now()
-                WHERE window_key = :window_key AND metric = :metric AND activity_type = :act_type AND athlete_id = :aid
-                """
-                
-                params = [
-                    {"name": "value", "value": {"doubleValue": distance}},
-                    {"name": "window_key", "value": {"stringValue": window_key}},
-                    {"name": "metric", "value": {"stringValue": metric}},
-                    {"name": "act_type", "value": {"stringValue": agg_activity_type}},
-                    {"name": "aid", "value": {"longValue": athlete_id}},
-                ]
-                
-                _exec_sql(sql, params)
-                print(f"Deleted from leaderboard aggregate: {window_key} athlete={athlete_id} type={agg_activity_type} distance={distance:.2f}m")
-        
+        leaderboard_agg.recompute_for_activity(
+            _exec_sql,
+            athlete_id,
+            metadata["start_date_local"],
+            user_timezone=metadata.get("user_timezone"),
+            activity_timezone=metadata.get("activity_timezone"),
+        )
         duration_ms = (time.time() - start_time) * 1000
-        print(f"TELEMETRY - leaderboard_agg_delete_complete athlete_id={athlete_id} activity_id={strava_activity_id} duration_ms={duration_ms:.2f}")
+        print(f"TELEMETRY - leaderboard_agg_recompute_complete athlete_id={athlete_id} duration_ms={duration_ms:.2f}")
         return True
-        
     except Exception as e:
         duration_ms = (time.time() - start_time) * 1000
-        print(f"TELEMETRY - leaderboard_agg_delete_error athlete_id={athlete_id} error={str(e)} duration_ms={duration_ms:.2f}")
-        print(f"ERROR: Failed to delete leaderboard aggregates for activity {strava_activity_id}: {e}")
+        print(f"TELEMETRY - leaderboard_agg_recompute_error athlete_id={athlete_id} error={e} duration_ms={duration_ms:.2f}")
         import traceback
         traceback.print_exc()
         return False
@@ -630,10 +483,13 @@ def process_webhook_event(webhook_event):
     activity_id = None
 
     if aspect_type == "delete":
-        # Delete from leaderboard aggregates first (before deleting activity record)
-        delete_leaderboard_aggregates(owner_id, object_id)
-        # Delete activity from database
+        # Capture the activity's window metadata BEFORE the row is gone, then
+        # delete, then recompute the user's leaderboard windows from the
+        # remaining activities (set-based, race-safe).
+        metadata = get_activity_window_metadata(owner_id, object_id)
         success = delete_activity(owner_id, object_id)
+        if success and metadata:
+            recompute_leaderboard_for_activity_window(owner_id, metadata)
     elif aspect_type in ["create", "update"]:
         # Fetch activity details from Strava and store
         try:
@@ -641,11 +497,9 @@ def process_webhook_event(webhook_event):
             activity_id = store_activity(owner_id, activity)
             success = activity_id is not None
 
-            # Update leaderboard aggregates for the activity
-            if success:
-                update_leaderboard_aggregates(owner_id, activity)
-
-            # Trigger trail matching for the activity
+            # No leaderboard update here. distance_on_trail is set by trail
+            # matching, which calls leaderboard_agg.recompute_for_activity
+            # when it completes.
             if success and activity_id:
                 trigger_trail_matching(activity_id)
         except StravaRateLimitError:
