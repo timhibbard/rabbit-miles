@@ -17,6 +17,7 @@ import boto3
 
 rds = boto3.client("rds-data")
 sm = boto3.client("secretsmanager")
+lambda_client = boto3.client("lambda")
 
 # Logging constants
 SEPARATOR_LINE = "=" * 80
@@ -34,7 +35,6 @@ DB_NAME = None
 
 STRAVA_TOKEN_URL = "https://www.strava.com/oauth/token"
 STRAVA_ACTIVITIES_URL = "https://www.strava.com/api/v3/athlete/activities"
-STRAVA_ATHLETE_URL = "https://www.strava.com/api/v3/athlete"
 
 # Filter activities starting from Jan 1, 2026 00:00:00 UTC
 # Unix timestamp: 1767225600
@@ -56,8 +56,21 @@ RATE_LIMIT_SAFETY_MARGIN = 5
 # Maximum retries on HTTP 429
 MAX_RETRIES = 3
 
-# Maximum wait time between retries (15 minutes = one Strava rate limit window)
-MAX_RETRY_WAIT_SECONDS = 900
+# Maximum wait time between retries (capped well below Lambda's 15-min hard cap so a
+# single bad user can't time out the entire batch). Above this, we abort the run
+# and let the next scheduled invocation pick up where we left off.
+MAX_RETRY_WAIT_SECONDS = 120
+
+# Skip users whose data was already kept fresh by webhooks within this window.
+# The hourly job is only a backstop for missed webhooks.
+WEBHOOK_FRESHNESS_SECONDS = 6 * 60 * 60  # 6 hours
+
+# How many users to process per invocation. If more users remain, we self-invoke
+# the lambda to continue, so one Lambda execution never spans more than this many.
+USERS_PER_INVOCATION = 25
+
+# Stop processing and self-continue when remaining Lambda time drops below this.
+LAMBDA_TIME_REMAINING_SAFETY_MS = 90 * 1000  # 90 seconds
 
 
 def _get_strava_creds():
@@ -174,22 +187,48 @@ def _update_rate_limit_from_headers(headers):
             pass
 
 
-def _wait_if_rate_limited():
-    """Pause if we are approaching Strava's 15-minute rate limit."""
+class RateLimitExhaustedError(Exception):
+    """Raised when we'd need to wait longer than is safe inside this Lambda
+    invocation. The caller should stop processing and let the next scheduled
+    run pick up the rest."""
+
+
+def _seconds_until_lambda_deadline(context):
+    """Return remaining ms in the current Lambda invocation, or +inf if no context."""
+    if context and hasattr(context, "get_remaining_time_in_millis"):
+        try:
+            return context.get_remaining_time_in_millis()
+        except Exception:
+            return float("inf")
+    return float("inf")
+
+
+def _wait_if_rate_limited(context=None):
+    """Pause if we are approaching Strava's 15-minute rate limit.
+
+    Raises RateLimitExhaustedError when sleeping would exceed our remaining
+    Lambda budget; the caller should abort and let the next run continue.
+    """
     global _rate_limit_used
     if _rate_limit_used >= _rate_limit_limit - RATE_LIMIT_SAFETY_MARGIN:
         now = time.time()
         seconds_into_window = now % (15 * 60)
         wait = (15 * 60) - seconds_into_window + 5  # +5s buffer
+
+        remaining_ms = _seconds_until_lambda_deadline(context)
+        if wait * 1000 > remaining_ms - LAMBDA_TIME_REMAINING_SAFETY_MS:
+            log(f"Rate limit hit and {wait:.0f}s wait exceeds remaining Lambda time ({remaining_ms/1000:.0f}s); aborting batch", "WARNING")
+            raise RateLimitExhaustedError("not enough Lambda time to wait out rate limit window")
+
         log(f"Rate limit approaching ({_rate_limit_used}/{_rate_limit_limit}), sleeping {wait:.0f}s for window reset", "WARNING")
         time.sleep(wait)
         _rate_limit_used = 0
 
 
-def _strava_get(req, timeout=30):
+def _strava_get(req, context=None, timeout=30):
     """Shared Strava GET with rate-limit awareness and 429 retry."""
     for attempt in range(MAX_RETRIES + 1):
-        _wait_if_rate_limited()
+        _wait_if_rate_limited(context)
         try:
             with urlopen(req, timeout=timeout) as resp:
                 body = resp.read().decode()
@@ -199,19 +238,23 @@ def _strava_get(req, timeout=30):
             if e.code == 429:
                 if attempt < MAX_RETRIES:
                     wait = min(60 * (2 ** attempt), MAX_RETRY_WAIT_SECONDS)
+                    remaining_ms = _seconds_until_lambda_deadline(context)
+                    if wait * 1000 > remaining_ms - LAMBDA_TIME_REMAINING_SAFETY_MS:
+                        log(f"429 received but {wait}s retry exceeds remaining Lambda time; aborting", "WARNING")
+                        raise RateLimitExhaustedError("not enough Lambda time to retry after 429") from e
                     log(f"429 received, retrying in {wait}s (attempt {attempt + 1}/{MAX_RETRIES})", "WARNING")
                     time.sleep(wait)
                     continue
             raise
 
 
-def fetch_strava_activities(access_token, after_timestamp, per_page=200):
+def fetch_strava_activities(access_token, after_timestamp, context=None, per_page=200):
     """Fetch activities from Strava API after a given timestamp"""
     url = f"{STRAVA_ACTIVITIES_URL}?per_page={per_page}&page=1&after={after_timestamp}"
     req = Request(url, headers={"Authorization": f"Bearer {access_token}"})
-    
+
     try:
-        activities = _strava_get(req, timeout=30)
+        activities = _strava_get(req, context=context, timeout=30)
         log(f"Fetched {len(activities) if isinstance(activities, list) else 'non-list'} activities from Strava", "INFO")
         return activities
     except Exception as e:
@@ -225,58 +268,6 @@ def fetch_strava_activities(access_token, after_timestamp, per_page=200):
             except Exception:
                 pass
         raise
-
-
-def fetch_strava_athlete(access_token):
-    """Fetch athlete profile from Strava API"""
-    req = Request(STRAVA_ATHLETE_URL, headers={"Authorization": f"Bearer {access_token}"})
-    
-    try:
-        athlete = _strava_get(req, timeout=20)
-        log("Fetched athlete profile from Strava", "INFO")
-        return athlete
-    except Exception as e:
-        log(f"Failed to fetch athlete profile from Strava: {e}", "WARNING")
-        if hasattr(e, 'code'):
-            log(f"Athlete profile HTTP status code: {e.code}", "WARNING")
-        if hasattr(e, 'read'):
-            try:
-                error_body = e.read().decode()
-                log(f"Athlete profile error response: {error_body}", "WARNING")
-            except Exception:
-                pass
-        return None
-
-
-def update_user_profile_picture(athlete_id, athlete):
-    """Update user profile picture in the database"""
-    if not isinstance(athlete, dict):
-        return False
-    
-    profile_picture = athlete.get("profile_medium") or athlete.get("profile") or ""
-    
-    sql = """
-    UPDATE users
-    SET profile_picture = :pic,
-        updated_at = now()
-    WHERE athlete_id = :aid
-    """
-    params = [
-        {"name": "aid", "value": {"longValue": athlete_id}},
-    ]
-    
-    if profile_picture:
-        params.append({"name": "pic", "value": {"stringValue": profile_picture}})
-    else:
-        params.append({"name": "pic", "value": {"isNull": True}})
-    
-    try:
-        _exec_sql(sql, params)
-        log(f"Updated profile picture for athlete {athlete_id}", "INFO")
-        return True
-    except Exception as e:
-        log(f"Failed to update profile picture for athlete {athlete_id}: {e}", "WARNING")
-        return False
 
 
 def store_activity(athlete_id, activity):
@@ -358,25 +349,47 @@ def store_activity(athlete_id, activity):
         return False
 
 
-def get_all_connected_users():
-    """Get all users with valid Strava tokens"""
-    sql = """
-    SELECT athlete_id, access_token, refresh_token, expires_at 
-    FROM users 
-    WHERE access_token IS NOT NULL 
+def get_users_needing_poll():
+    """Get connected users that webhooks have not kept fresh recently.
+
+    Skips users whose last_webhook_received_at is within WEBHOOK_FRESHNESS_SECONDS
+    so we only poll the backstop set, not every connected user. Users that have
+    never received a webhook are always included.
+
+    Falls back to "all connected users" if the column does not yet exist
+    (so this works before migration 011 has run).
+    """
+    sql_with_filter = f"""
+    SELECT athlete_id, access_token, refresh_token, expires_at
+    FROM users
+    WHERE access_token IS NOT NULL
+      AND refresh_token IS NOT NULL
+      AND (
+        last_webhook_received_at IS NULL
+        OR last_webhook_received_at < NOW() - INTERVAL '{WEBHOOK_FRESHNESS_SECONDS} seconds'
+      )
+    ORDER BY athlete_id
+    """
+    sql_fallback = """
+    SELECT athlete_id, access_token, refresh_token, expires_at
+    FROM users
+    WHERE access_token IS NOT NULL
       AND refresh_token IS NOT NULL
     ORDER BY athlete_id
     """
-    result = _exec_sql(sql)
-    
+    try:
+        result = _exec_sql(sql_with_filter)
+    except Exception as e:
+        log(f"last_webhook_received_at filter failed ({e}); falling back to all connected users", "WARNING")
+        result = _exec_sql(sql_fallback)
+
     users = []
-    records = result.get("records", [])
-    for record in records:
+    for record in result.get("records", []):
         athlete_id = int(record[0].get("longValue", 0))
         access_token = record[1].get("stringValue", "")
         refresh_token = record[2].get("stringValue", "")
         expires_at = int(record[3].get("longValue", 0))
-        
+
         if athlete_id and access_token and refresh_token:
             users.append({
                 "athlete_id": athlete_id,
@@ -384,54 +397,51 @@ def get_all_connected_users():
                 "refresh_token": refresh_token,
                 "expires_at": expires_at
             })
-    
+
     return users
 
 
-def update_recent_activities_for_user(user):
-    """Update recent activities for a single user"""
+def update_recent_activities_for_user(user, context=None):
+    """Update recent activities for a single user.
+
+    The per-user `/athlete` profile call has been removed: it doubled the
+    rate-limit budget for no functional benefit (profile pics are not
+    time-sensitive). Re-add it as a separate, less-frequent job if needed.
+    """
     athlete_id = user["athlete_id"]
     access_token = user["access_token"]
     refresh_token = user["refresh_token"]
     expires_at = user["expires_at"]
-    
+
     try:
         log(f"Processing user {athlete_id}...", "INFO")
-        
+
         # Ensure token is valid
         access_token = ensure_valid_token(athlete_id, access_token, refresh_token, expires_at)
-        
-        # Refresh profile picture in case the athlete updated their avatar (best-effort)
-        try:
-            athlete_profile = fetch_strava_athlete(access_token)
-            if athlete_profile:
-                update_user_profile_picture(athlete_id, athlete_profile)
-        except Exception as profile_err:
-            log(f"Skipping profile update for athlete {athlete_id} due to error: {profile_err}", "WARNING")
-        
+
         # Calculate timestamp for 24 hours ago
         current_time = int(time.time())
         after_timestamp = max(ACTIVITIES_START_DATE, current_time - UPDATE_WINDOW_SECONDS)
-        
+
         # Fetch recent activities
-        activities = fetch_strava_activities(access_token, after_timestamp)
-        
+        activities = fetch_strava_activities(access_token, after_timestamp, context=context)
+
         if not isinstance(activities, list):
             log(f"Unexpected response from Strava API for user {athlete_id}: {type(activities)}", "ERROR")
             return {"athlete_id": athlete_id, "success": False, "error": "Invalid API response"}
-        
+
         # Store activities
         stored_count = 0
         failed_count = 0
-        
+
         for activity in activities:
             if store_activity(athlete_id, activity):
                 stored_count += 1
             else:
                 failed_count += 1
-        
+
         log(f"User {athlete_id}: Stored {stored_count}, Failed {failed_count} out of {len(activities)} activities", "INFO")
-        
+
         return {
             "athlete_id": athlete_id,
             "success": True,
@@ -439,7 +449,10 @@ def update_recent_activities_for_user(user):
             "stored": stored_count,
             "failed": failed_count
         }
-        
+
+    except RateLimitExhaustedError:
+        # Bubble up so the handler can stop processing and self-continue.
+        raise
     except Exception as e:
         log(f"Processing user {athlete_id}: {e}", "ERROR")
         import traceback
@@ -447,11 +460,40 @@ def update_recent_activities_for_user(user):
         return {"athlete_id": athlete_id, "success": False, "error": str(e)}
 
 
+def _self_continue(context, remaining_athlete_ids):
+    """Re-invoke this Lambda asynchronously to process the remaining users.
+
+    Avoids running every connected user in a single invocation: bounded batches
+    keep us comfortably inside Lambda's 15-minute hard cap and isolate the
+    blast radius of one slow user.
+    """
+    function_name = (context.function_name if context else None) or os.environ.get("AWS_LAMBDA_FUNCTION_NAME")
+    if not function_name:
+        log("Cannot self-continue: function name unknown", "WARNING")
+        return False
+    try:
+        lambda_client.invoke(
+            FunctionName=function_name,
+            InvocationType="Event",
+            Payload=json.dumps({"continue_athlete_ids": remaining_athlete_ids}).encode(),
+        )
+        log(f"Self-invoked to continue with {len(remaining_athlete_ids)} remaining users", "INFO")
+        return True
+    except Exception as e:
+        log(f"Failed to self-continue ({e}); next scheduled run will pick them up", "WARNING")
+        return False
+
+
 def handler(event, context):
     """
     Lambda handler for scheduled activity updates.
-    
-    Runs every hour to update activities from the last 24 hours for all connected users.
+
+    Runs every hour as a backstop for missed webhooks. Two execution modes:
+      1. Scheduled invoke (no `continue_athlete_ids` in event): pulls connected
+         users that webhooks have not kept fresh recently, processes the first
+         USERS_PER_INVOCATION, and self-invokes for the rest.
+      2. Continuation invoke (`continue_athlete_ids` in event): processes only
+         the supplied athlete IDs and self-invokes again if needed.
     """
     start_time = datetime.utcnow()
     log(SEPARATOR_LINE, "INFO")
@@ -459,104 +501,106 @@ def handler(event, context):
     log(f"Execution started at: {start_time.isoformat()}Z", "INFO")
     log(f"Event: {json.dumps(event, default=str)}", "INFO")
     log(SEPARATOR_LINE, "INFO")
-    
-    # Get environment variables
-    db_cluster_arn = os.environ.get("DB_CLUSTER_ARN", "")
-    db_secret_arn = os.environ.get("DB_SECRET_ARN", "")
-    
-    # Validate required environment variables
-    if not db_cluster_arn or not db_secret_arn:
+
+    if not os.environ.get("DB_CLUSTER_ARN") or not os.environ.get("DB_SECRET_ARN"):
         log("Missing DB_CLUSTER_ARN or DB_SECRET_ARN", "ERROR")
-        log("SCHEDULED ACTIVITY UPDATE - FAILED (Configuration Error)", "ERROR")
         return {
             "statusCode": 500,
             "body": json.dumps({"error": "server configuration error"})
         }
-    
+
     try:
-        # Get all connected users
-        log("Fetching all connected users...", "INFO")
-        users = get_all_connected_users()
-        log(f"Found {len(users)} connected users", "INFO")
-        
+        continue_ids = event.get("continue_athlete_ids") if isinstance(event, dict) else None
+        if continue_ids:
+            log(f"Continuation invocation: {len(continue_ids)} athlete IDs", "INFO")
+            all_users = get_users_needing_poll()
+            id_set = set(continue_ids)
+            users = [u for u in all_users if u["athlete_id"] in id_set]
+            log(f"Resolved {len(users)} of {len(continue_ids)} continuation IDs to active users", "INFO")
+        else:
+            log("Fetching connected users that webhooks have not kept fresh...", "INFO")
+            users = get_users_needing_poll()
+            log(f"Found {len(users)} users to poll (webhook-stale or never-webhooked)", "INFO")
+
         if not users:
-            log("No connected users found, nothing to update", "INFO")
             end_time = datetime.utcnow()
             duration = (end_time - start_time).total_seconds()
-            log(SEPARATOR_LINE, "INFO")
-            log(f"SCHEDULED ACTIVITY UPDATE - SUCCESS (No Users)", "INFO")
-            log(f"Execution completed at: {end_time.isoformat()}Z", "INFO")
-            log(f"Duration: {duration:.2f} seconds", "INFO")
-            log(SEPARATOR_LINE, "INFO")
+            log(f"SCHEDULED ACTIVITY UPDATE - SUCCESS (No Users), duration {duration:.1f}s", "INFO")
             return {
                 "statusCode": 200,
-                "body": json.dumps({
-                    "message": "No connected users found",
-                    "total_users": 0,
-                    "results": []
-                })
+                "body": json.dumps({"message": "No users to poll", "total_users": 0, "results": []})
             }
-        
-        # Update activities for each user
-        log("Starting activity updates for all users...", "INFO")
+
+        # Process this chunk; defer the rest to a continuation invocation.
+        chunk = users[:USERS_PER_INVOCATION]
+        remaining_ids = [u["athlete_id"] for u in users[USERS_PER_INVOCATION:]]
+
         results = []
-        for user in users:
-            result = update_recent_activities_for_user(user)
-            results.append(result)
+        aborted_early = False
+        for user in chunk:
+            # Time-budget guard: leave headroom for the self-continue invocation.
+            remaining_ms = _seconds_until_lambda_deadline(context)
+            if remaining_ms < LAMBDA_TIME_REMAINING_SAFETY_MS:
+                log(f"Lambda time budget exhausted ({remaining_ms/1000:.0f}s remaining); aborting chunk early", "WARNING")
+                # Push unprocessed chunk users back onto the continuation list.
+                idx = chunk.index(user)
+                remaining_ids = [u["athlete_id"] for u in chunk[idx:]] + remaining_ids
+                aborted_early = True
+                break
+
+            try:
+                results.append(update_recent_activities_for_user(user, context=context))
+            except RateLimitExhaustedError:
+                log("Rate limit exhausted; aborting chunk and deferring rest to next scheduled run", "WARNING")
+                idx = chunk.index(user)
+                remaining_ids = [u["athlete_id"] for u in chunk[idx:]] + remaining_ids
+                aborted_early = True
+                break
+
             time.sleep(1)  # pace requests to avoid rate limit burst
-        
-        # Summary
-        successful_updates = sum(1 for r in results if r.get("success"))
-        failed_updates = len(results) - successful_updates
-        total_activities_stored = sum(r.get("stored", 0) for r in results)
-        
-        summary = {
-            "message": "Scheduled activity update completed",
-            "total_users": len(users),
-            "successful_updates": successful_updates,
-            "failed_updates": failed_updates,
-            "total_activities_stored": total_activities_stored,
-            "results": results
-        }
-        
+
+        if remaining_ids and not aborted_early:
+            _self_continue(context, remaining_ids)
+        elif remaining_ids and aborted_early:
+            # Don't immediately self-invoke after a rate-limit/time abort —
+            # let the next scheduled run pick it up after the window resets.
+            log(f"{len(remaining_ids)} users deferred to next scheduled run", "INFO")
+
+        successful = sum(1 for r in results if r.get("success"))
+        failed = len(results) - successful
+        total_stored = sum(r.get("stored", 0) for r in results)
+
         end_time = datetime.utcnow()
         duration = (end_time - start_time).total_seconds()
-        
-        # Log summary
+
         log(SEPARATOR_LINE, "INFO")
         log("EXECUTION SUMMARY:", "INFO")
-        log(f"  Total users processed: {len(users)}", "INFO")
-        log(f"  Successful updates: {successful_updates}", "INFO")
-        log(f"  Failed updates: {failed_updates}", "INFO")
-        log(f"  Total activities stored: {total_activities_stored}", "INFO")
-        log(f"  Rate limit usage at end of run: {_rate_limit_used}/{_rate_limit_limit}", "INFO")
+        log(f"  Users processed this invocation: {len(results)}", "INFO")
+        log(f"  Users deferred to continuation: {len(remaining_ids)}", "INFO")
+        log(f"  Successful: {successful}", "INFO")
+        log(f"  Failed: {failed}", "INFO")
+        log(f"  Activities stored: {total_stored}", "INFO")
+        log(f"  Rate limit usage: {_rate_limit_used}/{_rate_limit_limit}", "INFO")
+        log(f"  Duration: {duration:.2f}s", "INFO")
         log(SEPARATOR_LINE, "INFO")
-        
-        status = "SUCCESS" if failed_updates == 0 else "PARTIAL SUCCESS"
-        log(f"SCHEDULED ACTIVITY UPDATE - {status}", "INFO")
-        log(f"Execution completed at: {end_time.isoformat()}Z", "INFO")
-        log(f"Duration: {duration:.2f} seconds", "INFO")
-        log(SEPARATOR_LINE, "INFO")
-        
+
         return {
             "statusCode": 200,
-            "body": json.dumps(summary)
+            "body": json.dumps({
+                "message": "Scheduled activity update completed",
+                "users_processed": len(results),
+                "users_deferred": len(remaining_ids),
+                "successful_updates": successful,
+                "failed_updates": failed,
+                "total_activities_stored": total_stored,
+                "results": results,
+            })
         }
-        
+
     except Exception as e:
-        end_time = datetime.utcnow()
-        duration = (end_time - start_time).total_seconds()
-        
-        log(SEPARATOR_LINE, "ERROR")
         log(f"Error in scheduled_activity_update handler: {e}", "ERROR")
         import traceback
         traceback.print_exc()
-        log(SEPARATOR_LINE, "ERROR")
-        log("SCHEDULED ACTIVITY UPDATE - FAILED", "ERROR")
-        log(f"Execution completed at: {end_time.isoformat()}Z", "ERROR")
-        log(f"Duration: {duration:.2f} seconds", "ERROR")
-        log(SEPARATOR_LINE, "ERROR")
-        
         return {
             "statusCode": 500,
             "body": json.dumps({"error": "internal server error", "details": str(e)})

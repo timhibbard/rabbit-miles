@@ -19,12 +19,20 @@ import json
 import time
 from datetime import datetime, timezone, timedelta
 from urllib.request import Request, urlopen
+from urllib.error import HTTPError
 from urllib.parse import urlencode
 import boto3
 
 rds = boto3.client("rds-data")
 sm = boto3.client("secretsmanager")
 lambda_client = boto3.client("lambda")
+sqs = boto3.client("sqs")
+
+# Default visibility-timeout extension when Strava returns 429 with no Retry-After.
+# 15 minutes is one full Strava rate-limit window.
+DEFAULT_RATE_LIMIT_DEFER_SECONDS = 15 * 60
+# SQS caps per-message visibility-timeout extensions at 12 hours.
+MAX_VISIBILITY_TIMEOUT_SECONDS = 12 * 60 * 60
 
 # Get environment variables
 DB_CLUSTER_ARN = os.environ.get("DB_CLUSTER_ARN", "")
@@ -37,6 +45,13 @@ STRAVA_ACTIVITY_URL = "https://www.strava.com/api/v3/activities"
 
 # Token refresh buffer - refresh tokens 5 minutes before expiry
 TOKEN_REFRESH_BUFFER_SECONDS = 300
+
+
+class StravaRateLimitError(Exception):
+    """Raised when Strava returns 429 and we want SQS to retry the message later."""
+    def __init__(self, retry_after_seconds=None):
+        self.retry_after_seconds = retry_after_seconds
+        super().__init__(f"Strava rate limit hit (retry_after={retry_after_seconds}s)")
 
 
 def _get_strava_creds():
@@ -134,26 +149,43 @@ def get_user_tokens(athlete_id):
     return access_token, refresh_token, expires_at
 
 
+def _parse_retry_after(retry_after_header):
+    """Parse Retry-After header value (seconds-only) into an int. Returns None on failure."""
+    if not retry_after_header:
+        return None
+    try:
+        return max(0, int(retry_after_header))
+    except (TypeError, ValueError):
+        return None
+
+
 def fetch_activity_details(access_token, activity_id):
-    """Fetch detailed activity data from Strava API"""
+    """Fetch detailed activity data from Strava API.
+
+    On HTTP 429 we surface a StravaRateLimitError so the caller can defer the
+    SQS message instead of letting it cycle through retries and land in the DLQ.
+    """
     url = f"{STRAVA_ACTIVITY_URL}/{activity_id}"
     req = Request(url, headers={"Authorization": f"Bearer {access_token}"})
-    
+
     try:
         with urlopen(req, timeout=30) as resp:
             activity = json.loads(resp.read().decode())
         print(f"Fetched activity {activity_id} from Strava API")
         return activity
+    except HTTPError as e:
+        print(f"Failed to fetch activity {activity_id} from Strava: HTTP {e.code}")
+        try:
+            error_body = e.read().decode()
+            print(f"Error response body: {error_body}")
+        except Exception:
+            pass
+        if e.code == 429:
+            retry_after = _parse_retry_after(e.headers.get("Retry-After") if e.headers else None)
+            raise StravaRateLimitError(retry_after_seconds=retry_after) from e
+        raise
     except Exception as e:
         print(f"Failed to fetch activity {activity_id} from Strava: {e}")
-        if hasattr(e, 'code'):
-            print(f"HTTP status code: {e.code}")
-        if hasattr(e, 'read'):
-            try:
-                error_body = e.read().decode()
-                print(f"Error response body: {error_body}")
-            except Exception:
-                pass
         raise
 
 
@@ -534,34 +566,54 @@ def mark_event_processed(idempotency_key, webhook_event):
         print(f"WARNING: Failed to mark event as processed (table may not exist): {e}")
 
 
+def update_last_webhook_received(athlete_id):
+    """Record that we just successfully processed a webhook event for this athlete.
+
+    Used by the hourly scheduled_activity_update job to skip users whose data
+    is already being kept fresh by webhooks.
+    """
+    sql = "UPDATE users SET last_webhook_received_at = now() WHERE athlete_id = :aid"
+    params = [{"name": "aid", "value": {"longValue": athlete_id}}]
+    try:
+        _exec_sql(sql, params)
+    except Exception as e:
+        # Non-fatal: column may not exist yet (pre-migration). Do not fail the event.
+        print(f"WARNING: Failed to update last_webhook_received_at for {athlete_id}: {e}")
+
+
 def process_webhook_event(webhook_event):
-    """Process a single webhook event"""
+    """Process a single webhook event.
+
+    Returns True on success, False on retryable failure. Raises
+    StravaRateLimitError when we want the caller to defer the SQS message
+    rather than rely on normal retry/DLQ behavior.
+    """
     object_type = webhook_event.get("object_type")
     aspect_type = webhook_event.get("aspect_type")
     object_id = int(webhook_event.get("object_id", 0))
     owner_id = int(webhook_event.get("owner_id", 0))
     subscription_id = webhook_event.get("subscription_id")
     event_time = webhook_event.get("event_time")
-    
+
     print(f"Processing webhook event: {object_type} {aspect_type} {object_id} for athlete {owner_id}")
-    
+
     # Create idempotency key
     idempotency_key = f"{subscription_id}:{object_id}:{aspect_type}:{event_time}"
-    
+
     # Check if already processed
     if check_idempotency(idempotency_key):
         print(f"Event already processed: {idempotency_key}")
         return True
-    
+
     # Get user tokens
     access_token, refresh_token, expires_at = get_user_tokens(owner_id)
-    
+
     if not access_token or not refresh_token:
         print(f"User {owner_id} not found or not connected to Strava")
         # Mark as processed to avoid retrying
         mark_event_processed(idempotency_key, webhook_event)
         return True
-    
+
     # Check if token needs refresh
     current_time = int(time.time())
     if expires_at < current_time + TOKEN_REFRESH_BUFFER_SECONDS:
@@ -572,11 +624,11 @@ def process_webhook_event(webhook_event):
             print(f"ERROR: Token refresh failed: {e}")
             # Don't mark as processed, allow retry
             return False
-    
+
     # Handle different event types
     success = False
     activity_id = None
-    
+
     if aspect_type == "delete":
         # Delete from leaderboard aggregates first (before deleting activity record)
         delete_leaderboard_aggregates(owner_id, object_id)
@@ -588,14 +640,18 @@ def process_webhook_event(webhook_event):
             activity = fetch_activity_details(access_token, object_id)
             activity_id = store_activity(owner_id, activity)
             success = activity_id is not None
-            
+
             # Update leaderboard aggregates for the activity
             if success:
                 update_leaderboard_aggregates(owner_id, activity)
-            
+
             # Trigger trail matching for the activity
             if success and activity_id:
                 trigger_trail_matching(activity_id)
+        except StravaRateLimitError:
+            # Bubble up so the SQS handler can defer the message rather than
+            # letting it churn through retries and end up in the DLQ.
+            raise
         except Exception as e:
             print(f"ERROR: Failed to fetch/store activity: {e}")
             # Don't mark as processed if fetch failed (might be temporary)
@@ -603,61 +659,104 @@ def process_webhook_event(webhook_event):
     else:
         print(f"Unknown aspect_type: {aspect_type}")
         success = True  # Mark as processed to avoid retrying unknown types
-    
+
     # Mark event as processed
     if success:
         mark_event_processed(idempotency_key, webhook_event)
-    
+        update_last_webhook_received(owner_id)
+
     return success
+
+
+def _defer_message_for_rate_limit(record, retry_after_seconds):
+    """Extend the SQS visibility timeout for a single message so it isn't redelivered
+    while we're still rate-limited. Falls back to letting SQS handle retry naturally
+    if the API call fails (e.g. permissions issue)."""
+    queue_arn = record.get("eventSourceARN")
+    receipt_handle = record.get("receiptHandle")
+    if not queue_arn or not receipt_handle:
+        return False
+
+    # Convert ARN -> URL: arn:aws:sqs:region:account:queue-name
+    parts = queue_arn.split(":")
+    if len(parts) < 6:
+        return False
+    region, account, queue_name = parts[3], parts[4], parts[5]
+    queue_url = f"https://sqs.{region}.amazonaws.com/{account}/{queue_name}"
+
+    timeout = retry_after_seconds or DEFAULT_RATE_LIMIT_DEFER_SECONDS
+    timeout = max(60, min(timeout, MAX_VISIBILITY_TIMEOUT_SECONDS))
+
+    try:
+        sqs.change_message_visibility(
+            QueueUrl=queue_url,
+            ReceiptHandle=receipt_handle,
+            VisibilityTimeout=timeout,
+        )
+        print(f"Deferred message {record.get('messageId')} for {timeout}s due to Strava 429")
+        return True
+    except Exception as e:
+        print(f"WARNING: change_message_visibility failed for {record.get('messageId')}: {e}")
+        return False
 
 
 def handler(event, context):
     """
     Lambda handler triggered by SQS.
     Processes webhook events from the queue.
+
+    Uses partial-batch failure reporting (ReportBatchItemFailures) so a single
+    bad message doesn't recycle the entire batch. Requires the event source
+    mapping to have FunctionResponseTypes=["ReportBatchItemFailures"] enabled.
     """
     print(f"webhook_processor handler invoked")
-    print(f"Event: {json.dumps(event, default=str)}")
-    
+
     # Validate required environment variables
     if not DB_CLUSTER_ARN or not DB_SECRET_ARN:
         print("ERROR: Missing DB_CLUSTER_ARN or DB_SECRET_ARN")
         raise RuntimeError("Missing database configuration")
-    
-    # Process each SQS record
+
     records = event.get("Records", [])
     print(f"Processing {len(records)} SQS records")
-    
-    failed_records = []
-    
+
+    batch_item_failures = []
+    rate_limited = False
+
     for record in records:
+        message_id = record.get("messageId")
         try:
-            # Parse webhook event from SQS message
             message_body = record.get("body", "{}")
             webhook_event = json.loads(message_body)
-            
-            print(f"Processing SQS record: {record.get('messageId')}")
-            
-            # Process the event
+
+            print(f"Processing SQS record: {message_id}")
+
+            if rate_limited:
+                # We've already hit the rate limit on this batch; don't burn more
+                # of the budget. Defer the rest and let them retry later.
+                _defer_message_for_rate_limit(record, None)
+                batch_item_failures.append({"itemIdentifier": message_id})
+                continue
+
             success = process_webhook_event(webhook_event)
-            
+
             if not success:
                 print(f"Failed to process event: {webhook_event}")
-                failed_records.append(record)
+                batch_item_failures.append({"itemIdentifier": message_id})
+        except StravaRateLimitError as rle:
+            # Bound the retry window so we don't burn the SQS receive count
+            # while Strava is throttling us. Defer this message and every
+            # remaining message in the batch.
+            print(f"Strava rate-limited; deferring {message_id} (retry_after={rle.retry_after_seconds})")
+            _defer_message_for_rate_limit(record, rle.retry_after_seconds)
+            batch_item_failures.append({"itemIdentifier": message_id})
+            rate_limited = True
         except Exception as e:
-            print(f"ERROR processing SQS record: {e}")
+            print(f"ERROR processing SQS record {message_id}: {e}")
             import traceback
             traceback.print_exc()
-            failed_records.append(record)
-    
-    # If any records failed, raise an exception to trigger retry
-    if failed_records:
-        print(f"{len(failed_records)} records failed processing")
-        # SQS will retry based on queue configuration
-        raise RuntimeError(f"Failed to process {len(failed_records)} records")
-    
-    print(f"Successfully processed all {len(records)} records")
-    return {
-        "statusCode": 200,
-        "body": json.dumps({"processed": len(records)})
-    }
+            batch_item_failures.append({"itemIdentifier": message_id})
+
+    if batch_item_failures:
+        print(f"{len(batch_item_failures)} of {len(records)} records failed; reporting partial batch failure")
+
+    return {"batchItemFailures": batch_item_failures}
