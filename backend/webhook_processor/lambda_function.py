@@ -574,9 +574,10 @@ def _get_rate_limit_cooldown_seconds():
 
 def _normalize_defer_seconds(retry_after_seconds):
     """Clamp retry/defer duration into the SQS-supported visibility timeout range."""
+    base_seconds = retry_after_seconds if retry_after_seconds is not None else DEFAULT_RATE_LIMIT_DEFER_SECONDS
     return max(
         MIN_RATE_LIMIT_DEFER_SECONDS,
-        min(retry_after_seconds or DEFAULT_RATE_LIMIT_DEFER_SECONDS, MAX_VISIBILITY_TIMEOUT_SECONDS),
+        min(base_seconds, MAX_VISIBILITY_TIMEOUT_SECONDS),
     )
 
 
