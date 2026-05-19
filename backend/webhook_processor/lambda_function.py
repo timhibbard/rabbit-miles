@@ -37,8 +37,13 @@ sqs = boto3.client("sqs")
 # Default visibility-timeout extension when Strava returns 429 with no Retry-After.
 # 15 minutes is one full Strava rate-limit window.
 DEFAULT_RATE_LIMIT_DEFER_SECONDS = 15 * 60
+MIN_RATE_LIMIT_DEFER_SECONDS = 60
 # SQS caps per-message visibility-timeout extensions at 12 hours.
 MAX_VISIBILITY_TIMEOUT_SECONDS = 12 * 60 * 60
+# In-memory cooldown expiry timestamp (epoch seconds) for warm Lambda containers
+# to avoid repeated Strava 429 calls. Assumes Lambda's single-invocation-per-
+# execution-environment model.
+_strava_cooldown_expires_epoch = 0
 
 # Get environment variables
 DB_CLUSTER_ARN = os.environ.get("DB_CLUSTER_ARN", "")
@@ -538,8 +543,7 @@ def _defer_message_for_rate_limit(record, retry_after_seconds):
     region, account, queue_name = parts[3], parts[4], parts[5]
     queue_url = f"https://sqs.{region}.amazonaws.com/{account}/{queue_name}"
 
-    timeout = retry_after_seconds or DEFAULT_RATE_LIMIT_DEFER_SECONDS
-    timeout = max(60, min(timeout, MAX_VISIBILITY_TIMEOUT_SECONDS))
+    timeout = _normalize_defer_seconds(retry_after_seconds)
 
     try:
         sqs.change_message_visibility(
@@ -552,6 +556,29 @@ def _defer_message_for_rate_limit(record, retry_after_seconds):
     except Exception as e:
         print(f"WARNING: change_message_visibility failed for {record.get('messageId')}: {e}")
         return False
+
+
+def _set_rate_limit_cooldown(retry_after_seconds):
+    """Record a temporary in-memory cooldown for this warm Lambda runtime."""
+    global _strava_cooldown_expires_epoch
+    defer_seconds = _normalize_defer_seconds(retry_after_seconds)
+    _strava_cooldown_expires_epoch = max(_strava_cooldown_expires_epoch, int(time.time()) + defer_seconds)
+    return defer_seconds
+
+
+def _get_rate_limit_cooldown_seconds():
+    """Return remaining in-memory cooldown seconds, or 0 when no cooldown is active."""
+    remaining = _strava_cooldown_expires_epoch - int(time.time())
+    return max(0, remaining)
+
+
+def _normalize_defer_seconds(retry_after_seconds):
+    """Clamp retry/defer duration into the SQS-supported visibility timeout range."""
+    base_seconds = retry_after_seconds if retry_after_seconds is not None else DEFAULT_RATE_LIMIT_DEFER_SECONDS
+    return max(
+        MIN_RATE_LIMIT_DEFER_SECONDS,
+        min(base_seconds, MAX_VISIBILITY_TIMEOUT_SECONDS),
+    )
 
 
 def handler(event, context):
@@ -575,6 +602,12 @@ def handler(event, context):
 
     batch_item_failures = []
     rate_limited = False
+    cooldown_seconds = _get_rate_limit_cooldown_seconds()
+    defer_seconds_for_batch = None
+    if cooldown_seconds > 0:
+        defer_seconds_for_batch = cooldown_seconds
+        print(f"Strava cooldown active; deferring entire batch for {cooldown_seconds}s")
+        rate_limited = True
 
     for record in records:
         message_id = record.get("messageId")
@@ -587,7 +620,7 @@ def handler(event, context):
             if rate_limited:
                 # We've already hit the rate limit on this batch; don't burn more
                 # of the budget. Defer the rest and let them retry later.
-                _defer_message_for_rate_limit(record, None)
+                _defer_message_for_rate_limit(record, defer_seconds_for_batch)
                 batch_item_failures.append({"itemIdentifier": message_id})
                 continue
 
@@ -600,8 +633,10 @@ def handler(event, context):
             # Bound the retry window so we don't burn the SQS receive count
             # while Strava is throttling us. Defer this message and every
             # remaining message in the batch.
-            print(f"Strava rate-limited; deferring {message_id} (retry_after={rle.retry_after_seconds})")
-            _defer_message_for_rate_limit(record, rle.retry_after_seconds)
+            cooldown_seconds = _set_rate_limit_cooldown(rle.retry_after_seconds)
+            defer_seconds_for_batch = cooldown_seconds
+            print(f"Strava rate-limited; deferring {message_id} (retry_after={rle.retry_after_seconds}, cooldown={cooldown_seconds}s)")
+            _defer_message_for_rate_limit(record, cooldown_seconds)
             batch_item_failures.append({"itemIdentifier": message_id})
             rate_limited = True
         except Exception as e:
