@@ -39,6 +39,8 @@ sqs = boto3.client("sqs")
 DEFAULT_RATE_LIMIT_DEFER_SECONDS = 15 * 60
 # SQS caps per-message visibility-timeout extensions at 12 hours.
 MAX_VISIBILITY_TIMEOUT_SECONDS = 12 * 60 * 60
+# In-memory cooldown for warm Lambda containers to avoid repeated Strava 429 calls.
+STRAVA_RATE_LIMIT_UNTIL_EPOCH = 0
 
 # Get environment variables
 DB_CLUSTER_ARN = os.environ.get("DB_CLUSTER_ARN", "")
@@ -554,6 +556,20 @@ def _defer_message_for_rate_limit(record, retry_after_seconds):
         return False
 
 
+def _set_rate_limit_cooldown(retry_after_seconds):
+    """Record a temporary in-memory cooldown for this warm Lambda runtime."""
+    global STRAVA_RATE_LIMIT_UNTIL_EPOCH
+    defer_seconds = max(60, min(retry_after_seconds or DEFAULT_RATE_LIMIT_DEFER_SECONDS, MAX_VISIBILITY_TIMEOUT_SECONDS))
+    STRAVA_RATE_LIMIT_UNTIL_EPOCH = max(STRAVA_RATE_LIMIT_UNTIL_EPOCH, int(time.time()) + defer_seconds)
+    return defer_seconds
+
+
+def _get_rate_limit_cooldown_seconds():
+    """Return remaining in-memory cooldown seconds, or 0 when no cooldown is active."""
+    remaining = STRAVA_RATE_LIMIT_UNTIL_EPOCH - int(time.time())
+    return max(0, remaining)
+
+
 def handler(event, context):
     """
     Lambda handler triggered by SQS.
@@ -575,6 +591,10 @@ def handler(event, context):
 
     batch_item_failures = []
     rate_limited = False
+    cooldown_seconds = _get_rate_limit_cooldown_seconds()
+    if cooldown_seconds > 0:
+        print(f"Strava cooldown active; deferring entire batch for ~{cooldown_seconds}s")
+        rate_limited = True
 
     for record in records:
         message_id = record.get("messageId")
@@ -587,7 +607,7 @@ def handler(event, context):
             if rate_limited:
                 # We've already hit the rate limit on this batch; don't burn more
                 # of the budget. Defer the rest and let them retry later.
-                _defer_message_for_rate_limit(record, None)
+                _defer_message_for_rate_limit(record, cooldown_seconds or None)
                 batch_item_failures.append({"itemIdentifier": message_id})
                 continue
 
@@ -600,8 +620,9 @@ def handler(event, context):
             # Bound the retry window so we don't burn the SQS receive count
             # while Strava is throttling us. Defer this message and every
             # remaining message in the batch.
-            print(f"Strava rate-limited; deferring {message_id} (retry_after={rle.retry_after_seconds})")
-            _defer_message_for_rate_limit(record, rle.retry_after_seconds)
+            cooldown_seconds = _set_rate_limit_cooldown(rle.retry_after_seconds)
+            print(f"Strava rate-limited; deferring {message_id} (retry_after={rle.retry_after_seconds}, cooldown={cooldown_seconds}s)")
+            _defer_message_for_rate_limit(record, cooldown_seconds)
             batch_item_failures.append({"itemIdentifier": message_id})
             rate_limited = True
         except Exception as e:
