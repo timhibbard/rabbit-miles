@@ -697,12 +697,6 @@ def handler(event, context):
 
             print(f"Processing SQS record: {message_id}")
 
-            rate_limited, defer_seconds_for_batch = _apply_active_cooldown(
-                rate_limited,
-                defer_seconds_for_batch,
-                "remaining batch",
-            )
-
             if rate_limited:
                 # We've already hit the rate limit on this batch; don't burn more
                 # of the budget. Defer the rest and let them retry later.
