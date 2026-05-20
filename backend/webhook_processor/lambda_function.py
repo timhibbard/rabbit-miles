@@ -264,6 +264,8 @@ def _maybe_start_rate_limit_cooldown():
         return None
     if time.time() - _rate_limit_last_updated_epoch > RATE_LIMIT_STATE_TTL_SECONDS:
         return None
+    if _rate_limit_limit <= RATE_LIMIT_SAFETY_MARGIN:
+        return None
     if _rate_limit_used >= _rate_limit_limit - RATE_LIMIT_SAFETY_MARGIN:
         wait_seconds = _seconds_until_rate_limit_reset()
         cooldown_seconds = _set_rate_limit_cooldown(wait_seconds)
