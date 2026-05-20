@@ -42,9 +42,10 @@ MIN_RATE_LIMIT_DEFER_SECONDS = 60
 MAX_VISIBILITY_TIMEOUT_SECONDS = 12 * 60 * 60
 # Strava rate limit state (read endpoints) observed via response headers.
 _rate_limit_used = 0
-_rate_limit_limit = 100
+_rate_limit_limit = 100  # Strava default read limit per 15-minute window.
 RATE_LIMIT_SAFETY_MARGIN = 5
 RATE_LIMIT_WINDOW_SECONDS = 15 * 60
+RATE_LIMIT_RESET_BUFFER_SECONDS = 5
 # In-memory cooldown expiry timestamp (epoch seconds) for warm Lambda containers
 # to avoid repeated Strava 429 calls. Assumes Lambda's single-invocation-per-
 # execution-environment model.
@@ -217,7 +218,7 @@ def _seconds_until_rate_limit_reset():
     """Seconds until the next 15-minute Strava rate limit window resets."""
     now = time.time()
     seconds_into_window = now % RATE_LIMIT_WINDOW_SECONDS
-    return RATE_LIMIT_WINDOW_SECONDS - seconds_into_window + 5
+    return RATE_LIMIT_WINDOW_SECONDS - seconds_into_window + RATE_LIMIT_RESET_BUFFER_SECONDS
 
 
 def _maybe_start_rate_limit_cooldown():
@@ -649,6 +650,17 @@ def _normalize_defer_seconds(retry_after_seconds):
     )
 
 
+def _apply_active_cooldown(rate_limited, defer_seconds_for_batch, batch_scope):
+    """Apply an active cooldown to the current batch if needed."""
+    if rate_limited:
+        return rate_limited, defer_seconds_for_batch
+    cooldown_seconds = _get_rate_limit_cooldown_seconds()
+    if cooldown_seconds > 0:
+        print(f"Strava cooldown active; deferring {batch_scope} for {cooldown_seconds}s")
+        return True, cooldown_seconds
+    return rate_limited, defer_seconds_for_batch
+
+
 def handler(event, context):
     """
     Lambda handler triggered by SQS.
@@ -685,12 +697,11 @@ def handler(event, context):
 
             print(f"Processing SQS record: {message_id}")
 
-            if not rate_limited:
-                cooldown_seconds = _get_rate_limit_cooldown_seconds()
-                if cooldown_seconds > 0:
-                    defer_seconds_for_batch = cooldown_seconds
-                    print(f"Strava cooldown active; deferring remaining batch for {cooldown_seconds}s")
-                    rate_limited = True
+            rate_limited, defer_seconds_for_batch = _apply_active_cooldown(
+                rate_limited,
+                defer_seconds_for_batch,
+                "remaining batch",
+            )
 
             if rate_limited:
                 # We've already hit the rate limit on this batch; don't burn more
@@ -704,12 +715,12 @@ def handler(event, context):
             if not success:
                 print(f"Failed to process event: {webhook_event}")
                 batch_item_failures.append({"itemIdentifier": message_id})
-            elif not rate_limited:
-                cooldown_seconds = _get_rate_limit_cooldown_seconds()
-                if cooldown_seconds > 0:
-                    defer_seconds_for_batch = cooldown_seconds
-                    print(f"Strava cooldown active; deferring remaining batch for {cooldown_seconds}s")
-                    rate_limited = True
+            else:
+                rate_limited, defer_seconds_for_batch = _apply_active_cooldown(
+                    rate_limited,
+                    defer_seconds_for_batch,
+                    "remaining batch",
+                )
         except StravaRateLimitError as rle:
             # Bound the retry window so we don't burn the SQS receive count
             # while Strava is throttling us. Defer this message and every
