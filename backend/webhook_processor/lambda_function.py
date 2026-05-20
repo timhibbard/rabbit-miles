@@ -196,8 +196,9 @@ def _parse_rate_limit_pair(header_value):
 def _get_header_value(headers, header_names):
     """Return the first matching header value from a list of candidate names."""
     for name in header_names:
-        if name in headers:
-            return headers.get(name)
+        value = headers.get(name)
+        if value is not None:
+            return value
     return None
 
 
@@ -240,7 +241,8 @@ def _capture_rate_limit_headers(headers):
     if not headers:
         return
     try:
-        _update_rate_limit_from_headers(dict(headers))
+        header_map = headers if isinstance(headers, dict) else dict(headers)
+        _update_rate_limit_from_headers(header_map)
     except Exception:
         pass
 
@@ -248,8 +250,8 @@ def _capture_rate_limit_headers(headers):
 def _seconds_until_rate_limit_reset():
     """Seconds until the next 15-minute Strava rate limit window resets.
 
-    Strava documents fixed reset boundaries at :00, :15, :30, :45 UTC, so we
-    align the cooldown window to 15-minute epochs.
+    Strava documents fixed reset boundaries at :00, :15, :30, :45 UTC. Unix
+    epoch time is in UTC, so modulo arithmetic aligns to those boundaries.
     """
     now = time.time()
     seconds_into_window = now % RATE_LIMIT_WINDOW_SECONDS
