@@ -40,6 +40,11 @@ DEFAULT_RATE_LIMIT_DEFER_SECONDS = 15 * 60
 MIN_RATE_LIMIT_DEFER_SECONDS = 60
 # SQS caps per-message visibility-timeout extensions at 12 hours.
 MAX_VISIBILITY_TIMEOUT_SECONDS = 12 * 60 * 60
+# Strava rate limit state (read endpoints) observed via response headers.
+_rate_limit_used = 0
+_rate_limit_limit = 100
+RATE_LIMIT_SAFETY_MARGIN = 5
+RATE_LIMIT_WINDOW_SECONDS = 15 * 60
 # In-memory cooldown expiry timestamp (epoch seconds) for warm Lambda containers
 # to avoid repeated Strava 429 calls. Assumes Lambda's single-invocation-per-
 # execution-environment model.
@@ -170,6 +175,61 @@ def _parse_retry_after(retry_after_header):
         return None
 
 
+def _parse_rate_limit_pair(header_value):
+    """Parse Strava rate-limit header values ('short,daily') into ints."""
+    if not header_value:
+        return None, None
+    try:
+        parts = [int(part.strip()) for part in str(header_value).split(",") if part.strip()]
+    except (TypeError, ValueError):
+        return None, None
+    if not parts:
+        return None, None
+    short_term = parts[0]
+    daily = parts[1] if len(parts) > 1 else None
+    return short_term, daily
+
+
+def _update_rate_limit_from_headers(headers):
+    """Parse and store Strava read rate-limit headers from a response."""
+    global _rate_limit_used, _rate_limit_limit
+    usage_header = (
+        headers.get("X-ReadRateLimit-Usage")
+        or headers.get("x-readratelimit-usage")
+        or headers.get("X-RateLimit-Usage")
+        or headers.get("x-ratelimit-usage")
+    )
+    limit_header = (
+        headers.get("X-ReadRateLimit-Limit")
+        or headers.get("x-readratelimit-limit")
+        or headers.get("X-RateLimit-Limit")
+        or headers.get("x-ratelimit-limit")
+    )
+    used_short, _ = _parse_rate_limit_pair(usage_header)
+    limit_short, _ = _parse_rate_limit_pair(limit_header)
+    if used_short is not None:
+        _rate_limit_used = used_short
+    if limit_short is not None:
+        _rate_limit_limit = limit_short
+
+
+def _seconds_until_rate_limit_reset():
+    """Seconds until the next 15-minute Strava rate limit window resets."""
+    now = time.time()
+    seconds_into_window = now % RATE_LIMIT_WINDOW_SECONDS
+    return RATE_LIMIT_WINDOW_SECONDS - seconds_into_window + 5
+
+
+def _maybe_start_rate_limit_cooldown():
+    """Start cooldown if we're at/near the Strava read rate limit."""
+    if _rate_limit_used >= _rate_limit_limit - RATE_LIMIT_SAFETY_MARGIN:
+        wait_seconds = _seconds_until_rate_limit_reset()
+        cooldown_seconds = _set_rate_limit_cooldown(wait_seconds)
+        print(f"Strava rate limit nearing ({_rate_limit_used}/{_rate_limit_limit}); enabling cooldown for {cooldown_seconds}s")
+        return cooldown_seconds
+    return None
+
+
 def fetch_activity_details(access_token, activity_id):
     """Fetch detailed activity data from Strava API.
 
@@ -181,7 +241,10 @@ def fetch_activity_details(access_token, activity_id):
 
     try:
         with urlopen(req, timeout=30) as resp:
-            activity = json.loads(resp.read().decode())
+            body = resp.read().decode()
+            _update_rate_limit_from_headers(dict(resp.headers))
+            _maybe_start_rate_limit_cooldown()
+            activity = json.loads(body)
         print(f"Fetched activity {activity_id} from Strava API")
         return activity
     except HTTPError as e:
@@ -189,6 +252,11 @@ def fetch_activity_details(access_token, activity_id):
         try:
             error_body = e.read().decode()
             print(f"Error response body: {error_body}")
+        except Exception:
+            pass
+        try:
+            if e.headers:
+                _update_rate_limit_from_headers(dict(e.headers))
         except Exception:
             pass
         if e.code == 429:
@@ -617,6 +685,13 @@ def handler(event, context):
 
             print(f"Processing SQS record: {message_id}")
 
+            if not rate_limited:
+                cooldown_seconds = _get_rate_limit_cooldown_seconds()
+                if cooldown_seconds > 0:
+                    defer_seconds_for_batch = cooldown_seconds
+                    print(f"Strava cooldown active; deferring remaining batch for {cooldown_seconds}s")
+                    rate_limited = True
+
             if rate_limited:
                 # We've already hit the rate limit on this batch; don't burn more
                 # of the budget. Defer the rest and let them retry later.
@@ -629,6 +704,12 @@ def handler(event, context):
             if not success:
                 print(f"Failed to process event: {webhook_event}")
                 batch_item_failures.append({"itemIdentifier": message_id})
+            elif not rate_limited:
+                cooldown_seconds = _get_rate_limit_cooldown_seconds()
+                if cooldown_seconds > 0:
+                    defer_seconds_for_batch = cooldown_seconds
+                    print(f"Strava cooldown active; deferring remaining batch for {cooldown_seconds}s")
+                    rate_limited = True
         except StravaRateLimitError as rle:
             # Bound the retry window so we don't burn the SQS receive count
             # while Strava is throttling us. Defer this message and every
