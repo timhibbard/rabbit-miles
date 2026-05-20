@@ -48,7 +48,7 @@ UPDATE_WINDOW_SECONDS = 24 * 60 * 60
 
 # Strava rate limit state (module-level, shared across calls within a single invocation)
 _rate_limit_used = 0
-_rate_limit_limit = 100  # Strava default
+_rate_limit_limit = 300  # Strava default read limit
 
 # Pause when this many requests remain in the current 15-minute window
 RATE_LIMIT_SAFETY_MARGIN = 5
@@ -171,10 +171,24 @@ def ensure_valid_token(athlete_id, access_token, refresh_token, expires_at):
 
 
 def _update_rate_limit_from_headers(headers):
-    """Parse and store Strava rate limit headers from a response."""
+    """Parse and store Strava rate limit headers from a response.
+
+    Prefer read rate-limit headers when present to avoid exceeding the lower
+    read quota.
+    """
     global _rate_limit_used, _rate_limit_limit
-    usage = headers.get("X-RateLimit-Usage") or headers.get("x-ratelimit-usage")
-    limit = headers.get("X-RateLimit-Limit") or headers.get("x-ratelimit-limit")
+    usage = (
+        headers.get("X-ReadRateLimit-Usage")
+        or headers.get("x-readratelimit-usage")
+        or headers.get("X-RateLimit-Usage")
+        or headers.get("x-ratelimit-usage")
+    )
+    limit = (
+        headers.get("X-ReadRateLimit-Limit")
+        or headers.get("x-readratelimit-limit")
+        or headers.get("X-RateLimit-Limit")
+        or headers.get("x-ratelimit-limit")
+    )
     if usage:
         try:
             _rate_limit_used = int(usage.split(",")[0])
