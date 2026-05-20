@@ -48,7 +48,7 @@ UPDATE_WINDOW_SECONDS = 24 * 60 * 60
 
 # Strava rate limit state (module-level, shared across calls within a single invocation)
 _rate_limit_used = 0
-_rate_limit_limit = 100  # Strava default
+_rate_limit_limit = 300  # Strava default read limit
 
 # Pause when this many requests remain in the current 15-minute window
 RATE_LIMIT_SAFETY_MARGIN = 5

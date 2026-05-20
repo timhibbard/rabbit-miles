@@ -42,7 +42,7 @@ MIN_RATE_LIMIT_DEFER_SECONDS = 60
 MAX_VISIBILITY_TIMEOUT_SECONDS = 12 * 60 * 60
 # Strava rate limit state (read endpoints) observed via response headers.
 _rate_limit_used = 0
-_rate_limit_limit = 100  # Strava default read limit per 15-minute window.
+_rate_limit_limit = 300  # Strava default read limit per 15-minute window.
 _rate_limit_last_updated_epoch = 0
 RATE_LIMIT_SAFETY_MARGIN = 5
 RATE_LIMIT_WINDOW_SECONDS = 15 * 60
