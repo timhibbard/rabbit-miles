@@ -81,6 +81,8 @@ def get_cors_headers():
     if origin:
         headers["Access-Control-Allow-Origin"] = origin
         headers["Access-Control-Allow-Credentials"] = "true"
+        # Expose Retry-After header so JavaScript can read it in CORS requests
+        headers["Access-Control-Expose-Headers"] = "Retry-After"
     return headers
 
 
