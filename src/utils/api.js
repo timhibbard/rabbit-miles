@@ -138,7 +138,29 @@ export const refreshActivities = async () => {
     }
     if (error.response?.status === 429) {
       const message = error.response?.data?.error || 'Strava API rate limit exceeded. Please try again later.';
-      return { success: false, error: message };
+      const retryAfter = error.response?.headers?.['retry-after'] || error.response?.data?.retry_after;
+
+      // Parse Retry-After: can be either delay-seconds (number) or HTTP-date (RFC 7231)
+      let retryAfterSeconds = null;
+      if (retryAfter) {
+        const num = Number(retryAfter);
+        if (Number.isFinite(num) && num >= 0) {
+          // Numeric delay-seconds format
+          retryAfterSeconds = Math.floor(num);
+        } else {
+          // HTTP-date format: parse and calculate seconds from now
+          const retryDate = new Date(retryAfter);
+          if (!isNaN(retryDate.getTime())) {
+            retryAfterSeconds = Math.max(0, Math.floor((retryDate.getTime() - Date.now()) / 1000));
+          }
+        }
+      }
+
+      return {
+        success: false,
+        error: message,
+        retryAfter: retryAfterSeconds
+      };
     }
     return { success: false, error: error.message };
   }
