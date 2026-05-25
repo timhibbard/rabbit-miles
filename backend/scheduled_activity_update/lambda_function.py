@@ -47,8 +47,12 @@ TOKEN_REFRESH_BUFFER_SECONDS = 300
 UPDATE_WINDOW_SECONDS = 24 * 60 * 60
 
 # Strava rate limit state (module-level, shared across calls within a single invocation)
+# Strava has two separate rate limits:
+#   - Read endpoints (GET): 300 requests per 15 minutes, 3,000 daily
+#   - Overall (all requests): 600 requests per 15 minutes, 6,000 daily
+# This Lambda uses GET /athlete/activities which counts against the READ limit.
 _rate_limit_used = 0
-_rate_limit_limit = 300  # Strava default read limit
+_rate_limit_limit = 300  # Strava read limit per 15-minute window
 
 # Pause when this many requests remain in the current 15-minute window
 RATE_LIMIT_SAFETY_MARGIN = 5

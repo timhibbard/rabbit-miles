@@ -41,8 +41,12 @@ MIN_RATE_LIMIT_DEFER_SECONDS = 60
 # SQS caps per-message visibility-timeout extensions at 12 hours.
 MAX_VISIBILITY_TIMEOUT_SECONDS = 12 * 60 * 60
 # Strava rate limit state (read endpoints) observed via response headers.
+# Strava has two separate rate limits:
+#   - Read endpoints (GET): 300 requests per 15 minutes, 3,000 daily
+#   - Overall (all requests): 600 requests per 15 minutes, 6,000 daily
+# This Lambda uses GET /activities/{id} which counts against the READ limit.
 _rate_limit_used = 0
-_rate_limit_limit = 300  # Strava default read limit per 15-minute window.
+_rate_limit_limit = 300  # Strava read limit per 15-minute window
 _rate_limit_last_updated_epoch = 0
 RATE_LIMIT_SAFETY_MARGIN = 5
 RATE_LIMIT_WINDOW_SECONDS = 15 * 60
@@ -260,9 +264,14 @@ def _seconds_until_rate_limit_reset():
 
 def _maybe_start_rate_limit_cooldown():
     """Start cooldown if we're at/near the Strava read rate limit."""
+    global _rate_limit_used
+
     if not _rate_limit_last_updated_epoch:
         return None
     if time.time() - _rate_limit_last_updated_epoch > RATE_LIMIT_STATE_TTL_SECONDS:
+        # Rate limit state is stale (>30 min old). Reset to avoid using
+        # outdated values from a previous Lambda warm-start cycle.
+        _rate_limit_used = 0
         return None
     if _rate_limit_limit <= RATE_LIMIT_SAFETY_MARGIN:
         return None
