@@ -546,9 +546,16 @@ def handler(event, context):
             }
         except StravaRateLimitError as e:
             print(f"Strava rate limit hit during direct invocation: {e}")
+            # Return 429 with Retry-After header (RFC 7231)
+            # Using 15-minute Strava rate limit window as retry hint
+            retry_after_seconds = 15 * 60  # 15 minutes
             return {
                 "statusCode": 429,
-                "body": json.dumps({"error": STRAVA_RATE_LIMIT_MESSAGE})
+                "headers": {"Retry-After": str(retry_after_seconds)},
+                "body": json.dumps({
+                    "error": STRAVA_RATE_LIMIT_MESSAGE,
+                    "retry_after": retry_after_seconds
+                })
             }
         except Exception as e:
             print(f"Error in direct invocation: {e}")
@@ -653,11 +660,14 @@ def handler(event, context):
             if remaining > 0:
                 minutes_remaining = (remaining + 59) // 60  # Round up to the next full minute
                 print(f"Fetch cooldown active for athlete {athlete_id}: {remaining}s remaining")
+                # Add Retry-After header (RFC 7231) with exact seconds remaining
+                cors_headers["Retry-After"] = str(remaining)
                 return {
                     "statusCode": 429,
                     "headers": cors_headers,
                     "body": json.dumps({
-                        "error": f"Activities were recently synced. Please wait {minutes_remaining} more minute{'s' if minutes_remaining != 1 else ''} before syncing again."
+                        "error": f"Activities were recently synced. Please wait {minutes_remaining} more minute{'s' if minutes_remaining != 1 else ''} before syncing again.",
+                        "retry_after": remaining
                     })
                 }
         
@@ -683,10 +693,17 @@ def handler(event, context):
         }
     except StravaRateLimitError as e:
         print(f"Strava rate limit exceeded: {e}")
+        # Return 429 with Retry-After header (RFC 7231)
+        # Using 15-minute Strava rate limit window as retry hint
+        retry_after_seconds = 15 * 60  # 15 minutes
+        cors_headers["Retry-After"] = str(retry_after_seconds)
         return {
             "statusCode": 429,
             "headers": cors_headers,
-            "body": json.dumps({"error": STRAVA_RATE_LIMIT_MESSAGE})
+            "body": json.dumps({
+                "error": STRAVA_RATE_LIMIT_MESSAGE,
+                "retry_after": retry_after_seconds
+            })
         }
     except Exception as e:
         print(f"Error in fetch_activities handler: {e}")
