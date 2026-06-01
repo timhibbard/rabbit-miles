@@ -1,6 +1,11 @@
+import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import analytics from '../utils/analytics';
 
 function About() {
+  useEffect(() => {
+    analytics.trackStaticPageView('About');
+  }, []);
   const originStory = {
     year: 2026,
     challenge: "great burrito challenge",

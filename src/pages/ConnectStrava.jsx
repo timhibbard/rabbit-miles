@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { fetchMe } from '../utils/api';
 import debug, { showDebugInfo } from '../utils/debug';
 import { isIOS, openWithFallback } from '../utils/device';
+import analytics from '../utils/analytics';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL;
 
@@ -28,14 +29,15 @@ function ConnectStrava() {
     // Check if we just returned from OAuth callback
     const urlParams = new URLSearchParams(window.location.search);
     const justConnected = urlParams.get('connected') === '1';
-    
+
     debug.log('ConnectStrava mounted');
     debug.log('URL:', window.location.href);
     debug.log('Search params:', window.location.search);
     debug.log('justConnected:', justConnected);
 
-    // Clean up URL if needed (remove query params)
+    // Track successful login
     if (justConnected) {
+      analytics.trackLogin();
       debug.log('Cleaning up URL');
       window.history.replaceState({}, '', window.location.pathname);
     }
@@ -124,6 +126,9 @@ function ConnectStrava() {
   };
 
   const handleDisconnect = () => {
+    // Track logout event
+    analytics.trackLogout();
+
     // Redirect to backend disconnect endpoint
     // The backend will clear the session cookie
     const disconnectUrl = `${API_BASE_URL}/auth/disconnect`;

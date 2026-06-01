@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { fetchMe, fetchLeaderboard } from '../utils/api';
+import analytics from '../utils/analytics';
 
 // Number of top athletes to display in current rankings
 const TOP_ATHLETES_COUNT = 15;
@@ -68,6 +69,8 @@ function Leaderboard() {
         setLeaderboardData(result.data);
         setLastUpdated(new Date());
         if (!silent) {
+          // Track leaderboard view with GA4
+          analytics.trackLeaderboardView(selectedWindow, activityType);
           console.log('TELEMETRY - leaderboard_page_view', {
             window: selectedWindow,
             window_key: result.data.window_key,
