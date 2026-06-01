@@ -2,6 +2,7 @@ import { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { fetchMe, fetchActivities, refreshActivities, fetchPeriodSummary } from '../utils/api';
 import debug from '../utils/debug';
+import analytics from '../utils/analytics';
 
 // Constants
 const METERS_TO_MILES = 1609.34;
@@ -321,8 +322,11 @@ function Dashboard() {
 
   // Refresh activities from Strava
   const handleRefreshActivities = async () => {
+    // Track refresh event
+    analytics.trackActivitiesRefresh();
+
     setRefreshState({ refreshing: true, message: null, error: null });
-    
+
     const result = await refreshActivities();
     
     if (result.success) {

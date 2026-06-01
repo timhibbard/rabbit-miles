@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { fetchMe, resetTrailMatching, updateActivities, updateUserSettings } from '../utils/api';
+import analytics from '../utils/analytics';
 
 // Common US timezones for the dropdown
 const TIMEZONES = [
@@ -95,6 +96,8 @@ function Settings() {
     try {
       const result = await updateUserSettings({ show_on_leaderboards: newValue });
       if (result.success) {
+        // Track settings update
+        analytics.trackSettingsUpdate('show_on_leaderboards');
         setAuthState(prev => ({
           ...prev,
           showOnLeaderboards: result.data.show_on_leaderboards
@@ -117,6 +120,8 @@ function Settings() {
     try {
       const result = await updateUserSettings({ timezone: newTimezone });
       if (result.success) {
+        // Track settings update
+        analytics.trackSettingsUpdate('timezone');
         setAuthState(prev => ({
           ...prev,
           timezone: result.data.timezone || newTimezone

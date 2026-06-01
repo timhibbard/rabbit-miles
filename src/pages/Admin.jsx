@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { fetchMe, fetchAllUsers, fetchAllActivities, fetchUserActivities, deleteUser, backfillUserActivities, updateUserActivities, recalculateLeaderboard } from '../utils/api';
 import { useNavigate } from 'react-router-dom';
+import analytics from '../utils/analytics';
 
 function Admin() {
   const [loading, setLoading] = useState(true);
@@ -44,6 +45,9 @@ function Admin() {
         setLoading(false);
         return;
       }
+
+      // Track admin access
+      analytics.trackAdminAccess();
 
       // Fetch all users
       const usersResult = await fetchAllUsers();
