@@ -12,6 +12,7 @@ import sys
 import json
 import hmac
 import hashlib
+import html
 import time
 from urllib.parse import urlparse
 import boto3
@@ -128,14 +129,18 @@ def verify_token(token):
 def send_verification_email(athlete_id, email, display_name):
     """Send verification email via SES"""
     token = generate_verification_token(athlete_id, email)
-    verification_url = f"{FRONTEND_URL}/verify-email?token={token}"
+    # Route to API Gateway endpoint, not frontend
+    verification_url = f"https://api.rabbitmiles.com/verify-email?token={token}"
+
+    # Escape user-controlled values
+    safe_display_name = html.escape(display_name)
 
     # Simple HTML email
     html_body = f"""
     <html>
     <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
         <h1 style="color: #333;">Verify your RabbitMiles email address</h1>
-        <p>Hi {display_name},</p>
+        <p>Hi {safe_display_name},</p>
         <p>Please verify your email address to receive notifications from RabbitMiles.</p>
         <p style="margin: 30px 0;">
             <a href="{verification_url}"
@@ -161,7 +166,7 @@ def send_verification_email(athlete_id, email, display_name):
     """
 
     text_body = f"""
-Hi {display_name},
+Hi {safe_display_name},
 
 Please verify your email address to receive notifications from RabbitMiles.
 

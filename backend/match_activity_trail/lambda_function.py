@@ -443,71 +443,115 @@ def get_current_rankings(athlete_id, start_date_local, user_timezone=None, activ
 
     Returns dict with keys like 'week_all', 'month_foot', 'year_bike' mapping to rank numbers.
     Returns empty dict if window bounds can't be computed or user not found.
+
+    Optimized to use a single query with UNION ALL instead of 9 separate queries.
     """
     bounds = leaderboard_agg.get_window_bounds(start_date_local, user_timezone, activity_timezone)
     if not bounds:
         return {}
 
-    rankings = {}
+    # Build list of window_keys for the query
+    window_keys = [window_key for _, (window_key, _, _) in bounds.items()]
 
-    for window_name, (window_key, _, _) in bounds.items():
-        for agg_type in leaderboard_agg.ALL_AGG_TYPES:
-            # Get user's rank in this window/type
-            sql = """
-                SELECT rank FROM (
-                    SELECT athlete_id,
-                           ROW_NUMBER() OVER (ORDER BY value DESC) as rank
-                    FROM leaderboard_agg
-                    WHERE window_key = :window_key
-                      AND metric = :metric
-                      AND activity_type = :agg_type
-                      AND value > 0
-                ) ranked
-                WHERE athlete_id = :athlete_id
-            """
-            params = [
-                {"name": "window_key", "value": {"stringValue": window_key}},
-                {"name": "metric", "value": {"stringValue": "distance"}},
-                {"name": "agg_type", "value": {"stringValue": agg_type}},
-                {"name": "athlete_id", "value": {"longValue": int(athlete_id)}}
-            ]
+    # Single query to get all rankings at once
+    sql = """
+        WITH ranked AS (
+            SELECT
+                window_key,
+                activity_type,
+                athlete_id,
+                ROW_NUMBER() OVER (
+                    PARTITION BY window_key, activity_type
+                    ORDER BY value DESC
+                ) as rank
+            FROM leaderboard_agg
+            WHERE window_key IN (:wk0, :wk1, :wk2)
+              AND metric = :metric
+              AND value > 0
+        )
+        SELECT window_key, activity_type, rank
+        FROM ranked
+        WHERE athlete_id = :athlete_id
+    """
 
-            try:
-                result = _exec_sql(sql, params)
-                records = result.get("records", [])
-                if records and records[0]:
-                    old_rank = records[0][0].get("longValue")
-                    rankings[f"{window_name}_{agg_type}"] = old_rank
-            except Exception as e:
-                print(f"WARNING: Failed to get ranking for {window_name}_{agg_type}: {e}")
+    params = [
+        {"name": "wk0", "value": {"stringValue": window_keys[0] if len(window_keys) > 0 else ""}},
+        {"name": "wk1", "value": {"stringValue": window_keys[1] if len(window_keys) > 1 else ""}},
+        {"name": "wk2", "value": {"stringValue": window_keys[2] if len(window_keys) > 2 else ""}},
+        {"name": "metric", "value": {"stringValue": "distance"}},
+        {"name": "athlete_id", "value": {"longValue": int(athlete_id)}}
+    ]
 
-    return rankings
+    try:
+        result = _exec_sql(sql, params)
+        records = result.get("records", [])
+
+        # Build window_key -> window_name mapping for fast lookup
+        window_key_to_name = {window_key: name for name, (window_key, _, _) in bounds.items()}
+
+        rankings = {}
+        for record in records:
+            if len(record) >= 3:
+                window_key = record[0].get("stringValue", "")
+                activity_type = record[1].get("stringValue", "")
+                rank = record[2].get("longValue")
+
+                window_name = window_key_to_name.get(window_key)
+                if window_name and rank:
+                    rankings[f"{window_name}_{activity_type}"] = rank
+
+        return rankings
+
+    except Exception as e:
+        print(f"WARNING: Failed to get rankings: {e}")
+        return {}
 
 
 def check_ranking_changes(athlete_id, old_rankings, start_date_local, user_timezone=None, activity_timezone=None):
-    """Compare old vs new rankings and return list of improvements.
+    """Compare old vs new rankings and return list of meaningful improvements.
+
+    Only returns changes that are worth notifying about:
+    - Entering top 10
+    - Multi-position improvement (jumped 2+ positions)
+    - Crossing milestone boundaries (e.g., 11→10, 26→25, 51→50, 101→100)
 
     Returns list of dicts with keys: window, activity_type, old_rank, new_rank
     """
     # Get new rankings after leaderboard recompute
     new_rankings = get_current_rankings(athlete_id, start_date_local, user_timezone, activity_timezone)
 
+    # Milestone thresholds that are worth celebrating
+    MILESTONES = [10, 25, 50, 100]
+
     changes = []
     for key, new_rank in new_rankings.items():
         old_rank = old_rankings.get(key)
 
-        # Rank improved if:
-        # 1. Was unranked (None) and now ranked, OR
-        # 2. Rank number decreased (e.g., 5 → 3 is improvement)
+        # Check if this is a meaningful improvement
+        is_meaningful = False
+
         if old_rank is None and new_rank:
-            window, agg_type = key.rsplit("_", 1)
-            changes.append({
-                "window": window,
-                "activity_type": agg_type,
-                "old_rank": None,
-                "new_rank": new_rank
-            })
+            # Newly ranked - only notify if in top 10
+            is_meaningful = new_rank <= 10
         elif old_rank and new_rank and new_rank < old_rank:
+            improvement = old_rank - new_rank
+
+            # Notify if:
+            # 1. Now in top 10, OR
+            # 2. Jumped 2+ positions, OR
+            # 3. Crossed a milestone boundary
+            if new_rank <= 10:
+                is_meaningful = True
+            elif improvement >= 2:
+                is_meaningful = True
+            else:
+                # Check if crossed a milestone (e.g., 11→10, 26→25)
+                for milestone in MILESTONES:
+                    if old_rank > milestone >= new_rank:
+                        is_meaningful = True
+                        break
+
+        if is_meaningful:
             window, agg_type = key.rsplit("_", 1)
             changes.append({
                 "window": window,
@@ -695,10 +739,14 @@ def send_notifications_if_eligible(activity_id, athlete_id, distance_on_trail, s
             if queue_email_notification('ranking_change', athlete_id, activity_id, ranking_metadata):
                 notifications_queued += 1
 
-    # Mark as sent if any notifications were queued
+    # Always mark as sent after eligibility check to prevent re-evaluation on retries
+    # This flag means "we already checked this activity for notifications"
+    mark_notifications_sent(activity_id)
+
     if notifications_queued > 0:
-        mark_notifications_sent(activity_id)
         print(f"Queued {notifications_queued} notification(s) for activity {activity_id}")
+    else:
+        print(f"No notifications queued for activity {activity_id} (below thresholds or no rank changes)")
 
 
 def update_leaderboard_after_trail_matching(athlete_id, start_date_local,

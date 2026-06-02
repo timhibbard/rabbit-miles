@@ -12,6 +12,7 @@ import sys
 import json
 import hmac
 import hashlib
+import html
 import boto3
 
 # Add parent directory to path if needed
@@ -79,24 +80,52 @@ def get_user(athlete_id):
     }
 
 
-def already_sent(athlete_id, activity_id, notification_type):
-    """Check if notification was already sent"""
+def already_sent(athlete_id, activity_id, notification_type, metadata=None):
+    """Check if notification was already sent
+
+    For ranking_change notifications, also checks window and activity_type
+    to allow multiple ranking notifications per activity (different leaderboards).
+    """
     if not activity_id:
         # Can't check for duplicate if no activity_id
         return False
 
-    sql = """
-    SELECT id FROM email_notifications
-    WHERE athlete_id = :athlete_id
-      AND activity_id = :activity_id
-      AND notification_type = :notification_type
-    LIMIT 1
-    """
-    params = [
-        {"name": "athlete_id", "value": {"longValue": athlete_id}},
-        {"name": "activity_id", "value": {"longValue": activity_id}},
-        {"name": "notification_type", "value": {"stringValue": notification_type}}
-    ]
+    # For ranking changes, include window and activity_type in duplicate check
+    if notification_type == "ranking_change" and metadata:
+        window = metadata.get("window", "")
+        activity_type = metadata.get("activity_type", "")
+
+        sql = """
+        SELECT id FROM email_notifications
+        WHERE athlete_id = :athlete_id
+          AND activity_id = :activity_id
+          AND notification_type = :notification_type
+          AND metadata->>'window' = :window
+          AND metadata->>'activity_type' = :activity_type
+        LIMIT 1
+        """
+        params = [
+            {"name": "athlete_id", "value": {"longValue": athlete_id}},
+            {"name": "activity_id", "value": {"longValue": activity_id}},
+            {"name": "notification_type", "value": {"stringValue": notification_type}},
+            {"name": "window", "value": {"stringValue": window}},
+            {"name": "activity_type", "value": {"stringValue": activity_type}}
+        ]
+    else:
+        # For other notification types, simple check
+        sql = """
+        SELECT id FROM email_notifications
+        WHERE athlete_id = :athlete_id
+          AND activity_id = :activity_id
+          AND notification_type = :notification_type
+        LIMIT 1
+        """
+        params = [
+            {"name": "athlete_id", "value": {"longValue": athlete_id}},
+            {"name": "activity_id", "value": {"longValue": activity_id}},
+            {"name": "notification_type", "value": {"stringValue": notification_type}}
+        ]
+
     result = exec_sql(sql, params)
     records = result.get("records", [])
     return len(records) > 0
@@ -139,19 +168,22 @@ def send_email(notification_type, user, activity_id, metadata):
     unsubscribe_url = f"{FRONTEND_URL}/unsubscribe?token={unsubscribe_token}"
     settings_url = f"{FRONTEND_URL}/settings"
 
+    # Escape user-controlled values to prevent HTML injection
+    safe_display_name = html.escape(display_name)
+
     # Build email based on notification type
     if notification_type == "trail_milestone":
         trail_distance_miles = metadata.get("trail_distance_miles", 0)
-        trail_name = metadata.get("trail_name", "a trail")
-        activity_name = metadata.get("activity_name", "your activity")
+        trail_name = html.escape(metadata.get("trail_name", "a trail"))
+        activity_name = html.escape(metadata.get("activity_name", "your activity"))
         activity_url = metadata.get("activity_url", f"{FRONTEND_URL}/dashboard")
 
-        subject = f"🎉 {trail_distance_miles} new miles on {trail_name}!"
+        subject = f"🎉 {trail_distance_miles} new miles on trail"
 
         html_body = f"""
         <html>
         <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-            <h1 style="color: #333;">Great job, {display_name}!</h1>
+            <h1 style="color: #333;">Great job, {safe_display_name}!</h1>
             <p style="font-size: 16px;">
                 You just covered <strong>{trail_distance_miles} miles</strong> on <strong>{trail_name}</strong>!
             </p>
@@ -203,15 +235,19 @@ Unsubscribe: {unsubscribe_url}
 
         subject = f"🏆 You're now #{new_rank} on the {window} {activity_type} leaderboard!"
 
+        safe_activity_name = html.escape(activity_name)
+        safe_window = html.escape(window)
+        safe_activity_type = html.escape(activity_type)
+
         html_body = f"""
         <html>
         <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-            <h1 style="color: #333;">Congratulations, {display_name}!</h1>
+            <h1 style="color: #333;">Congratulations, {safe_display_name}!</h1>
             <p style="font-size: 16px;">
-                Your ranking improved {rank_text} on the <strong>{window} {activity_type} leaderboard</strong>!
+                Your ranking improved {rank_text} on the <strong>{safe_window} {safe_activity_type} leaderboard</strong>!
             </p>
             <p style="color: #666;">
-                Activity that moved you up: {activity_name} ({trail_distance_miles} miles on trails)
+                Activity that moved you up: {safe_activity_name} ({trail_distance_miles} miles on trails)
             </p>
             <p style="margin: 30px 0;">
                 <a href="{leaderboard_url}"
@@ -287,6 +323,7 @@ def handler(event, context):
 
     processed = 0
     failed = 0
+    failed_message_ids = []
 
     for record in event.get("Records", []):
         try:
@@ -333,7 +370,7 @@ def handler(event, context):
                     continue
 
             # Check for duplicate notifications
-            if already_sent(athlete_id, activity_id, notification_type):
+            if already_sent(athlete_id, activity_id, notification_type, metadata):
                 print(f"LOG - Notification already sent for athlete {athlete_id}, activity {activity_id}, type {notification_type}")
                 continue
 
@@ -349,20 +386,24 @@ def handler(event, context):
                 failed += 1
 
         except Exception as e:
-            print(f"ERROR - Failed to process SQS message: {e}")
+            print(f"ERROR - Failed to process SQS message {record.get('messageId')}: {e}")
             import traceback
             traceback.print_exc()
             failed += 1
+            # Mark this message for retry by SQS
+            failed_message_ids.append(record.get("messageId"))
 
     print(f"LOG - Processed {processed} notifications, {failed} failed")
     print("=" * 80)
     print("SEND EMAIL NOTIFICATION - COMPLETE")
     print("=" * 80)
 
-    return {
-        "statusCode": 200,
-        "body": json.dumps({
-            "processed": processed,
-            "failed": failed
-        })
+    # Return partial batch failure response to retry only failed messages
+    # Successful messages are deleted, failed ones return to queue
+    response = {
+        "batchItemFailures": [
+            {"itemIdentifier": msg_id} for msg_id in failed_message_ids
+        ]
     }
+
+    return response

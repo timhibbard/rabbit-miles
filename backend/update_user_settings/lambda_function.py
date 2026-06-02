@@ -227,8 +227,19 @@ def handler(event, context):
                     "body": json.dumps({"error": "email_notifications_enabled must be a boolean"})
                 }
 
-            # If enabling notifications, check if email is verified
-            if email_notifications_enabled and not email_changed:
+            # If enabling notifications, verify email is set and verified
+            # Always check (even if email is changing in same request) since new email isn't verified yet
+            if email_notifications_enabled:
+                # If email is changing in this request, it's definitely not verified yet
+                if email_changed:
+                    print("ERROR - Cannot enable notifications when changing email (new email must be verified first)")
+                    return {
+                        "statusCode": 400,
+                        "headers": cors_headers,
+                        "body": json.dumps({"error": "email must be verified before enabling notifications"})
+                    }
+
+                # Check existing email status
                 check_sql = "SELECT email, email_verified FROM users WHERE athlete_id = :athlete_id"
                 check_params = [{"name": "athlete_id", "value": {"longValue": athlete_id}}]
                 check_result = exec_sql(check_sql, check_params)

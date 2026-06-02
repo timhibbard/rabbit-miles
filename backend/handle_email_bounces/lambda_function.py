@@ -100,17 +100,11 @@ def handle_bounce(bounce_message):
             except Exception as e:
                 print(f"ERROR: Failed to update email_verified for athlete {athlete_id}: {e}")
 
-            # Update any pending notifications to 'bounced' status
-            update_sql = """
-            UPDATE email_notifications
-            SET delivery_status = 'bounced', updated_at = now()
-            WHERE athlete_id = :athlete_id
-              AND delivery_status = 'pending'
-            """
-            try:
-                exec_sql(update_sql, params[:1])
-            except Exception as e:
-                print(f"ERROR: Failed to update notification status: {e}")
+            # Note: We don't update email_notifications table here because:
+            # 1. SES bounce events don't reliably identify which specific notification bounced
+            # 2. The user-level email_verified flag is sufficient to prevent future sends
+            # 3. Updating all pending notifications would incorrectly mark unrelated emails
+            # The delivery_status will remain 'pending' but won't be sent due to email_verified=false
 
         # Log transient (soft) bounces but don't take action
         elif bounce_type == "Transient":
@@ -160,17 +154,7 @@ def handle_complaint(complaint_message):
         except Exception as e:
             print(f"ERROR: Failed to disable notifications for athlete {athlete_id}: {e}")
 
-        # Update any pending notifications to 'bounced' status
-        update_sql = """
-        UPDATE email_notifications
-        SET delivery_status = 'bounced', updated_at = now()
-        WHERE athlete_id = :athlete_id
-          AND delivery_status = 'pending'
-        """
-        try:
-            exec_sql(update_sql, params[:1])
-        except Exception as e:
-            print(f"ERROR: Failed to update notification status: {e}")
+        # Note: We don't update email_notifications table here for the same reason as bounces
 
 
 def handler(event, context):
