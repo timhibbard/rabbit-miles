@@ -35,6 +35,14 @@ DB_NAME = None
 
 STRAVA_TOKEN_URL = "https://www.strava.com/oauth/token"
 STRAVA_ACTIVITIES_URL = "https://www.strava.com/api/v3/athlete/activities"
+STRAVA_ATHLETE_URL = "https://www.strava.com/api/v3/athlete"
+
+# Refresh each athlete's profile picture at most this often. Strava versions its
+# avatar URLs, so a stored URL 404s once the athlete changes their photo. We
+# re-fetch the athlete profile (one extra GET, counted against the read limit)
+# only when the picture hasn't been refreshed within this window, keeping the
+# added rate-limit cost negligible.
+PROFILE_PIC_REFRESH_SECONDS = 7 * 24 * 60 * 60  # 7 days
 
 # Filter activities starting from Jan 1, 2026 00:00:00 UTC
 # Unix timestamp: 1767225600
@@ -288,6 +296,51 @@ def fetch_strava_activities(access_token, after_timestamp, context=None, per_pag
         raise
 
 
+def fetch_strava_athlete(access_token, context=None):
+    """Fetch the athlete profile from Strava (rate-limit aware)."""
+    req = Request(STRAVA_ATHLETE_URL, headers={"Authorization": f"Bearer {access_token}"})
+    try:
+        return _strava_get(req, context=context, timeout=20)
+    except Exception as e:
+        log(f"Failed to fetch athlete profile from Strava: {e}", "WARNING")
+        return None
+
+
+def refresh_profile_picture(athlete_id, access_token, context=None):
+    """Re-fetch the athlete's profile picture from Strava and persist it.
+
+    Only called when the picture is stale (see PROFILE_PIC_REFRESH_SECONDS).
+    Always stamps profile_picture_updated_at on a successful fetch so we don't
+    retry every hour, even when the athlete has no custom photo.
+    """
+    athlete = fetch_strava_athlete(access_token, context=context)
+    if not isinstance(athlete, dict):
+        return False
+
+    profile_picture = athlete.get("profile_medium") or athlete.get("profile") or ""
+
+    sql = """
+    UPDATE users
+    SET profile_picture = :pic,
+        profile_picture_updated_at = now(),
+        updated_at = now()
+    WHERE athlete_id = :aid
+    """
+    params = [{"name": "aid", "value": {"longValue": athlete_id}}]
+    if profile_picture:
+        params.append({"name": "pic", "value": {"stringValue": profile_picture}})
+    else:
+        params.append({"name": "pic", "value": {"isNull": True}})
+
+    try:
+        _exec_sql(sql, params)
+        log(f"Refreshed profile picture for athlete {athlete_id}", "INFO")
+        return True
+    except Exception as e:
+        log(f"Failed to persist profile picture for athlete {athlete_id}: {e}", "WARNING")
+        return False
+
+
 def store_activity(athlete_id, activity):
     """Store or update activity in database"""
     strava_activity_id = activity.get("id")
@@ -378,7 +431,11 @@ def get_users_needing_poll():
     (so this works before migration 011 has run).
     """
     sql_with_filter = f"""
-    SELECT athlete_id, access_token, refresh_token, expires_at
+    SELECT athlete_id, access_token, refresh_token, expires_at,
+      (
+        profile_picture_updated_at IS NULL
+        OR profile_picture_updated_at < NOW() - INTERVAL '{PROFILE_PIC_REFRESH_SECONDS} seconds'
+      ) AS profile_pic_stale
     FROM users
     WHERE access_token IS NOT NULL
       AND refresh_token IS NOT NULL
@@ -388,8 +445,11 @@ def get_users_needing_poll():
       )
     ORDER BY athlete_id
     """
+    # Fallback for before migrations 011/015 have run. Marks pictures as
+    # not-stale so we never attempt a refresh against a missing column.
     sql_fallback = """
-    SELECT athlete_id, access_token, refresh_token, expires_at
+    SELECT athlete_id, access_token, refresh_token, expires_at,
+      false AS profile_pic_stale
     FROM users
     WHERE access_token IS NOT NULL
       AND refresh_token IS NOT NULL
@@ -398,7 +458,7 @@ def get_users_needing_poll():
     try:
         result = _exec_sql(sql_with_filter)
     except Exception as e:
-        log(f"last_webhook_received_at filter failed ({e}); falling back to all connected users", "WARNING")
+        log(f"user poll filter failed ({e}); falling back to all connected users", "WARNING")
         result = _exec_sql(sql_fallback)
 
     users = []
@@ -407,13 +467,15 @@ def get_users_needing_poll():
         access_token = record[1].get("stringValue", "")
         refresh_token = record[2].get("stringValue", "")
         expires_at = int(record[3].get("longValue", 0))
+        profile_pic_stale = bool(record[4].get("booleanValue", False))
 
         if athlete_id and access_token and refresh_token:
             users.append({
                 "athlete_id": athlete_id,
                 "access_token": access_token,
                 "refresh_token": refresh_token,
-                "expires_at": expires_at
+                "expires_at": expires_at,
+                "profile_pic_stale": profile_pic_stale
             })
 
     return users
@@ -459,6 +521,13 @@ def update_recent_activities_for_user(user, context=None):
                 failed_count += 1
 
         log(f"User {athlete_id}: Stored {stored_count}, Failed {failed_count} out of {len(activities)} activities", "INFO")
+
+        # Refresh the profile picture if it hasn't been updated recently. Strava
+        # versions its avatar URLs, so this repairs pictures that went stale
+        # after an athlete changed their photo. Throttled to at most once per
+        # PROFILE_PIC_REFRESH_SECONDS so the extra read request stays cheap.
+        if user.get("profile_pic_stale"):
+            refresh_profile_picture(athlete_id, access_token, context=context)
 
         return {
             "athlete_id": athlete_id,

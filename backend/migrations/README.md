@@ -37,3 +37,5 @@ psql -h DATABASE_HOST -U USERNAME -d postgres -f backend/migrations/001_create_o
 - `008_create_leaderboard_agg_table.sql` - Creates the `leaderboard_agg` table for aggregated leaderboard data
 - `009_add_user_timezone.sql` - Adds `timezone` column to `users` table for per-user timezone preference
 - `010_add_last_strava_fetch.sql` - Adds `last_strava_fetch` column to `users` table to track the last successful Strava fetch per athlete and enforce a per-user cooldown
+- `011_add_last_webhook_received.sql` - Adds `last_webhook_received_at` column to `users` table to track when webhooks last delivered activity updates
+- `015_add_profile_picture_updated_at.sql` - Adds `profile_picture_updated_at` column to `users` table to throttle per-user profile-picture refreshes (migrations 012-014 belong to the email-notifications feature and land separately)

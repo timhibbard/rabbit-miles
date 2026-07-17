@@ -402,6 +402,27 @@ export const recalculateLeaderboard = async () => {
   }
 };
 
+// Refresh all users' Strava profile pictures (admin only)
+export const refreshProfilePictures = async () => {
+  try {
+    debug.log('Calling POST /admin/refresh-pictures endpoint...');
+    const response = await api.post('/admin/refresh-pictures');
+    debug.log('POST /admin/refresh-pictures response received:', response.data);
+    return { success: true, data: response.data };
+  } catch (error) {
+    console.error('POST /admin/refresh-pictures endpoint error:', error.message);
+    if (error.response?.status === 401) {
+      debug.log('User not authenticated (401)');
+      return { success: false, notConnected: true };
+    }
+    if (error.response?.status === 403) {
+      debug.log('User not authorized for admin access (403)');
+      return { success: false, error: 'Access denied - admin privileges required' };
+    }
+    return { success: false, error: error.response?.data?.message || error.response?.data?.error || error.message };
+  }
+};
+
 // Fetch period summary with projections
 export const fetchPeriodSummary = async () => {
   try {
