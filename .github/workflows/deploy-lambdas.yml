@@ -91,6 +91,9 @@ jobs:
             secret: LAMBDA_ADMIN_RECALCULATE_LEADERBOARD
             needs_utils: true
             needs_timezone_utils: true
+          - name: admin_refresh_pictures
+            secret: LAMBDA_ADMIN_REFRESH_PICTURES
+            needs_utils: true
     steps:
       - name: Checkout code
         uses: actions/checkout@v4

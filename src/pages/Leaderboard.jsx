@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { fetchMe, fetchLeaderboard } from '../utils/api';
 import analytics from '../utils/analytics';
+import Avatar from '../components/Avatar';
 
 // Number of top athletes to display in current rankings
 const TOP_ATHLETES_COUNT = 15;
@@ -208,17 +209,11 @@ function Leaderboard() {
                     <div className="text-2xl sm:text-3xl">
                       {idx === 0 ? '🥇' : idx === 1 ? '🥈' : '🥉'}
                     </div>
-                    {entry.user.avatar_url ? (
-                      <img
-                        src={entry.user.avatar_url}
-                        alt={entry.user.display_name}
-                        className="w-8 h-8 sm:w-10 sm:h-10 rounded-full"
-                      />
-                    ) : (
-                      <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-gray-200 flex items-center justify-center">
-                        <span className="text-sm sm:text-base text-gray-500">👤</span>
-                      </div>
-                    )}
+                    <Avatar
+                      src={entry.user.avatar_url}
+                      alt={entry.user.display_name}
+                      className="w-8 h-8 sm:w-10 sm:h-10"
+                    />
                     <div className="text-left">
                       <p className="font-semibold text-gray-900 text-xs sm:text-sm">{entry.user.display_name}</p>
                       <p className="text-sm sm:text-base font-bold text-orange-600">{formatDistance(entry.value)} mi</p>
@@ -296,17 +291,11 @@ function Leaderboard() {
                             rel="noopener noreferrer"
                             className="flex items-center hover:opacity-80 transition-opacity"
                           >
-                            {entry.user.avatar_url ? (
-                              <img
-                                src={entry.user.avatar_url}
-                                alt={entry.user.display_name}
-                                className="w-8 h-8 sm:w-10 sm:h-10 rounded-full mr-2 sm:mr-3"
-                              />
-                            ) : (
-                              <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-gray-200 flex items-center justify-center mr-2 sm:mr-3">
-                                <span className="text-gray-500">👤</span>
-                              </div>
-                            )}
+                            <Avatar
+                              src={entry.user.avatar_url}
+                              alt={entry.user.display_name}
+                              className="w-8 h-8 sm:w-10 sm:h-10 mr-2 sm:mr-3"
+                            />
                             <div>
                               <div className="text-sm font-medium text-gray-900">
                                 {entry.user.display_name}
