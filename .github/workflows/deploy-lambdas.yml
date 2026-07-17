@@ -91,6 +91,13 @@ jobs:
             secret: LAMBDA_ADMIN_RECALCULATE_LEADERBOARD
             needs_utils: true
             needs_timezone_utils: true
+          - name: verify_email
+            secret: LAMBDA_VERIFY_EMAIL
+            needs_utils: true
+          - name: send_email_notification
+            secret: LAMBDA_SEND_EMAIL_NOTIFICATION
+          - name: handle_email_bounces
+            secret: LAMBDA_HANDLE_EMAIL_BOUNCES
     steps:
       - name: Checkout code
         uses: actions/checkout@v4

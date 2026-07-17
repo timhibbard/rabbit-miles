@@ -23,15 +23,23 @@ import leaderboard_agg
 
 rds = boto3.client("rds-data")
 s3 = boto3.client("s3")
+sqs = boto3.client("sqs")
 
 # Get environment variables
 DB_CLUSTER_ARN = os.environ.get("DB_CLUSTER_ARN", "")
 DB_SECRET_ARN = os.environ.get("DB_SECRET_ARN", "")
 DB_NAME = os.environ.get("DB_NAME", "postgres")
 TRAIL_DATA_BUCKET = os.environ.get("TRAIL_DATA_BUCKET", "rabbitmiles-trail-data")
+EMAIL_QUEUE_URL = os.environ.get("EMAIL_QUEUE_URL", "")
+FRONTEND_URL = os.environ.get("FRONTEND_URL", "https://rabbitmiles.com").rstrip("/")
 
 # Trail tolerance in meters (25m on each side = 50m buffer zone)
 TRAIL_TOLERANCE_METERS = 25
+
+# Maximum activity age (in minutes) to send notifications
+# Only send notifications for activities created within this window
+# This prevents notifications for backfills, historical imports, etc.
+MAX_ACTIVITY_AGE_MINUTES = 10
 
 
 def _exec_sql(sql, parameters=None):
@@ -430,6 +438,317 @@ def update_activity_trail_metrics(activity_id, distance_on_trail, time_on_trail)
     print(f"Updated activity {activity_id} with trail metrics")
 
 
+def get_current_rankings(athlete_id, start_date_local, user_timezone=None, activity_timezone=None):
+    """Get user's current rankings before leaderboard is recomputed.
+
+    Returns dict with keys like 'week_all', 'month_foot', 'year_bike' mapping to rank numbers.
+    Returns empty dict if window bounds can't be computed or user not found.
+
+    Optimized to use a single query with UNION ALL instead of 9 separate queries.
+    """
+    bounds = leaderboard_agg.get_window_bounds(start_date_local, user_timezone, activity_timezone)
+    if not bounds:
+        return {}
+
+    # Build list of window_keys for the query
+    window_keys = [window_key for _, (window_key, _, _) in bounds.items()]
+
+    # Single query to get all rankings at once
+    sql = """
+        WITH ranked AS (
+            SELECT
+                window_key,
+                activity_type,
+                athlete_id,
+                ROW_NUMBER() OVER (
+                    PARTITION BY window_key, activity_type
+                    ORDER BY value DESC
+                ) as rank
+            FROM leaderboard_agg
+            WHERE window_key IN (:wk0, :wk1, :wk2)
+              AND metric = :metric
+              AND value > 0
+        )
+        SELECT window_key, activity_type, rank
+        FROM ranked
+        WHERE athlete_id = :athlete_id
+    """
+
+    params = [
+        {"name": "wk0", "value": {"stringValue": window_keys[0] if len(window_keys) > 0 else ""}},
+        {"name": "wk1", "value": {"stringValue": window_keys[1] if len(window_keys) > 1 else ""}},
+        {"name": "wk2", "value": {"stringValue": window_keys[2] if len(window_keys) > 2 else ""}},
+        {"name": "metric", "value": {"stringValue": "distance"}},
+        {"name": "athlete_id", "value": {"longValue": int(athlete_id)}}
+    ]
+
+    try:
+        result = _exec_sql(sql, params)
+        records = result.get("records", [])
+
+        # Build window_key -> window_name mapping for fast lookup
+        window_key_to_name = {window_key: name for name, (window_key, _, _) in bounds.items()}
+
+        rankings = {}
+        for record in records:
+            if len(record) >= 3:
+                window_key = record[0].get("stringValue", "")
+                activity_type = record[1].get("stringValue", "")
+                rank = record[2].get("longValue")
+
+                window_name = window_key_to_name.get(window_key)
+                if window_name and rank:
+                    rankings[f"{window_name}_{activity_type}"] = rank
+
+        return rankings
+
+    except Exception as e:
+        print(f"WARNING: Failed to get rankings: {e}")
+        return {}
+
+
+def check_ranking_changes(athlete_id, old_rankings, start_date_local, user_timezone=None, activity_timezone=None):
+    """Compare old vs new rankings and return list of meaningful improvements.
+
+    Only returns changes that are worth notifying about:
+    - Entering top 10
+    - Multi-position improvement (jumped 2+ positions)
+    - Crossing milestone boundaries (e.g., 11→10, 26→25, 51→50, 101→100)
+
+    Returns list of dicts with keys: window, activity_type, old_rank, new_rank
+    """
+    # Get new rankings after leaderboard recompute
+    new_rankings = get_current_rankings(athlete_id, start_date_local, user_timezone, activity_timezone)
+
+    # Milestone thresholds that are worth celebrating
+    MILESTONES = [10, 25, 50, 100]
+
+    changes = []
+    for key, new_rank in new_rankings.items():
+        old_rank = old_rankings.get(key)
+
+        # Check if this is a meaningful improvement
+        is_meaningful = False
+
+        if old_rank is None and new_rank:
+            # Newly ranked - only notify if in top 10
+            is_meaningful = new_rank <= 10
+        elif old_rank and new_rank and new_rank < old_rank:
+            improvement = old_rank - new_rank
+
+            # Notify if:
+            # 1. Now in top 10, OR
+            # 2. Jumped 2+ positions, OR
+            # 3. Crossed a milestone boundary
+            if new_rank <= 10:
+                is_meaningful = True
+            elif improvement >= 2:
+                is_meaningful = True
+            else:
+                # Check if crossed a milestone (e.g., 11→10, 26→25)
+                for milestone in MILESTONES:
+                    if old_rank > milestone >= new_rank:
+                        is_meaningful = True
+                        break
+
+        if is_meaningful:
+            window, agg_type = key.rsplit("_", 1)
+            changes.append({
+                "window": window,
+                "activity_type": agg_type,
+                "old_rank": old_rank,
+                "new_rank": new_rank
+            })
+
+    return changes
+
+
+def queue_email_notification(notification_type, athlete_id, activity_id, metadata):
+    """Queue email notification for async processing via SQS.
+
+    Args:
+        notification_type: 'trail_milestone' or 'ranking_change'
+        athlete_id: User's athlete ID
+        activity_id: Activity database ID
+        metadata: Dict with notification-specific data
+    """
+    if not EMAIL_QUEUE_URL:
+        print("WARNING: EMAIL_QUEUE_URL not configured, skipping notification queue")
+        return False
+
+    try:
+        message = {
+            "notification_type": notification_type,
+            "athlete_id": athlete_id,
+            "activity_id": activity_id,
+            "metadata": metadata
+        }
+
+        sqs.send_message(
+            QueueUrl=EMAIL_QUEUE_URL,
+            MessageBody=json.dumps(message)
+        )
+
+        print(f"Queued {notification_type} notification for athlete {athlete_id}, activity {activity_id}")
+        return True
+
+    except Exception as e:
+        print(f"ERROR: Failed to queue notification: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
+def should_send_notifications(activity_id):
+    """Check if notifications should be sent for this activity.
+
+    Returns (should_send, activity_metadata) tuple.
+    Only send notifications if:
+    1. notifications_sent flag is false
+    2. Activity was created within MAX_ACTIVITY_AGE_MINUTES (fresh webhook event)
+    """
+    sql = """
+    SELECT notifications_sent, created_at, start_date_local, name
+    FROM activities
+    WHERE id = :activity_id
+    """
+    params = [{"name": "activity_id", "value": {"longValue": activity_id}}]
+
+    try:
+        result = _exec_sql(sql, params)
+        records = result.get("records", [])
+
+        if not records or not records[0]:
+            print(f"Activity {activity_id} not found when checking notification eligibility")
+            return False, None
+
+        record = records[0]
+        notifications_sent = record[0].get("booleanValue", False) if record[0] else False
+        created_at_str = record[1].get("stringValue", "") if record[1] else ""
+        start_date_local = record[2].get("stringValue", "") if record[2] else ""
+        activity_name = record[3].get("stringValue", "Activity") if record[3] else "Activity"
+
+        # Parse created_at timestamp
+        try:
+            created_at = datetime.fromisoformat(created_at_str.replace("Z", "+00:00"))
+            current_time = datetime.now(created_at.tzinfo) if created_at.tzinfo else datetime.utcnow()
+            activity_age_minutes = (current_time - created_at).total_seconds() / 60
+        except (ValueError, AttributeError) as e:
+            print(f"Failed to parse created_at timestamp: {e}")
+            return False, None
+
+        # Check if we should send notifications
+        should_send = (
+            not notifications_sent and
+            activity_age_minutes <= MAX_ACTIVITY_AGE_MINUTES
+        )
+
+        if not should_send:
+            print(f"Skipping notifications for activity {activity_id}: "
+                  f"notifications_sent={notifications_sent}, age={activity_age_minutes:.1f}min")
+            return False, None
+
+        metadata = {
+            "start_date_local": start_date_local,
+            "activity_name": activity_name
+        }
+
+        return True, metadata
+
+    except Exception as e:
+        print(f"ERROR: Failed to check notification eligibility for activity {activity_id}: {e}")
+        import traceback
+        traceback.print_exc()
+        return False, None
+
+
+def mark_notifications_sent(activity_id):
+    """Mark activity as having notifications sent to prevent duplicates."""
+    sql = """
+    UPDATE activities
+    SET notifications_sent = true, updated_at = now()
+    WHERE id = :activity_id
+    """
+    params = [{"name": "activity_id", "value": {"longValue": activity_id}}]
+
+    try:
+        _exec_sql(sql, params)
+        print(f"Marked activity {activity_id} as notifications_sent=true")
+    except Exception as e:
+        print(f"ERROR: Failed to mark notifications_sent for activity {activity_id}: {e}")
+
+
+def send_notifications_if_eligible(activity_id, athlete_id, distance_on_trail, start_date_local,
+                                   user_timezone=None, activity_timezone=None, ranking_changes=None):
+    """Send email notifications if activity is eligible.
+
+    Checks notifications_sent flag and activity age, then queues:
+    1. Trail milestone notification (if distance >= user's threshold)
+    2. Ranking change notifications (if rankings improved)
+    """
+    # Check if we should send notifications
+    should_send, activity_metadata = should_send_notifications(activity_id)
+    if not should_send:
+        return
+
+    activity_name = activity_metadata.get("activity_name", "Activity")
+    notifications_queued = 0
+
+    # Get user's notification preferences
+    sql = """
+    SELECT min_trail_distance_miles FROM users WHERE athlete_id = :athlete_id
+    """
+    params = [{"name": "athlete_id", "value": {"longValue": int(athlete_id)}}]
+
+    try:
+        result = _exec_sql(sql, params)
+        records = result.get("records", [])
+        min_trail_distance_miles = 3.0  # Default
+        if records and records[0] and records[0][0]:
+            min_trail_distance_miles = records[0][0].get("doubleValue", 3.0)
+    except Exception as e:
+        print(f"WARNING: Failed to get min_trail_distance_miles for athlete {athlete_id}, using default: {e}")
+        min_trail_distance_miles = 3.0
+
+    # Check trail milestone notification
+    trail_distance_miles = distance_on_trail / 1609.34  # meters to miles
+    if trail_distance_miles >= min_trail_distance_miles:
+        trail_metadata = {
+            "trail_distance_miles": round(trail_distance_miles, 1),
+            "trail_name": "the trail",  # TODO: Could look up actual trail name
+            "activity_name": activity_name,
+            "activity_url": f"{FRONTEND_URL}/dashboard"
+        }
+
+        if queue_email_notification('trail_milestone', athlete_id, activity_id, trail_metadata):
+            notifications_queued += 1
+
+    # Check ranking change notifications
+    if ranking_changes:
+        for change in ranking_changes:
+            ranking_metadata = {
+                "old_rank": change.get("old_rank"),
+                "new_rank": change.get("new_rank"),
+                "window": change.get("window"),
+                "activity_type": change.get("activity_type"),
+                "activity_name": activity_name,
+                "trail_distance_miles": round(trail_distance_miles, 1),
+                "leaderboard_url": f"{FRONTEND_URL}/leaderboard"
+            }
+
+            if queue_email_notification('ranking_change', athlete_id, activity_id, ranking_metadata):
+                notifications_queued += 1
+
+    # Always mark as sent after eligibility check to prevent re-evaluation on retries
+    # This flag means "we already checked this activity for notifications"
+    mark_notifications_sent(activity_id)
+
+    if notifications_queued > 0:
+        print(f"Queued {notifications_queued} notification(s) for activity {activity_id}")
+    else:
+        print(f"No notifications queued for activity {activity_id} (below thresholds or no rank changes)")
+
+
 def update_leaderboard_after_trail_matching(athlete_id, start_date_local,
                                              user_timezone=None, activity_timezone=None):
     """Recompute leaderboard_agg for the user's three windows from `activities`.
@@ -517,10 +836,28 @@ def match_activity(activity_id):
             # Update database
             update_activity_trail_metrics(activity_id, distance_on_trail, time_on_trail)
 
+            # Capture rankings BEFORE leaderboard recompute (for notification comparison)
+            old_rankings = {}
+            if start_date_local:
+                old_rankings = get_current_rankings(
+                    athlete_id, start_date_local, user_timezone, activity_timezone
+                )
+
             # Recompute leaderboard from activities table (set-based, race-safe)
             if start_date_local:
                 update_leaderboard_after_trail_matching(
                     athlete_id, start_date_local, user_timezone, activity_timezone
+                )
+
+                # Check for ranking changes and queue notifications if eligible
+                ranking_changes = check_ranking_changes(
+                    athlete_id, old_rankings, start_date_local, user_timezone, activity_timezone
+                )
+
+                # Send notifications if activity is eligible (fresh webhook event)
+                send_notifications_if_eligible(
+                    activity_id, athlete_id, distance_on_trail, start_date_local,
+                    user_timezone, activity_timezone, ranking_changes
                 )
 
             print(f"Activity {activity_id} matched: {distance_on_trail:.2f}m, {time_on_trail}s on trail")

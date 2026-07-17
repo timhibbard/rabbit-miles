@@ -9,7 +9,9 @@
 import os
 import sys
 import json
+import re
 from urllib.parse import urlparse
+from decimal import Decimal, InvalidOperation
 import boto3
 
 # Add parent directory to path to import admin_utils
@@ -62,6 +64,17 @@ def exec_sql(sql, parameters=None):
     if parameters:
         kwargs["parameters"] = parameters
     return rds.execute_statement(**kwargs)
+
+
+def validate_email(email):
+    """Validate email format"""
+    if not email or not isinstance(email, str):
+        return False
+    if len(email) > 255:
+        return False
+    # Simple email regex - matches most valid emails
+    pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+    return re.match(pattern, email) is not None
 
 
 def handler(event, context):
@@ -141,14 +154,20 @@ def handler(event, context):
         # Get settings from request
         show_on_leaderboards = body.get("show_on_leaderboards")
         timezone = body.get("timezone")
-        
+        email = body.get("email")
+        email_notifications_enabled = body.get("email_notifications_enabled")
+        send_trail_milestone = body.get("send_trail_milestone")
+        send_ranking_change = body.get("send_ranking_change")
+        min_trail_distance_miles = body.get("min_trail_distance_miles")
+
         # At least one field must be provided
-        if show_on_leaderboards is None and timezone is None:
+        if all(v is None for v in [show_on_leaderboards, timezone, email, email_notifications_enabled,
+                                     send_trail_milestone, send_ranking_change, min_trail_distance_miles]):
             print("ERROR - No fields to update")
             return {
                 "statusCode": 400,
                 "headers": cors_headers,
-                "body": json.dumps({"error": "at least one field required (show_on_leaderboards or timezone)"})
+                "body": json.dumps({"error": "at least one field required"})
             }
         
         # Build dynamic UPDATE query
@@ -180,6 +199,118 @@ def handler(event, context):
             set_clauses.append("timezone = :timezone")
             params.append({"name": "timezone", "value": {"stringValue": timezone}})
             print(f"LOG - Updating timezone to {timezone}")
+
+        # Validate and add email if provided
+        email_changed = False
+        if email is not None:
+            if not validate_email(email):
+                print(f"ERROR - Invalid email value: {email}")
+                return {
+                    "statusCode": 400,
+                    "headers": cors_headers,
+                    "body": json.dumps({"error": "email must be a valid email address (max 255 chars)"})
+                }
+            set_clauses.append("email = :email")
+            params.append({"name": "email", "value": {"stringValue": email}})
+            # When email changes, set email_verified to false
+            set_clauses.append("email_verified = false")
+            email_changed = True
+            print(f"LOG - Updating email to {email} (will require verification)")
+
+        # Validate and add email_notifications_enabled if provided
+        if email_notifications_enabled is not None:
+            if not isinstance(email_notifications_enabled, bool):
+                print(f"ERROR - Invalid email_notifications_enabled value: {email_notifications_enabled}")
+                return {
+                    "statusCode": 400,
+                    "headers": cors_headers,
+                    "body": json.dumps({"error": "email_notifications_enabled must be a boolean"})
+                }
+
+            # If enabling notifications, verify email is set and verified
+            # Always check (even if email is changing in same request) since new email isn't verified yet
+            if email_notifications_enabled:
+                # If email is changing in this request, it's definitely not verified yet
+                if email_changed:
+                    print("ERROR - Cannot enable notifications when changing email (new email must be verified first)")
+                    return {
+                        "statusCode": 400,
+                        "headers": cors_headers,
+                        "body": json.dumps({"error": "email must be verified before enabling notifications"})
+                    }
+
+                # Check existing email status
+                check_sql = "SELECT email, email_verified FROM users WHERE athlete_id = :athlete_id"
+                check_params = [{"name": "athlete_id", "value": {"longValue": athlete_id}}]
+                check_result = exec_sql(check_sql, check_params)
+                check_records = check_result.get("records", [])
+
+                if check_records and check_records[0]:
+                    user_email = check_records[0][0].get("stringValue") if check_records[0][0].get("isNull") is not True else None
+                    email_verified = check_records[0][1].get("booleanValue", False) if len(check_records[0]) > 1 else False
+
+                    if not user_email:
+                        print("ERROR - Cannot enable notifications without an email address")
+                        return {
+                            "statusCode": 400,
+                            "headers": cors_headers,
+                            "body": json.dumps({"error": "email required before enabling notifications"})
+                        }
+
+                    if not email_verified:
+                        print("ERROR - Cannot enable notifications with unverified email")
+                        return {
+                            "statusCode": 400,
+                            "headers": cors_headers,
+                            "body": json.dumps({"error": "email must be verified before enabling notifications"})
+                        }
+
+            set_clauses.append("email_notifications_enabled = :email_notifications_enabled")
+            params.append({"name": "email_notifications_enabled", "value": {"booleanValue": email_notifications_enabled}})
+            print(f"LOG - Updating email_notifications_enabled to {email_notifications_enabled}")
+
+        # Validate and add send_trail_milestone if provided
+        if send_trail_milestone is not None:
+            if not isinstance(send_trail_milestone, bool):
+                print(f"ERROR - Invalid send_trail_milestone value: {send_trail_milestone}")
+                return {
+                    "statusCode": 400,
+                    "headers": cors_headers,
+                    "body": json.dumps({"error": "send_trail_milestone must be a boolean"})
+                }
+            set_clauses.append("send_trail_milestone = :send_trail_milestone")
+            params.append({"name": "send_trail_milestone", "value": {"booleanValue": send_trail_milestone}})
+            print(f"LOG - Updating send_trail_milestone to {send_trail_milestone}")
+
+        # Validate and add send_ranking_change if provided
+        if send_ranking_change is not None:
+            if not isinstance(send_ranking_change, bool):
+                print(f"ERROR - Invalid send_ranking_change value: {send_ranking_change}")
+                return {
+                    "statusCode": 400,
+                    "headers": cors_headers,
+                    "body": json.dumps({"error": "send_ranking_change must be a boolean"})
+                }
+            set_clauses.append("send_ranking_change = :send_ranking_change")
+            params.append({"name": "send_ranking_change", "value": {"booleanValue": send_ranking_change}})
+            print(f"LOG - Updating send_ranking_change to {send_ranking_change}")
+
+        # Validate and add min_trail_distance_miles if provided
+        if min_trail_distance_miles is not None:
+            try:
+                distance = float(min_trail_distance_miles)
+                if distance < 0.1 or distance > 100.0:
+                    raise ValueError("out of range")
+            except (ValueError, TypeError):
+                print(f"ERROR - Invalid min_trail_distance_miles value: {min_trail_distance_miles}")
+                return {
+                    "statusCode": 400,
+                    "headers": cors_headers,
+                    "body": json.dumps({"error": "min_trail_distance_miles must be a number between 0.1 and 100.0"})
+                }
+            set_clauses.append("min_trail_distance_miles = :min_trail_distance_miles")
+            params.append({"name": "min_trail_distance_miles", "value": {"doubleValue": distance}})
+            print(f"LOG - Updating min_trail_distance_miles to {distance}")
         
         # Always update updated_at
         set_clauses.append("updated_at = now()")
@@ -192,7 +323,8 @@ def handler(event, context):
         UPDATE users
         SET {", ".join(set_clauses)}
         WHERE athlete_id = :athlete_id
-        RETURNING show_on_leaderboards, timezone
+        RETURNING show_on_leaderboards, timezone, email, email_verified, email_notifications_enabled,
+                  send_trail_milestone, send_ranking_change, min_trail_distance_miles
         """
         
         print(f"LOG - Updating settings for user {athlete_id}")
@@ -207,27 +339,32 @@ def handler(event, context):
                 "body": json.dumps({"error": "user not found"})
             }
         
-        # Get updated values
-        show_on_leaderboards_value = records[0][0].get("booleanValue", False)
-        timezone_value = None
-        if len(records[0]) > 1 and records[0][1]:
-            timezone_value = records[0][1].get("stringValue")
-        
+        # Parse updated values from records
+        record = records[0]
+        result_data = {
+            "success": True,
+            "show_on_leaderboards": record[0].get("booleanValue", False) if record[0] else False,
+            "timezone": record[1].get("stringValue") if len(record) > 1 and record[1] and not record[1].get("isNull") else None,
+            "email": record[2].get("stringValue") if len(record) > 2 and record[2] and not record[2].get("isNull") else None,
+            "email_verified": record[3].get("booleanValue", False) if len(record) > 3 and record[3] else False,
+            "email_notifications_enabled": record[4].get("booleanValue", False) if len(record) > 4 and record[4] else False,
+            "send_trail_milestone": record[5].get("booleanValue", True) if len(record) > 5 and record[5] else True,
+            "send_ranking_change": record[6].get("booleanValue", True) if len(record) > 6 and record[6] else True,
+            "min_trail_distance_miles": record[7].get("doubleValue", 3.0) if len(record) > 7 and record[7] else 3.0
+        }
+
         print(f"LOG - Successfully updated settings for user {athlete_id}")
-        print(f"LOG -   show_on_leaderboards: {show_on_leaderboards_value}")
-        print(f"LOG -   timezone: {timezone_value}")
+        for key, value in result_data.items():
+            if key != "success":
+                print(f"LOG -   {key}: {value}")
         print("=" * 80)
         print("UPDATE USER SETTINGS - SUCCESS")
         print("=" * 80)
-        
+
         return {
             "statusCode": 200,
             "headers": cors_headers,
-            "body": json.dumps({
-                "success": True,
-                "show_on_leaderboards": show_on_leaderboards_value,
-                "timezone": timezone_value
-            })
+            "body": json.dumps(result_data)
         }
         
     except Exception as e:
