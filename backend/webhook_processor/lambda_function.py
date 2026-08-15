@@ -334,7 +334,8 @@ def store_activity(athlete_id, activity):
     start_date = activity.get("start_date", "")
     start_date_local = activity.get("start_date_local", "")
     timezone = activity.get("timezone", "")
-    
+    athlete_count = activity.get("athlete_count", 1)  # Default to 1 for solo activities
+
     # Get polyline from map - prefer full polyline over summary_polyline
     polyline = ""
     if activity.get("map"):
@@ -345,10 +346,11 @@ def store_activity(athlete_id, activity):
     sql = """
     INSERT INTO activities (
         athlete_id, strava_activity_id, name, distance, moving_time, elapsed_time,
-        total_elevation_gain, type, start_date, start_date_local, timezone, polyline, updated_at
+        total_elevation_gain, type, start_date, start_date_local, timezone, polyline,
+        athlete_count, updated_at
     )
-    VALUES (:aid, :sid, :name, :dist, :mt, :et, :elev, :type, CAST(:sd AS TIMESTAMP), CAST(:sdl AS TIMESTAMP), :tz, :poly, now())
-    ON CONFLICT (athlete_id, strava_activity_id) 
+    VALUES (:aid, :sid, :name, :dist, :mt, :et, :elev, :type, CAST(:sd AS TIMESTAMP), CAST(:sdl AS TIMESTAMP), :tz, :poly, :ac, now())
+    ON CONFLICT (athlete_id, strava_activity_id)
     DO UPDATE SET
         name = EXCLUDED.name,
         distance = EXCLUDED.distance,
@@ -360,6 +362,7 @@ def store_activity(athlete_id, activity):
         start_date_local = EXCLUDED.start_date_local,
         timezone = EXCLUDED.timezone,
         polyline = EXCLUDED.polyline,
+        athlete_count = EXCLUDED.athlete_count,
         updated_at = now()
     RETURNING id
     """
@@ -377,8 +380,9 @@ def store_activity(athlete_id, activity):
         {"name": "sdl", "value": {"stringValue": start_date_local} if start_date_local else {"isNull": True}},
         {"name": "tz", "value": {"stringValue": timezone}},
         {"name": "poly", "value": {"stringValue": polyline} if polyline else {"isNull": True}},
+        {"name": "ac", "value": {"longValue": athlete_count}},
     ]
-    
+
     try:
         result = _exec_sql(sql, params)
         # Get the returned activity ID
