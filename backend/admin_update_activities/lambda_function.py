@@ -275,6 +275,10 @@ def store_activity(athlete_id, activity):
     # Note: time_on_trail and distance_on_trail are computed separately by trail matching logic
     # We initialize them as NULL and preserve existing values on update using COALESCE
     # This ensures computed trail metrics aren't accidentally overwritten during activity updates
+    # polyline is COALESCEd, not overwritten: this reads Strava's list endpoint,
+    # whose SummaryActivity carries only map.summary_polyline. Assigning it
+    # directly would downgrade a full polyline stored by webhook_processor from
+    # the detail endpoint. COALESCE still fills the column when it is empty.
     sql = """
     INSERT INTO activities (
         athlete_id, strava_activity_id, name, distance, moving_time, elapsed_time,
@@ -293,7 +297,7 @@ def store_activity(athlete_id, activity):
         start_date = EXCLUDED.start_date,
         start_date_local = EXCLUDED.start_date_local,
         timezone = EXCLUDED.timezone,
-        polyline = EXCLUDED.polyline,
+        polyline = COALESCE(activities.polyline, EXCLUDED.polyline),
         athlete_count = EXCLUDED.athlete_count,
         time_on_trail = COALESCE(activities.time_on_trail, EXCLUDED.time_on_trail),
         distance_on_trail = COALESCE(activities.distance_on_trail, EXCLUDED.distance_on_trail),

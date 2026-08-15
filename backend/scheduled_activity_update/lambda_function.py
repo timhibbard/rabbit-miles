@@ -1,7 +1,11 @@
 # scheduled_activity_update Lambda function
-# Runs every hour to update recent activities for all connected users
-# Updates activities from the last 24 hours from Strava API
-# 
+# Runs every hour. Two jobs, both served by a single Strava list request per user:
+#   1. Backstop for missed webhooks (users webhook-stale for >6h).
+#   2. Metadata refresh sweep over every connected user at least every 6h, which
+#      reconciles the fields Strava mutates after upload — athlete_count for
+#      group activities, plus renames and re-types.
+# Each poll looks back 7 days (UPDATE_WINDOW_SECONDS).
+#
 # Env vars required:
 # DB_CLUSTER_ARN, DB_SECRET_ARN, DB_NAME=postgres
 # STRAVA_CLIENT_ID, STRAVA_CLIENT_SECRET (or STRAVA_SECRET_ARN)
@@ -51,8 +55,13 @@ ACTIVITIES_START_DATE = 1767225600
 # Token refresh buffer - refresh tokens 5 minutes before expiry
 TOKEN_REFRESH_BUFFER_SECONDS = 300
 
-# Update activities from the last 24 hours
-UPDATE_WINDOW_SECONDS = 24 * 60 * 60
+# How far back each poll looks. Strava keeps mutating activities after upload:
+# athlete_count grows as the other participants upload their copy of a group
+# activity (minutes to days later), and athletes rename or re-type activities
+# well after the fact. A 24-hour window missed all of that, so the window is
+# sized to the realistic group-matching lag instead. Cost is unchanged — this is
+# still a single paginated list request per user regardless of window length.
+UPDATE_WINDOW_SECONDS = 7 * 24 * 60 * 60
 
 # Strava rate limit state (module-level, shared across calls within a single invocation)
 # Strava has two separate rate limits:
@@ -76,6 +85,18 @@ MAX_RETRY_WAIT_SECONDS = 120
 # Skip users whose data was already kept fresh by webhooks within this window.
 # The hourly job is only a backstop for missed webhooks.
 WEBHOOK_FRESHNESS_SECONDS = 6 * 60 * 60  # 6 hours
+
+# Regardless of webhook freshness, sweep every connected user at least this
+# often. Webhook freshness alone was not enough: a user whose webhooks are
+# flowing was never polled, so a *missed* webhook (subscription lapse, DLQ,
+# rate-limit deferral) left that activity stale forever. This sweep is the
+# catch-all. At a 6-hour cadence it costs 4 read requests per user per day,
+# which stays well inside Strava's 3,000/day read quota up to ~700 users.
+METADATA_REFRESH_SECONDS = 6 * 60 * 60  # 6 hours
+
+# Warn when a single list page comes back full: the window may hold more
+# activities than we fetched, so the tail went unrefreshed. Never silently cap.
+ACTIVITIES_PER_PAGE = 200
 
 # How many users to process per invocation. If more users remain, we self-invoke
 # the lambda to continue, so one Lambda execution never spans more than this many.
@@ -370,6 +391,15 @@ def store_activity(athlete_id, activity):
     # Note: time_on_trail and distance_on_trail are computed separately by trail matching logic
     # We initialize them as NULL and preserve existing values on update using COALESCE
     # This ensures computed trail metrics aren't accidentally overwritten during activity updates
+    #
+    # polyline is also COALESCEd rather than overwritten. This lambda reads the
+    # *list* endpoint, whose SummaryActivity only carries map.summary_polyline —
+    # so assigning EXCLUDED.polyline downgraded any full polyline that
+    # webhook_processor had stored from the detail endpoint. COALESCE still
+    # populates the column when it is empty, but never trades detail for
+    # summary. (Trade-off: if an athlete crops an existing route, the refreshed
+    # summary polyline is ignored here; the update webhook, which does read the
+    # detail endpoint, corrects it.)
     sql = """
     INSERT INTO activities (
         athlete_id, strava_activity_id, name, distance, moving_time, elapsed_time,
@@ -388,7 +418,7 @@ def store_activity(athlete_id, activity):
         start_date = EXCLUDED.start_date,
         start_date_local = EXCLUDED.start_date_local,
         timezone = EXCLUDED.timezone,
-        polyline = EXCLUDED.polyline,
+        polyline = COALESCE(activities.polyline, EXCLUDED.polyline),
         athlete_count = EXCLUDED.athlete_count,
         time_on_trail = COALESCE(activities.time_on_trail, EXCLUDED.time_on_trail),
         distance_on_trail = COALESCE(activities.distance_on_trail, EXCLUDED.distance_on_trail),
@@ -421,16 +451,51 @@ def store_activity(athlete_id, activity):
 
 
 def get_users_needing_poll():
-    """Get connected users that webhooks have not kept fresh recently.
+    """Get connected users due for a poll.
 
-    Skips users whose last_webhook_received_at is within WEBHOOK_FRESHNESS_SECONDS
-    so we only poll the backstop set, not every connected user. Users that have
-    never received a webhook are always included.
+    A user is due when EITHER:
+      - webhooks have not kept them fresh (last_webhook_received_at older than
+        WEBHOOK_FRESHNESS_SECONDS, or never), or
+      - their metadata refresh sweep is due (last_metadata_refresh_at older than
+        METADATA_REFRESH_SECONDS, or never).
 
-    Falls back to "all connected users" if the column does not yet exist
-    (so this works before migration 011 has run).
+    The second clause is what guarantees every connected user is eventually
+    swept. Webhook freshness alone excluded the most active users from all
+    polling, so a single missed webhook — or any of Strava's post-upload
+    mutations (renames, re-types, athlete_count growth) that fire no webhook at
+    all — never got reconciled.
+
+    Ordered oldest-refresh-first so that when there are more users than fit in
+    one invocation, the most stale users are served first rather than the
+    lowest athlete_ids being served every time.
+
+    Degrades in two steps if columns are missing, so deploying this Lambda
+    before migration 016 has run is safe rather than merely survivable:
+      1. Full query (needs 011/015/016).
+      2. Sweep clause dropped, webhook-freshness filter kept (needs 011/015).
+         Keeping the filter matters — dropping straight to "all connected users"
+         would poll everyone every hour and multiply Strava read usage by 6x.
+      3. All connected users (no migrations needed).
     """
     sql_with_filter = f"""
+    SELECT athlete_id, access_token, refresh_token, expires_at,
+      (
+        profile_picture_updated_at IS NULL
+        OR profile_picture_updated_at < NOW() - INTERVAL '{PROFILE_PIC_REFRESH_SECONDS} seconds'
+      ) AS profile_pic_stale
+    FROM users
+    WHERE access_token IS NOT NULL
+      AND refresh_token IS NOT NULL
+      AND (
+        last_webhook_received_at IS NULL
+        OR last_webhook_received_at < NOW() - INTERVAL '{WEBHOOK_FRESHNESS_SECONDS} seconds'
+        OR last_metadata_refresh_at IS NULL
+        OR last_metadata_refresh_at < NOW() - INTERVAL '{METADATA_REFRESH_SECONDS} seconds'
+      )
+    ORDER BY last_metadata_refresh_at ASC NULLS FIRST, athlete_id
+    """
+    # Fallback for before migration 016: same behaviour as before this change.
+    sql_no_sweep = f"""
     SELECT athlete_id, access_token, refresh_token, expires_at,
       (
         profile_picture_updated_at IS NULL
@@ -445,8 +510,8 @@ def get_users_needing_poll():
       )
     ORDER BY athlete_id
     """
-    # Fallback for before migrations 011/015 have run. Marks pictures as
-    # not-stale so we never attempt a refresh against a missing column.
+    # Last-resort fallback for before migrations 011/015 have run. Marks pictures
+    # as not-stale so we never attempt a refresh against a missing column.
     sql_fallback = """
     SELECT athlete_id, access_token, refresh_token, expires_at,
       false AS profile_pic_stale
@@ -458,8 +523,16 @@ def get_users_needing_poll():
     try:
         result = _exec_sql(sql_with_filter)
     except Exception as e:
-        log(f"user poll filter failed ({e}); falling back to all connected users", "WARNING")
-        result = _exec_sql(sql_fallback)
+        log(
+            f"refresh-sweep query failed ({e}); has migration 016 run? "
+            "falling back to webhook-freshness-only selection",
+            "WARNING",
+        )
+        try:
+            result = _exec_sql(sql_no_sweep)
+        except Exception as e2:
+            log(f"webhook-freshness query also failed ({e2}); falling back to all connected users", "WARNING")
+            result = _exec_sql(sql_fallback)
 
     users = []
     for record in result.get("records", []):
@@ -481,12 +554,27 @@ def get_users_needing_poll():
     return users
 
 
+def mark_metadata_refreshed(athlete_id):
+    """Stamp a successful refresh sweep so this user drops out of the due set.
+
+    Non-fatal: pre-migration-016 this column does not exist, in which case the
+    sweep clause in get_users_needing_poll() is inert anyway and behaviour falls
+    back to the previous webhook-freshness-only logic.
+    """
+    try:
+        _exec_sql(
+            "UPDATE users SET last_metadata_refresh_at = now() WHERE athlete_id = :aid",
+            [{"name": "aid", "value": {"longValue": athlete_id}}],
+        )
+    except Exception as e:
+        log(f"Failed to stamp last_metadata_refresh_at for {athlete_id}: {e}", "WARNING")
+
+
 def update_recent_activities_for_user(user, context=None):
     """Update recent activities for a single user.
 
-    The per-user `/athlete` profile call has been removed: it doubled the
-    rate-limit budget for no functional benefit (profile pics are not
-    time-sensitive). Re-add it as a separate, less-frequent job if needed.
+    Costs one Strava read request (the activities list), plus one more only when
+    the athlete's profile picture is stale enough to warrant a re-fetch.
     """
     athlete_id = user["athlete_id"]
     access_token = user["access_token"]
@@ -504,11 +592,25 @@ def update_recent_activities_for_user(user, context=None):
         after_timestamp = max(ACTIVITIES_START_DATE, current_time - UPDATE_WINDOW_SECONDS)
 
         # Fetch recent activities
-        activities = fetch_strava_activities(access_token, after_timestamp, context=context)
+        activities = fetch_strava_activities(
+            access_token, after_timestamp, context=context, per_page=ACTIVITIES_PER_PAGE
+        )
 
         if not isinstance(activities, list):
             log(f"Unexpected response from Strava API for user {athlete_id}: {type(activities)}", "ERROR")
             return {"athlete_id": athlete_id, "success": False, "error": "Invalid API response"}
+
+        # A full page means the window may hold activities we did not fetch, so
+        # the tail of the window went unrefreshed. Surface it rather than
+        # silently capping — 200 activities in the window is implausible today,
+        # but this is the line that tells us if that ever stops being true.
+        if len(activities) >= ACTIVITIES_PER_PAGE:
+            log(
+                f"User {athlete_id}: page full ({len(activities)} activities); "
+                f"activities beyond page 1 of the {UPDATE_WINDOW_SECONDS // 86400}-day "
+                "window were NOT refreshed",
+                "WARNING",
+            )
 
         # Store activities
         stored_count = 0
@@ -528,6 +630,10 @@ def update_recent_activities_for_user(user, context=None):
         # PROFILE_PIC_REFRESH_SECONDS so the extra read request stays cheap.
         if user.get("profile_pic_stale"):
             refresh_profile_picture(athlete_id, access_token, context=context)
+
+        # Only stamp on a clean pass. A failure leaves the user due so the next
+        # run retries instead of waiting out a full sweep interval.
+        mark_metadata_refreshed(athlete_id)
 
         return {
             "athlete_id": athlete_id,
@@ -575,9 +681,10 @@ def handler(event, context):
     """
     Lambda handler for scheduled activity updates.
 
-    Runs every hour as a backstop for missed webhooks. Two execution modes:
+    Runs every hour as a backstop for missed webhooks and as a metadata refresh
+    sweep. Two execution modes:
       1. Scheduled invoke (no `continue_athlete_ids` in event): pulls connected
-         users that webhooks have not kept fresh recently, processes the first
+         users that are due (webhook-stale or sweep-due), processes the first
          USERS_PER_INVOCATION, and self-invokes for the rest.
       2. Continuation invoke (`continue_athlete_ids` in event): processes only
          the supplied athlete IDs and self-invokes again if needed.
@@ -605,9 +712,9 @@ def handler(event, context):
             users = [u for u in all_users if u["athlete_id"] in id_set]
             log(f"Resolved {len(users)} of {len(continue_ids)} continuation IDs to active users", "INFO")
         else:
-            log("Fetching connected users that webhooks have not kept fresh...", "INFO")
+            log("Fetching connected users due for a poll or refresh sweep...", "INFO")
             users = get_users_needing_poll()
-            log(f"Found {len(users)} users to poll (webhook-stale or never-webhooked)", "INFO")
+            log(f"Found {len(users)} users to poll (webhook-stale or refresh-sweep due)", "INFO")
 
         if not users:
             end_time = datetime.utcnow()
