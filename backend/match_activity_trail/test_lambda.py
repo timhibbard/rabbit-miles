@@ -338,6 +338,44 @@ def test_no_match_updates_database():
     print("✓ All no-match database update tests passed")
 
 
+def test_on_trail_activity_not_rejected_by_sampling():
+    """Regression: an activity fully on a trail segment must not score 0.
+
+    An earlier sampled quick-rejection pass only looked at every Nth trail
+    segment, so an activity lying entirely on an unsampled segment was
+    rejected as off-trail. Adding segments to the trail data reshuffled which
+    segments were sampled and flipped hundreds of activities to 0.
+    """
+    print("\nTesting on-trail activity is not falsely rejected...")
+
+    lambda_dir = os.path.dirname(__file__)
+    if lambda_dir not in sys.path:
+        sys.path.insert(0, lambda_dir)
+    os.environ['TRAIL_DATA_BUCKET'] = 'test-bucket'
+
+    with patch('boto3.client'):
+        if 'lambda_function' in sys.modules:
+            del sys.modules['lambda_function']
+        import lambda_function
+
+        # 73 trail segments spread around the area; the activity runs along
+        # segment 1, which a "every len//20-th segment" sample would skip.
+        trail_segments = []
+        for k in range(73):
+            base_lat = 34.80 + k * 0.01
+            trail_segments.append([(base_lat, -82.40), (base_lat, -82.39)])
+
+        on_lat = trail_segments[1][0][0]
+        activity = [(on_lat, -82.40 + i * 0.0005) for i in range(21)]
+
+        distance, ratio = lambda_function.calculate_trail_intersection(
+            activity, trail_segments, lambda_function.TRAIL_TOLERANCE_METERS
+        )
+        assert distance > 0, f"Expected on-trail distance, got {distance}"
+        assert ratio > 0.99, f"Expected ~100% on trail, got {ratio:.2%}"
+        print(f"  ✓ {distance:.0f}m on trail ({ratio:.0%})")
+
+
 if __name__ == '__main__':
     print("Running match_activity_trail tests...\n")
     print("=" * 60)
@@ -349,6 +387,7 @@ if __name__ == '__main__':
         test_trail_tolerance()
         test_handler_activity_id_extraction()
         test_no_match_updates_database()
+        test_on_trail_activity_not_rejected_by_sampling()
         
         print("\n" + "=" * 60)
         print("✅ All tests passed!")
