@@ -256,48 +256,12 @@ def calculate_trail_intersection(activity_coords, trail_segments, tolerance_mete
         print(f"Quick rejection: Activity bounding box completely outside trail area")
         return 0.0, 0.0
     
-    # OPTIMIZATION 2: Sample-based quick check
-    # Check a sample of activity points to see if any are near the trail.
-    # Use a larger sample and a more forgiving tolerance to avoid false negatives.
-    sample_size = min(20, len(activity_coords))
-    sample_indices = [i * (len(activity_coords) - 1) // max(1, sample_size - 1) for i in range(sample_size)]
-    found_nearby = False
-    
-    for idx in sample_indices:
-        if idx >= len(activity_coords):
-            continue
-        lat, lon = activity_coords[idx]
-        
-        # Check against trail segments (sample more segments for better coverage)
-        for seg_idx in range(0, len(trail_segments), max(1, len(trail_segments) // 20)):
-            segment = trail_segments[seg_idx]
-            
-            # Check a sample of points in this segment
-            for j in range(0, len(segment) - 1, max(1, len(segment) // 10)):
-                trail_lat1, trail_lon1 = segment[j]
-                trail_lat2, trail_lon2 = segment[j + 1] if j + 1 < len(segment) else segment[j]
-                
-                distance_to_trail = point_to_segment_distance(
-                    lon, lat,
-                    trail_lon1, trail_lat1,
-                    trail_lon2, trail_lat2
-                )
-                
-                if distance_to_trail <= tolerance_meters * 5:  # Use 5x tolerance for sampling
-                    found_nearby = True
-                    break
-            
-            if found_nearby:
-                break
-        
-        if found_nearby:
-            break
-    
-    # If no sample points are even remotely near the trail, return 0
-    if not found_nearby:
-        print(f"Quick rejection: No sample points within 5x tolerance of trail")
-        return 0.0, 0.0
-    
+    # Note: there is intentionally no sampled "quick rejection" pass here. An
+    # earlier version sampled a subset of trail segments and rejected the
+    # whole activity if none of the samples were close, which scored many
+    # fully on-trail activities as 0 and flipped results whenever the trail
+    # data changed. The per-segment bounding box check below is fast enough.
+
     # Process activity segments to determine which portions are on the trail
     # Track which activity segments are on the trail
     on_trail_segments = []
