@@ -168,6 +168,6 @@ Monitor Lambda execution in:
 - Updates preserve existing trail matching data using COALESCE
 - Access tokens are automatically refreshed if within 5 minutes of expiry
 - The Lambda processes users sequentially (not in parallel) to avoid rate limits
-- Requires migration `016_add_last_metadata_refresh.sql`. Before it runs, `get_users_needing_poll()` falls back to selecting all connected users and the sweep clause is inert — the Lambda still works, it just behaves as it did before this change
+- Requires migration `016_add_last_metadata_refresh.sql`. Before it runs, `get_users_needing_poll()` logs `has migration 016 run?` and falls back to the previous webhook-freshness selection (users with no webhook in 6h, polled hourly). It does *not* poll everyone, which would multiply Strava read usage. Only if that query also fails (pre-011/015) does it select all connected users. The sweep doesn't start, and `last_metadata_refresh_at` isn't stamped, until the column exists.
 - A single page (200 activities) is the cap per user per run. If a user somehow exceeds that inside the window, a `WARNING` is logged naming the unrefreshed tail rather than silently truncating
 - Only reconciles the **last 7 days**. Repairing older rows is a one-time job — see `DEPLOYMENT_ACTIVITY_METADATA_REFRESH.md`
