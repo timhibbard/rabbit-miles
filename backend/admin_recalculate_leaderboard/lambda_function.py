@@ -100,34 +100,58 @@ DO UPDATE SET "window" = EXCLUDED."window", value = EXCLUDED.value, last_updated
 """
 
 # Delete in-season rows that are not in the rebuilt set: buckets for users who
-# opted out, or whose activities were deleted or lost their trail distance.
+# opted out, or whose activities were deleted, moved to another window, or lost
+# their trail distance.
 #
-# Membership is evaluated against the rebuilt set in this statement's own
-# snapshot rather than with a last_updated watermark. A concurrent per-match
-# recompute only writes a bucket after committing its activity change, so any
-# bucket row this statement can see has its activity visible too, and is
-# therefore in the rebuilt set and kept. A timestamp watermark could not
-# guarantee that (now() is transaction *start* time, so a slow concurrent
-# write could carry an older timestamp than the run start).
+# Concurrency with per-match recomputes (leaderboard_agg._recompute_one, the
+# only other writer, which always sets last_updated = now()):
+#   - Membership is an anti-join against the rebuilt set (computed once as a
+#     MATERIALIZED CTE; a correlated NOT EXISTS re-ran the aggregation per row
+#     and hit the statement timeout), not a last_updated
+#     watermark. now() is transaction *start* time, so a slow concurrent write
+#     could carry an older timestamp than the run start.
+#   - The candidate rows are captured with their last_updated (stale CTE), and a
+#     row is only deleted if last_updated is still unchanged. Under READ
+#     COMMITTED, when the DELETE meets a row a concurrent match has just
+#     updated, PostgreSQL rechecks the join against the *new* row version but
+#     evaluates the anti-join CTE against the original snapshot. Without
+#     the last_updated equality, a placeholder that match just made non-zero
+#     would still pass NOT EXISTS and be deleted. With it, the changed
+#     last_updated fails the recheck and the row is kept.
+#   - Rows inserted concurrently are not in the stale snapshot, so they are kept.
 #
 # Scoped to the windows the rebuild covers, so pre-season buckets (which the
 # per-match recompute maintains and the leaderboard can show as "previous
 # year") are left alone. Window keys are zero-padded ISO dates, so string
 # comparison orders them correctly.
-DELETE_STALE_SQL = f"""
-DELETE FROM leaderboard_agg l
- WHERE l.metric = 'distance'
-   AND (
+IN_SEASON_SCOPE = """(
         (l."window" = 'week'  AND l.window_key >= 'week_'  || to_char(date_trunc('week',  CAST(:start_date AS TIMESTAMP)), 'YYYY-MM-DD'))
      OR (l."window" = 'month' AND l.window_key >= 'month_' || to_char(date_trunc('month', CAST(:start_date AS TIMESTAMP)), 'YYYY-MM'))
      OR (l."window" = 'year'  AND l.window_key >= 'year_'  || to_char(date_trunc('year',  CAST(:start_date AS TIMESTAMP)), 'YYYY'))
-   )
-   AND NOT EXISTS (
-        SELECT 1 FROM ({REBUILD_SELECT}) AS r
-         WHERE r.win_key = l.window_key
-           AND r.agg_type = l.activity_type
-           AND r.athlete_id = l.athlete_id
-   )
+   )"""
+
+DELETE_STALE_SQL = f"""
+WITH rebuilt AS MATERIALIZED (
+{REBUILD_SELECT}
+),
+stale AS MATERIALIZED (
+    SELECT l.window_key, l.metric, l.activity_type, l.athlete_id, l.last_updated
+      FROM leaderboard_agg l
+      LEFT JOIN rebuilt r
+        ON r.win_key = l.window_key
+       AND r.agg_type = l.activity_type
+       AND r.athlete_id = l.athlete_id
+     WHERE r.athlete_id IS NULL
+       AND l.metric = 'distance'
+       AND {IN_SEASON_SCOPE}
+)
+DELETE FROM leaderboard_agg t
+ USING stale s
+ WHERE t.window_key = s.window_key
+   AND t.metric = s.metric
+   AND t.activity_type = s.activity_type
+   AND t.athlete_id = s.athlete_id
+   AND t.last_updated = s.last_updated
 """
 
 # Same activity boundary as REBUILD_SELECT (the Monday of the week containing

@@ -36,7 +36,7 @@ def _fake_db(fail_on=None):
             return "count"
         if s.startswith("INSERT INTO leaderboard_agg"):
             return "upsert"
-        if s.startswith("DELETE FROM leaderboard_agg"):
+        if s.startswith("DELETE FROM leaderboard_agg") or (s.startswith("WITH") and "DELETE FROM leaderboard_agg" in s):
             return "delete"
         return "other"
 
@@ -92,10 +92,15 @@ def test_delete_keeps_every_rebuilt_bucket():
     lf = _import_lambda()
     sql = " ".join(lf.DELETE_STALE_SQL.split())
     rebuild_select = " ".join(lf.REBUILD_SELECT.split())
-    assert "NOT EXISTS" in sql and rebuild_select in sql, "delete must exclude the rebuilt set"
-    assert "last_updated" not in sql, "delete must not rely on a last_updated watermark"
+    assert rebuild_select in sql and "r.athlete_id IS NULL" in sql, "delete must anti-join the rebuilt set"
+    assert "CAST(:run_started" not in sql and "last_updated <" not in sql, (
+        "delete must not rely on a last_updated watermark"
+    )
+    assert "t.last_updated = s.last_updated" in sql, (
+        "delete must skip rows changed since its snapshot (concurrent match writes)"
+    )
     assert rebuild_select in " ".join(lf.REBUILD_SQL.split()), "upsert and delete must share REBUILD_SELECT"
-    print("  ✓ delete excludes REBUILD_SELECT; no timestamp watermark")
+    print("  ✓ anti-join on REBUILD_SELECT; no watermark; skips rows changed since snapshot")
 
 
 def test_count_uses_rebuild_boundary():
