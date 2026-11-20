@@ -73,6 +73,30 @@ UPDATE_WINDOW_SECONDS = 7 * 24 * 60 * 60
 # This Lambda uses GET /athlete/activities which counts against the READ limit.
 _rate_limit_used = 0
 _rate_limit_limit = 300  # Strava read limit per 15-minute window
+# Which 15-minute window _rate_limit_used belongs to. Strava resets usage at
+# natural quarter-hours (:00, :15, :30, :45). The counters are module-level, so
+# on a warm container a continuation could otherwise inherit the previous
+# invocation's usage from an earlier, already-reset window.
+_rate_limit_window = None
+
+
+def _current_rate_limit_window():
+    return int(time.time() // (15 * 60))
+
+
+def _reset_rate_limit_if_new_window():
+    global _rate_limit_used, _rate_limit_window
+    window = _current_rate_limit_window()
+    if _rate_limit_window != window:
+        _rate_limit_used = 0
+        _rate_limit_window = window
+
+
+# The sweep may use at most this share of each 15-minute read window. The read
+# quota is shared with webhook_processor's detail fetches, and with
+# self-continuation the whole sweep would otherwise land in one burst. Past
+# this share the sweep defers the rest to the next scheduled run.
+SWEEP_RATE_LIMIT_SHARE = 0.5
 
 # Pause when this many requests remain in the current 15-minute window
 RATE_LIMIT_SAFETY_MARGIN = 5
@@ -218,7 +242,8 @@ def _update_rate_limit_from_headers(headers):
     Prefer read rate-limit headers when present to avoid exceeding the lower
     read quota.
     """
-    global _rate_limit_used, _rate_limit_limit
+    global _rate_limit_used, _rate_limit_limit, _rate_limit_window
+    _rate_limit_window = _current_rate_limit_window()
     usage = (
         headers.get("X-ReadRateLimit-Usage")
         or headers.get("x-readratelimit-usage")
@@ -266,6 +291,7 @@ def _wait_if_rate_limited(context=None):
     Lambda budget; the caller should abort and let the next run continue.
     """
     global _rate_limit_used
+    _reset_rate_limit_if_new_window()
     if _rate_limit_used >= _rate_limit_limit - RATE_LIMIT_SAFETY_MARGIN:
         now = time.time()
         seconds_into_window = now % (15 * 60)
@@ -654,7 +680,8 @@ def update_recent_activities_for_user(user, context=None):
         }
 
     except RateLimitExhaustedError:
-        # Bubble up so the handler can stop processing and self-continue.
+        # Bubble up so the handler stops processing and defers the rest to the
+        # next scheduled run (rate-limit stops never self-continue).
         raise
     except Exception as e:
         log(f"Processing user {athlete_id}: {e}", "ERROR")
@@ -754,6 +781,17 @@ def handler(event, context):
                 abort_reason = "time"
                 break
 
+            # Leave read quota for webhooks: stop the sweep at its share of the
+            # current window and defer like a rate-limit stop.
+            _reset_rate_limit_if_new_window()
+            if _rate_limit_used >= _rate_limit_limit * SWEEP_RATE_LIMIT_SHARE:
+                log(f"Sweep reached its share of the read window "
+                    f"({_rate_limit_used}/{_rate_limit_limit}); deferring the rest", "INFO")
+                idx = chunk.index(user)
+                remaining_ids = [u["athlete_id"] for u in chunk[idx:]] + remaining_ids
+                abort_reason = "rate_limit"
+                break
+
             try:
                 results.append(update_recent_activities_for_user(user, context=context))
             except RateLimitExhaustedError:
@@ -765,8 +803,9 @@ def handler(event, context):
 
             time.sleep(1)  # pace requests to avoid rate limit burst
 
+        continuation_failed = False
         if remaining_ids and abort_reason is None:
-            _self_continue(context, remaining_ids)
+            continuation_failed = not _self_continue(context, remaining_ids)
         elif remaining_ids and abort_reason == "time" and results:
             # Out of Lambda time, not Strava quota: a fresh invocation has its
             # full budget, so continue now. Deferring to the next hourly run
@@ -776,8 +815,15 @@ def handler(event, context):
             # user guarantees progress, so this can't self-invoke in a loop.
             log(f"Time budget exhausted after {len(results)} users; continuing with "
                 f"{len(remaining_ids)} remaining in a fresh invocation", "INFO")
-            _self_continue(context, remaining_ids)
-        elif remaining_ids:
+            continuation_failed = not _self_continue(context, remaining_ids)
+        if continuation_failed:
+            # Usually a missing lambda:InvokeFunction grant on this function's
+            # own ARN. Without it the sweep silently falls back to one batch per
+            # hourly run, so make it loud.
+            log(f"Self-continuation FAILED; {len(remaining_ids)} users deferred to the "
+                "next scheduled run. Check the execution role allows "
+                "lambda:InvokeFunction on this function.", "ERROR")
+        elif remaining_ids and abort_reason is not None:
             # Rate limit (or a time abort before any user was processed): an
             # immediate retry would hit the same wall, so let the next
             # scheduled run pick it up after the window resets.
@@ -808,6 +854,8 @@ def handler(event, context):
                 "message": "Scheduled activity update completed",
                 "users_processed": len(results),
                 "users_deferred": len(remaining_ids),
+                "stop_reason": abort_reason,
+                "continuation_failed": continuation_failed,
                 "successful_updates": successful,
                 "failed_updates": failed,
                 "total_activities_stored": total_stored,

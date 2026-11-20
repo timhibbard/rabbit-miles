@@ -44,11 +44,27 @@ early when less than `LAMBDA_TIME_REMAINING_SAFETY_MS` (90 s) of Lambda time
 remains. What happens to the rest depends on why it stopped:
 
 - **Batch full, or out of Lambda time:** self-invoke immediately with the
-  remaining athlete IDs. A fresh invocation has its full time budget. A
-  time-budget stop only continues if at least one user was processed, so it
-  can't loop.
-- **Strava rate limit:** defer to the next scheduled run, after the quota
-  window resets.
+  remaining athlete IDs. A fresh invocation has its full time budget.
+- **Deferred to the next scheduled run** instead in these cases:
+  - Strava rate limit reached (`RateLimitExhaustedError`)
+  - the sweep has used `SWEEP_RATE_LIMIT_SHARE` (50%) of the current 15-minute
+    read window, which leaves quota for webhook detail fetches
+  - a time-budget stop before any user was processed, so it can't self-invoke
+    in a loop
+  - self-invocation failed. This is logged at ERROR and returned as
+    `continuation_failed: true`.
+
+**Requirements and guards:**
+- **IAM:** the execution role needs `lambda:InvokeFunction` on the function's
+  own ARN. Without it every continuation fails and the sweep falls back to one
+  batch per hourly run.
+- **Recommended:** set reserved concurrency to 1
+  (`aws lambda put-function-concurrency --reserved-concurrent-executions 1`). A
+  continuation chain then can't overlap the next scheduled run or a manual
+  invoke and fetch the same users twice. Async self-invokes that arrive while
+  one is running are queued and retried, not lost.
+- The Strava usage counter is tied to its 15-minute window and resets when the
+  window changes, so a warm container doesn't inherit stale usage.
 
 With the 123 s timeout, about 33 s per invocation are usable, which is about
 18 users. Before continuation applied to time-budget stops, that capped each
