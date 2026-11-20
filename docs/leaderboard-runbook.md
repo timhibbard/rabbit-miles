@@ -216,7 +216,7 @@ SELECT COUNT(*) FROM leaderboard_agg;
 If the `leaderboard_agg` table is empty or has incorrect data, use the admin recalculation endpoint:
 
 ```bash
-# Recalculate all aggregates from activities since Jan 1, 2026
+# Rebuild in-season aggregates (windows from the week containing Jan 1, 2026)
 POST /admin/leaderboard/recalculate
 
 # Example using curl:
@@ -255,10 +255,9 @@ example from the CLI with no admin session), invoke the Lambda with
 `{"async_invocation": true}`.
 
 This endpoint:
-- Clears the `leaderboard_agg` table
-- Recalculates all aggregates from the `activities` table
+- Rebuilds in-season buckets from the `activities` table (upsert, then removes in-season rows the rebuild no longer produces). It does **not** clear the table, and pre-season buckets are kept.
 - Only includes activities from users with `show_on_leaderboards = true`
-- Processes activities from Jan 1, 2026 onwards
+- Covers windows starting on or after the week/month/year containing Jan 1, 2026. That includes Dec 29–31, 2025, which fall in the first week.
 - Admin-only access (requires session cookie and admin allowlist)
 
 ### Issue: Previous period top 3 not showing
