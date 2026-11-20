@@ -102,7 +102,7 @@ def test_stamp_only_on_clean_pass():
 
 
 def _run_handler(lf, n_users, remaining_ms_seq, rate_limit_at=None,
-                 continue_ok=True, reads_per_user=0):
+                 continue_ok=True, reads_per_user=0, selection_mode="sweep"):
     """Run the handler over n_users with a context whose remaining time follows
     remaining_ms_seq (one value per check). Returns (_self_continue mock,
     processed ids, response body)."""
@@ -115,7 +115,12 @@ def _run_handler(lf, n_users, remaining_ms_seq, rate_limit_at=None,
 
     lf._rate_limit_used = 0
     lf._rate_limit_limit = 300
-    lf._rate_limit_window = lf._current_rate_limit_window()
+    lf._rate_limit_window = 1000  # fixed window (see patch below), so a run
+                                  # crossing a real quarter-hour can't reset usage
+
+    def fake_poll():
+        lf._selection_mode = selection_mode
+        return users
 
     def fake_update(user, context=None):
         if rate_limit_at is not None and user["athlete_id"] == rate_limit_at:
@@ -125,9 +130,10 @@ def _run_handler(lf, n_users, remaining_ms_seq, rate_limit_at=None,
         return {"athlete_id": user["athlete_id"], "success": True, "stored": 0, "failed": 0}
 
     with patch.dict(os.environ, {"DB_CLUSTER_ARN": "arn:test", "DB_SECRET_ARN": "arn:test"}), \
-         patch.object(lf, "get_users_needing_poll", return_value=users), \
+         patch.object(lf, "get_users_needing_poll", side_effect=fake_poll), \
          patch.object(lf, "update_recent_activities_for_user", side_effect=fake_update), \
          patch.object(lf, "_self_continue", return_value=continue_ok) as cont, \
+         patch.object(lf, "_current_rate_limit_window", return_value=1000), \
          patch.object(lf.time, "sleep"):
         response = lf.handler({}, context)
     return cont, processed, json.loads(response["body"])
@@ -204,9 +210,25 @@ def test_stale_rate_limit_counter_resets_in_new_window():
     lf = _import_lambda()
     lf._rate_limit_used = 296
     lf._rate_limit_window = lf._current_rate_limit_window() - 1
-    lf._wait_if_rate_limited(context=None)  # must not sleep or raise
+    with patch.object(lf.time, "sleep") as sleep:  # a regression must fail, not hang
+        lf._wait_if_rate_limited(context=None)
+    sleep.assert_not_called()
     assert lf._rate_limit_used == 0, lf._rate_limit_used
     print("  ✓ usage from a previous window is discarded")
+
+
+def test_no_time_continuation_in_fallback_modes():
+    """Pre-migration-016 fallbacks don't stamp users, so a time stop there must
+    defer, not chain through every fallback user every hour."""
+    print("\nTesting no time-budget continuation in fallback selection modes...")
+    lf = _import_lambda()
+    for mode in ("webhook_freshness", "all_users"):
+        cont, processed, body = _run_handler(
+            lf, 10, [120_000] * 4 + [10_000] * 10, selection_mode=mode)
+        assert processed == [0, 1, 2, 3], (mode, processed)
+        cont.assert_not_called()
+        assert body["stop_reason"] == "time", body
+    print("  ✓ webhook_freshness / all_users: time stop defers")
 
 
 if __name__ == "__main__":
@@ -223,6 +245,7 @@ if __name__ == "__main__":
         test_sweep_stops_at_its_share_of_the_read_window()
         test_failed_continuation_is_reported()
         test_stale_rate_limit_counter_resets_in_new_window()
+        test_no_time_continuation_in_fallback_modes()
         print("\n" + "=" * 60)
         print("✅ All tests passed!")
         sys.exit(0)

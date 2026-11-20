@@ -47,10 +47,13 @@ remains. What happens to the rest depends on why it stopped:
   remaining athlete IDs. A fresh invocation has its full time budget.
 - **Deferred to the next scheduled run** instead in these cases:
   - Strava rate limit reached (`RateLimitExhaustedError`)
-  - the sweep has used `SWEEP_RATE_LIMIT_SHARE` (50%) of the current 15-minute
-    read window, which leaves quota for webhook detail fetches
+  - **app-wide** Strava read usage in the current 15-minute window has reached
+    `SWEEP_RATE_LIMIT_SHARE` (50%). Strava's headers count every read the app
+    makes, webhooks included, so the sweep yields to busy webhook traffic
   - a time-budget stop before any user was processed, so it can't self-invoke
     in a loop
+  - a time-budget stop while running a pre-migration-016 fallback selection.
+    Those don't stamp users, so chaining would poll every fallback user hourly
   - self-invocation failed. This is logged at ERROR and returned as
     `continuation_failed: true`.
 

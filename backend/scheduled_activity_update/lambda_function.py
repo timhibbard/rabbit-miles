@@ -66,7 +66,8 @@ TOKEN_REFRESH_BUFFER_SECONDS = 300
 # still a single paginated list request per user regardless of window length.
 UPDATE_WINDOW_SECONDS = 7 * 24 * 60 * 60
 
-# Strava rate limit state (module-level, shared across calls within a single invocation)
+# Strava rate limit state. Module-level, so it survives across invocations on a
+# warm container; _rate_limit_window ties it to the 15-minute window it came from.
 # Strava has two separate rate limits:
 #   - Read endpoints (GET): 300 requests per 15 minutes, 3,000 daily
 #   - Overall (all requests): 600 requests per 15 minutes, 6,000 daily
@@ -92,10 +93,12 @@ def _reset_rate_limit_if_new_window():
         _rate_limit_window = window
 
 
-# The sweep may use at most this share of each 15-minute read window. The read
-# quota is shared with webhook_processor's detail fetches, and with
-# self-continuation the whole sweep would otherwise land in one burst. Past
-# this share the sweep defers the rest to the next scheduled run.
+# The sweep stops once *app-wide* read usage in the current 15-minute window
+# reaches this share. Strava's usage headers count every read by the app
+# (including webhook_processor's detail fetches), so this makes the sweep yield
+# to busy webhook traffic; with self-continuation it would otherwise land in one
+# burst. Past this share the sweep defers the rest to the next scheduled run
+# (an hour later, which is fine against a 6-hour sweep cadence).
 SWEEP_RATE_LIMIT_SHARE = 0.5
 
 # Pause when this many requests remain in the current 15-minute window
@@ -243,7 +246,6 @@ def _update_rate_limit_from_headers(headers):
     read quota.
     """
     global _rate_limit_used, _rate_limit_limit, _rate_limit_window
-    _rate_limit_window = _current_rate_limit_window()
     usage = (
         headers.get("X-ReadRateLimit-Usage")
         or headers.get("x-readratelimit-usage")
@@ -259,6 +261,11 @@ def _update_rate_limit_from_headers(headers):
     if usage:
         try:
             _rate_limit_used = int(usage.split(",")[0])
+            # Only stamp the window when we actually read a usage value.
+            # (Stamped from the local clock at response time; a request sent in
+            # the last instant of a window can be filed under the next one, at
+            # worst deferring the sweep one run. Harmless.)
+            _rate_limit_window = _current_rate_limit_window()
         except (ValueError, IndexError):
             pass
     if limit:
@@ -485,6 +492,13 @@ def store_activity(athlete_id, activity):
         return False
 
 
+# Which selection get_users_needing_poll() last used: "sweep" (migration 016),
+# or a pre-migration fallback ("webhook_freshness" / "all_users"). Fallback
+# selections never stamp last_metadata_refresh_at, so their users stay due
+# every hour; time-budget continuation is only safe in "sweep" mode.
+_selection_mode = "sweep"
+
+
 def get_users_needing_poll():
     """Get connected users due for a poll.
 
@@ -548,6 +562,8 @@ def get_users_needing_poll():
       AND refresh_token IS NOT NULL
     ORDER BY athlete_id
     """
+    global _selection_mode
+    _selection_mode = "sweep"
     try:
         result = _exec_sql(sql_with_filter)
     except Exception as e:
@@ -558,9 +574,11 @@ def get_users_needing_poll():
         )
         try:
             result = _exec_sql(sql_no_sweep)
+            _selection_mode = "webhook_freshness"
         except Exception as e2:
             log(f"webhook-freshness query also failed ({e2}); falling back to all connected users", "WARNING")
             result = _exec_sql(sql_fallback)
+            _selection_mode = "all_users"
 
     users = []
     for record in result.get("records", []):
@@ -785,8 +803,9 @@ def handler(event, context):
             # current window and defer like a rate-limit stop.
             _reset_rate_limit_if_new_window()
             if _rate_limit_used >= _rate_limit_limit * SWEEP_RATE_LIMIT_SHARE:
-                log(f"Sweep reached its share of the read window "
-                    f"({_rate_limit_used}/{_rate_limit_limit}); deferring the rest", "INFO")
+                log(f"App-wide Strava read usage reached the sweep's share of the window "
+                    f"({_rate_limit_used}/{_rate_limit_limit}, including webhooks); "
+                    "deferring the rest", "INFO")
                 idx = chunk.index(user)
                 remaining_ids = [u["athlete_id"] for u in chunk[idx:]] + remaining_ids
                 abort_reason = "rate_limit"
@@ -806,13 +825,15 @@ def handler(event, context):
         continuation_failed = False
         if remaining_ids and abort_reason is None:
             continuation_failed = not _self_continue(context, remaining_ids)
-        elif remaining_ids and abort_reason == "time" and results:
+        elif remaining_ids and abort_reason == "time" and results and _selection_mode == "sweep":
             # Out of Lambda time, not Strava quota: a fresh invocation has its
             # full budget, so continue now. Deferring to the next hourly run
             # here capped each run at what fits in (timeout - safety margin),
             # about 18 users with the 123 s timeout, which is barely enough to
             # sweep 84 users every 6 hours. Requiring at least one processed
             # user guarantees progress, so this can't self-invoke in a loop.
+            # Only in "sweep" mode: the pre-migration fallbacks don't stamp
+            # users, so chaining there would poll every fallback user hourly.
             log(f"Time budget exhausted after {len(results)} users; continuing with "
                 f"{len(remaining_ids)} remaining in a fresh invocation", "INFO")
             continuation_failed = not _self_continue(context, remaining_ids)
@@ -820,11 +841,13 @@ def handler(event, context):
             # Usually a missing lambda:InvokeFunction grant on this function's
             # own ARN. Without it the sweep silently falls back to one batch per
             # hourly run, so make it loud.
-            log(f"Self-continuation FAILED; {len(remaining_ids)} users deferred to the "
-                "next scheduled run. Check the execution role allows "
-                "lambda:InvokeFunction on this function.", "ERROR")
+            log(f"Self-continuation FAILED (see the preceding warning for the cause); "
+                f"{len(remaining_ids)} users deferred to the next scheduled run. A common "
+                "cause is the execution role lacking lambda:InvokeFunction on this "
+                "function.", "ERROR")
         elif remaining_ids and abort_reason is not None:
-            # Rate limit (or a time abort before any user was processed): an
+            # Rate limit, sweep share reached, a time abort before any user was
+            # processed, or a time abort in a pre-migration fallback mode: an
             # immediate retry would hit the same wall, so let the next
             # scheduled run pick it up after the window resets.
             log(f"{len(remaining_ids)} users deferred to next scheduled run "
@@ -855,6 +878,7 @@ def handler(event, context):
                 "users_processed": len(results),
                 "users_deferred": len(remaining_ids),
                 "stop_reason": abort_reason,
+                "selection_mode": _selection_mode,
                 "continuation_failed": continuation_failed,
                 "successful_updates": successful,
                 "failed_updates": failed,
