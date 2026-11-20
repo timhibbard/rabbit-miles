@@ -19,10 +19,20 @@ below has a reason that came from that run.
 | `backend/match_unmatched_activities/` | `rabbitmiles-match-unmatched-activities` |
 | `backend/admin_recalculate_leaderboard/` | `rabbitmiles-admin-recalculate-leaderboard` |
 
-**Permissions.** You need `lambda:InvokeFunction` on those functions, plus
-`rds-data:ExecuteStatement` and `secretsmanager:GetSecretValue` for the DB
-cluster. Get `DB_CLUSTER_ARN`, `DB_SECRET_ARN` and `DB_NAME` from the
-environment variables of any of these Lambdas.
+**Permissions.** Check you have all of these **before step 4**. The earlier
+steps only read, so a missing permission discovered mid-run leaves you stuck
+with production half-changed.
+
+| Permission | Used for |
+|---|---|
+| `lambda:InvokeFunction` on the four functions above | Publishing, matching, rebuilding |
+| `lambda:GetFunctionConfiguration` | Reading `DB_CLUSTER_ARN`, `DB_SECRET_ARN`, `DB_NAME` from any of them |
+| `rds-data:ExecuteStatement`, `secretsmanager:GetSecretValue` | All SQL |
+| `events:ListRuleNamesByTarget`, `events:DisableRule`, `events:EnableRule` | Suspending and restoring scheduled batch matching (step 4, clean-up) |
+
+A quick check is a read-only call to each: `get-function-configuration`,
+`list-rule-names-by-target`, a `SELECT 1` through `rds-data`, and
+`lambda invoke --invocation-type DryRun` on each function.
 
 **Data API constraints** that shape the steps below:
 - Responses over **1 MB** fail. Page every read (`WHERE id > :last ORDER BY id LIMIT n`).
@@ -138,7 +148,7 @@ SELECT MAX(last_matched) FROM activities  -- unchanged for 10+ minutes
 when you stopped, set `last_matched = NOW()` on its rows. Their values haven't
 changed yet, and this keeps the scheduled matcher from picking them up while
 you're away. It does *not* cancel async work already queued, so wait for the
-quiet period above, then run steps 6 and 7 for what's done so far, and resume
+quiet period above, then run steps 6–8 for what's done so far, and resume
 after the last finished ID.
 
 ## 6. Keep only higher values
@@ -165,7 +175,23 @@ with the lower values by the matcher, so step 7 needs to cover them.
 **0** activities are now below baseline. If any are, a late match overwrote
 them. Restore again, wait for another quiet period, and re-check.
 
-## 7. Rebuild the leaderboard
+## 7. Recompute leaderboard buckets for restored activities
+
+Run this **before** the full rebuild. The matcher rewrote leaderboard buckets
+with the lower values before step 6 restored the activities. The rebuild in
+step 8 only covers in-season windows (from the week containing Jan 1, 2026),
+so restored **pre-season** activities (2025 and earlier) would keep wrong
+buckets.
+
+For each restored activity, recompute its buckets with
+`leaderboard_agg.recompute_for_activity(exec_sql, athlete_id, start_date_local,
+user_timezone, activity_timezone)` from `backend/leaderboard_agg.py`. This only
+re-sums from `activities`; it doesn't re-match, so restored values are safe.
+Deduplicate first by (athlete, window), since many restored activities share
+buckets. In November 2026, about 3,200 buckets took a few minutes with 12
+threads. Retry transient Data API errors.
+
+## 8. Rebuild the leaderboard
 
 ```bash
 aws lambda invoke --function-name rabbitmiles-admin-recalculate-leaderboard \
@@ -175,11 +201,15 @@ aws lambda invoke --function-name rabbitmiles-admin-recalculate-leaderboard \
 
 This is a set-based rebuild of all in-season buckets, taking about 8 s, and it
 never empties the table (see [`leaderboard-runbook.md`](leaderboard-runbook.md)).
-Run it after step 6 and while matching is quiet.
+Run it after step 7 and while matching is quiet.
 
-## 8. Verify
+## 9. Verify
 
 - No activity left unmatched: `SELECT COUNT(*) FROM activities WHERE last_matched IS NULL` returns 0.
+- Pre-season buckets match activities too: for windows before the season,
+  compare `leaderboard_agg` against `SUM(distance_on_trail)` grouped by
+  athlete and window key. The rebuild doesn't touch these, so step 7 is what
+  fixes them.
 - Leaderboard matches activities: compare `leaderboard_agg` against the
   rebuild's `REBUILD_SELECT` (in
   `backend/admin_recalculate_leaderboard/lambda_function.py`) for missing and
