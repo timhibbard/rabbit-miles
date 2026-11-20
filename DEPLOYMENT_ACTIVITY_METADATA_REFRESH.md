@@ -77,9 +77,10 @@ aws lambda invoke \
 
 In CloudWatch Logs for that function, look for:
 
-- `Found N users to poll (webhook-stale or refresh-sweep due)` — on the first run
-  after the migration, `N` should equal your **total** connected user count, since
-  no one has been swept yet. On later runs it settles to whoever is due.
+- `Found N users due for a refresh sweep`. On the first run after the migration,
+  `N` should equal your **total** connected user count, since no one has been
+  swept yet. After that each user comes due once every 6 hours, so expect about
+  `total / 6` per hourly run.
 - `Rate limit usage: X/300` — confirm this stays well under 300.
 - Absence of `page full (...) were NOT refreshed` warnings. If you see one, a user
   has more than 200 activities inside the 7-day window and the tail was skipped.
@@ -107,8 +108,9 @@ The sweep only reconciles the last 7 days. Activities older than that keep whate
 `athlete_count` they were first written with, so they need one backfill pass.
 
 **Use `admin_update_activities` (or the user-facing "Update activities" button), not
-`backfill_athlete_count`.** The admin/user paths read Strava's *list* endpoint — one
-request covers 200 activities. `backfill_athlete_count` reads the *detail* endpoint
+`backfill_athlete_count`.** Both paths read Strava's *list* endpoint, and both now
+paginate through the whole season: one request covers 200 activities, up to 10 pages
+(2,000 activities) per call. `backfill_athlete_count` reads the *detail* endpoint
 once per activity: 100 requests to fix 100 activities, which burns a third of the
 daily read quota per user and has no rate-limit handling. It remains in the repo for
 targeted single-activity investigation only.
@@ -129,10 +131,18 @@ That count is an upper bound, not a to-do list — most of those really are solo
 activities. Then trigger the repair per athlete via the admin endpoint, and re-run
 the query to see the count drop.
 
-Because `user_update_activities` now paginates, a user pressing "Update activities"
-repairs their whole season rather than only their most recent 200 activities. If a
-user has more than 2,000 activities in range it stops at the `MAX_PAGES` limit and
-says so in the response `message`, with `truncated: true` — press it again to continue.
+Because both endpoints now paginate, one call repairs an athlete's whole season
+rather than only their most recent 200 activities. If an athlete has more than 2,000
+activities in range, the call stops at the `MAX_PAGES` limit and returns
+`truncated: true` with an explanatory `message`. The Settings and Admin pages show
+this as a partial-update warning. Calling again does **not** continue from where it
+stopped: it re-reads the newest 2,000. No athlete is near that limit today (the
+season maximum is about 1,100), so there is no resume cursor. Add one if that changes.
+
+Paginating makes the admin endpoint slower for high-activity athletes (up to 10 list
+requests plus one DB write per activity). Before running the repair, check that
+`admin_update_activities` has at least the same Lambda timeout as
+`user_update_activities`.
 
 ---
 

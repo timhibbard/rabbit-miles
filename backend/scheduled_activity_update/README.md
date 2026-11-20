@@ -1,9 +1,11 @@
 # Scheduled Activity Update Lambda
 
-This Lambda runs every hour and serves two purposes with a single Strava request per user:
+This Lambda runs every hour and sweeps *every* connected user once every 6 hours, re-reading a 7-day window with a single Strava list request per user. That one sweep serves two purposes:
 
-1. **Webhook backstop** — picks up activities for users whose webhooks have not delivered in over 6 hours.
-2. **Metadata refresh sweep** — re-reads a 7-day window for *every* connected user at least once every 6 hours.
+1. **Webhook backstop** — anything a missed webhook dropped is picked up within one sweep interval (≤ 6 hours).
+2. **Metadata reconciliation** — refreshes fields Strava changes after upload.
+
+The hourly schedule only spreads users across runs and retries failures. No user is polled more than once per sweep interval.
 
 ## Purpose
 
@@ -16,7 +18,7 @@ Webhooks cover most of this, but a webhook that is missed (subscription lapse, D
 
 ## Functionality
 
-1. Selects connected users that are **due** — either webhook-stale (>6h) or sweep-due (`last_metadata_refresh_at` older than 6h, or never). Ordered oldest-sweep-first so a backlog drains fairly instead of always serving the lowest athlete IDs.
+1. Selects connected users that are **due**: `last_metadata_refresh_at` older than 6h, or never set. Webhook freshness is ignored. (Previously, "webhook-stale" users, meaning anyone who hadn't uploaded in 6h, were polled every hour, which was most users 24x/day.) Ordered oldest-sweep-first so a backlog drains fairly instead of always serving the lowest athlete IDs.
 2. For each user:
    - Refreshes the Strava access token if needed
    - Fetches activities from the last 7 days (one list request)
@@ -24,12 +26,14 @@ Webhooks cover most of this, but a webhook that is missed (subscription lapse, D
    - Preserves trail matching data (`time_on_trail`, `distance_on_trail`) via COALESCE
    - Preserves any full `polyline` already stored by `webhook_processor` — the list endpoint only returns `summary_polyline`, so assigning it directly would downgrade the stored route
    - Refreshes the profile picture if it is older than 7 days
-   - Stamps `last_metadata_refresh_at` on success only, so a failure is retried on the next run instead of waiting out a full sweep interval
+   - Stamps `last_metadata_refresh_at` only when every activity write succeeded, so a failure (including a single failed row) is retried on the next hourly run instead of waiting out a full sweep interval
 3. Returns a summary of updates performed
 
 ## Rate limit budget
 
-Strava allows 300 read requests per 15 minutes and 3,000 per day. The sweep costs **1 read request per user per 6 hours** — 4 per user per day — which stays inside the daily read quota up to roughly 700 connected users. Widening the lookback window from 24 hours to 7 days costs nothing extra: it is the same single list request either way.
+Strava allows 300 read requests per 15 minutes and 3,000 per day. The sweep costs **1 read request per user per 6 hours**, which is 4 per user per day. That's the whole scheduled cost, because no user is polled more often than that. It stays inside the daily read quota up to roughly 700 connected users, minus whatever webhook detail fetches use. Profile-picture refreshes add at most 1 read per user per 7 days, and a user whose writes are failing is retried hourly until a clean pass. Widening the lookback window from 24 hours to 7 days costs nothing extra: it is the same single list request either way.
+
+For comparison, the previous hourly backstop polled every webhook-stale user each hour. In Nov 2026 that was 57 of 84 users, about 1,370 reads/day.
 
 If you outgrow that, raise `METADATA_REFRESH_SECONDS` (sweep less often) rather than shrinking the window.
 

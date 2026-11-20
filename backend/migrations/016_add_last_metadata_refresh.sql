@@ -5,11 +5,10 @@
 -- missed webhook leaves the row permanently stale because the hourly poll only
 -- looks back 24 hours and skips webhook-fresh users entirely.
 --
--- This column lets scheduled_activity_update run a slower, unconditional
--- refresh sweep over *every* connected user (not just webhook-stale ones)
--- without re-polling the same user every hour. One list request per user per
--- sweep covers a multi-day window, so the added rate-limit cost is 4 read
--- requests per user per day at a 6-hour cadence.
+-- This column lets scheduled_activity_update sweep *every* connected user on a
+-- fixed 6-hour cadence, replacing the old rule that polled every webhook-stale
+-- user each hour. One list request per user per sweep covers a multi-day
+-- window, so the total scheduled cost is 4 read requests per user per day.
 
 ALTER TABLE users
 ADD COLUMN IF NOT EXISTS last_metadata_refresh_at TIMESTAMP;

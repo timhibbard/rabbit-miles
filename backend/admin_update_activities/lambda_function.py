@@ -46,6 +46,12 @@ ACTIVITIES_START_DATE = 1767225600
 # Token refresh buffer - refresh tokens 5 minutes before expiry
 TOKEN_REFRESH_BUFFER_SECONDS = 300
 
+# Pagination, matching user_update_activities: this is the admin's full-season
+# repair for one athlete, so it walks every page instead of stopping at the
+# first 200. MAX_PAGES bounds a single call at 2,000 activities.
+ACTIVITIES_PER_PAGE = 200
+MAX_PAGES = 10
+
 
 def get_cors_origin():
     """Extract origin (scheme + host) from FRONTEND_URL for CORS headers"""
@@ -329,42 +335,66 @@ def store_activity(athlete_id, activity):
         return False
 
 
-def update_user_activities(target_athlete_id, per_page=200):
-    """Update activities for a specific user"""
+def update_user_activities(target_athlete_id, per_page=ACTIVITIES_PER_PAGE):
+    """Update every activity in the season for a specific user (paginated)."""
     print(f"Updating activities for user {target_athlete_id}")
-    
+
     # Get user tokens - use TARGET user's tokens, not admin's
     access_token, refresh_token, expires_at = get_user_tokens(target_athlete_id)
-    
+
     if not access_token or not refresh_token:
         raise ValueError(f"User {target_athlete_id} not found or not connected to Strava")
-    
+
     # Ensure token is valid
     access_token = ensure_valid_token(target_athlete_id, access_token, refresh_token, expires_at)
-    
-    # Fetch activities from Strava - get first page only
-    activities = fetch_strava_activities(access_token, per_page=per_page, page=1)
-    
-    if not isinstance(activities, list):
-        raise RuntimeError(f"Unexpected response from Strava API: {type(activities)}")
-    
-    # Store activities in database
+
     stored_count = 0
     failed_count = 0
-    
-    for activity in activities:
-        if store_activity(target_athlete_id, activity):
-            stored_count += 1
-        else:
-            failed_count += 1
-    
-    return {
+    total_fetched = 0
+    truncated = False
+
+    for page in range(1, MAX_PAGES + 1):
+        activities = fetch_strava_activities(access_token, per_page=per_page, page=page)
+
+        if not isinstance(activities, list):
+            raise RuntimeError(f"Unexpected response from Strava API: {type(activities)}")
+
+        if not activities:
+            break
+
+        total_fetched += len(activities)
+
+        for activity in activities:
+            if store_activity(target_athlete_id, activity):
+                stored_count += 1
+            else:
+                failed_count += 1
+
+        # A short page is the last page.
+        if len(activities) < per_page:
+            break
+
+        if page == MAX_PAGES:
+            truncated = True
+            print(
+                f"WARNING: hit MAX_PAGES ({MAX_PAGES}) for athlete {target_athlete_id} after "
+                f"{total_fetched} activities; older activities were NOT updated"
+            )
+
+    result = {
         "message": "Activities updated successfully",
         "athlete_id": target_athlete_id,
-        "total_activities": len(activities),
+        "total_activities": total_fetched,
         "stored": stored_count,
-        "failed": failed_count
+        "failed": failed_count,
+        "truncated": truncated,
     }
+    if truncated:
+        result["message"] = (
+            f"Activities updated, but stopped at the {MAX_PAGES}-page limit "
+            f"({total_fetched} activities); older activities were not updated."
+        )
+    return result
 
 
 def handler(event, context):

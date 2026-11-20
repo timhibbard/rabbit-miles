@@ -215,8 +215,13 @@ function Admin() {
 
     const result = await updateUserActivities(selectedUser.athlete_id);
     if (result.success) {
-      const { stored, failed, total_activities } = result.data;
-      setSuccessMessage(`Successfully updated ${stored} activities for ${selectedUser.display_name} (${total_activities} fetched from Strava${failed > 0 ? `, ${failed} failed` : ''})`);
+      const { stored, failed, total_activities, truncated, message } = result.data;
+      const summary = `${stored} activities for ${selectedUser.display_name} (${total_activities} fetched from Strava${failed > 0 ? `, ${failed} failed` : ''})`;
+      if (truncated) {
+        setError(`Partially updated ${summary}. ${message}`);
+      } else {
+        setSuccessMessage(`Successfully updated ${summary}`);
+      }
       // Refresh activities list to show updated activities
       setActivitiesOffset(0);
       const activitiesResult = await fetchUserActivities(selectedUser.athlete_id, 50, 0);

@@ -450,7 +450,7 @@ def update_user_activities(athlete_id, per_page=ACTIVITIES_PER_PAGE):
     if truncated:
         result["message"] = (
             f"Activities updated, but stopped at the {MAX_PAGES}-page limit "
-            f"({total_fetched} activities). Run again to continue."
+            f"({total_fetched} activities); older activities were not updated."
         )
     return result
 

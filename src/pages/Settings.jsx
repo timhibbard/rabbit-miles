@@ -78,8 +78,13 @@ function Settings() {
     try {
       const result = await updateActivities();
       if (result.success) {
-        const { stored, failed, total_activities } = result.data;
-        alert(`Success! Updated ${stored} activities out of ${total_activities} fetched from Strava.${failed > 0 ? ` (${failed} failed)` : ''}`);
+        const { stored, failed, total_activities, truncated, message } = result.data;
+        const failedNote = failed > 0 ? ` (${failed} failed)` : '';
+        if (truncated) {
+          alert(`Partially updated: ${stored} of ${total_activities} activities fetched from Strava were updated${failedNote}. ${message}`);
+        } else {
+          alert(`Success! Updated ${stored} activities out of ${total_activities} fetched from Strava.${failedNote}`);
+        }
       } else {
         alert(`Failed to update activities: ${result.error || 'Unknown error'}`);
       }

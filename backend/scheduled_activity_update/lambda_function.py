@@ -1,10 +1,13 @@
 # scheduled_activity_update Lambda function
-# Runs every hour. Two jobs, both served by a single Strava list request per user:
-#   1. Backstop for missed webhooks (users webhook-stale for >6h).
-#   2. Metadata refresh sweep over every connected user at least every 6h, which
-#      reconciles the fields Strava mutates after upload — athlete_count for
+# Runs every hour. Sweeps every connected user once per METADATA_REFRESH_SECONDS
+# (6h) with a single Strava list request covering the last 7 days
+# (UPDATE_WINDOW_SECONDS). The sweep does two jobs at once:
+#   1. Backstop for missed webhooks: anything a webhook dropped is picked up
+#      within one sweep interval.
+#   2. Reconciles the fields Strava mutates after upload — athlete_count for
 #      group activities, plus renames and re-types.
-# Each poll looks back 7 days (UPDATE_WINDOW_SECONDS).
+# The hourly schedule only spreads users across runs and retries failures;
+# no user is polled more than once per sweep interval.
 #
 # Env vars required:
 # DB_CLUSTER_ARN, DB_SECRET_ARN, DB_NAME=postgres
@@ -82,16 +85,22 @@ MAX_RETRIES = 3
 # and let the next scheduled invocation pick up where we left off.
 MAX_RETRY_WAIT_SECONDS = 120
 
-# Skip users whose data was already kept fresh by webhooks within this window.
-# The hourly job is only a backstop for missed webhooks.
+# Only used by the pre-migration-016 fallback selection (see
+# get_users_needing_poll). Once 016 has run, webhook freshness no longer
+# affects who is polled.
 WEBHOOK_FRESHNESS_SECONDS = 6 * 60 * 60  # 6 hours
 
-# Regardless of webhook freshness, sweep every connected user at least this
-# often. Webhook freshness alone was not enough: a user whose webhooks are
-# flowing was never polled, so a *missed* webhook (subscription lapse, DLQ,
-# rate-limit deferral) left that activity stale forever. This sweep is the
-# catch-all. At a 6-hour cadence it costs 4 read requests per user per day,
-# which stays well inside Strava's 3,000/day read quota up to ~700 users.
+# Sweep every connected user exactly once per this interval, regardless of
+# webhook activity. This replaces the old "poll webhook-stale users every hour"
+# backstop: "webhook-stale" just meant "hasn't uploaded in 6h", which is most
+# users most of the time, so the old rule polled most users 24x/day. A missed
+# webhook (subscription lapse, DLQ, rate-limit deferral) is now picked up within
+# one interval instead.
+#
+# Read budget: 1 list request per user per interval = 4 per user per day at 6h.
+# Strava allows 3,000 reads/day, so this stays inside quota up to ~700 users
+# (less whatever webhook detail fetches consume). Profile-picture refreshes add
+# at most 1 more read per user per PROFILE_PIC_REFRESH_SECONDS.
 METADATA_REFRESH_SECONDS = 6 * 60 * 60  # 6 hours
 
 # Warn when a single list page comes back full: the window may hold more
@@ -453,17 +462,12 @@ def store_activity(athlete_id, activity):
 def get_users_needing_poll():
     """Get connected users due for a poll.
 
-    A user is due when EITHER:
-      - webhooks have not kept them fresh (last_webhook_received_at older than
-        WEBHOOK_FRESHNESS_SECONDS, or never), or
-      - their metadata refresh sweep is due (last_metadata_refresh_at older than
-        METADATA_REFRESH_SECONDS, or never).
-
-    The second clause is what guarantees every connected user is eventually
-    swept. Webhook freshness alone excluded the most active users from all
-    polling, so a single missed webhook — or any of Strava's post-upload
-    mutations (renames, re-types, athlete_count growth) that fire no webhook at
-    all — never got reconciled.
+    A user is due when their last successful sweep (last_metadata_refresh_at)
+    is older than METADATA_REFRESH_SECONDS, or they have never been swept.
+    Webhook freshness deliberately plays no part: it excluded the most active
+    users from all polling (so a missed webhook, or any of Strava's post-upload
+    mutations that fire no webhook, was never reconciled), and treating
+    "webhook-stale" users as due every hour polled most users 24x/day.
 
     Ordered oldest-refresh-first so that when there are more users than fit in
     one invocation, the most stale users are served first rather than the
@@ -471,8 +475,8 @@ def get_users_needing_poll():
 
     Degrades in two steps if columns are missing, so deploying this Lambda
     before migration 016 has run is safe rather than merely survivable:
-      1. Full query (needs 011/015/016).
-      2. Sweep clause dropped, webhook-freshness filter kept (needs 011/015).
+      1. Sweep-due query (needs 015/016).
+      2. Previous webhook-freshness selection (needs 011/015).
          Keeping the filter matters — dropping straight to "all connected users"
          would poll everyone every hour and multiply Strava read usage by 6x.
       3. All connected users (no migrations needed).
@@ -487,9 +491,7 @@ def get_users_needing_poll():
     WHERE access_token IS NOT NULL
       AND refresh_token IS NOT NULL
       AND (
-        last_webhook_received_at IS NULL
-        OR last_webhook_received_at < NOW() - INTERVAL '{WEBHOOK_FRESHNESS_SECONDS} seconds'
-        OR last_metadata_refresh_at IS NULL
+        last_metadata_refresh_at IS NULL
         OR last_metadata_refresh_at < NOW() - INTERVAL '{METADATA_REFRESH_SECONDS} seconds'
       )
     ORDER BY last_metadata_refresh_at ASC NULLS FIRST, athlete_id
@@ -631,9 +633,17 @@ def update_recent_activities_for_user(user, context=None):
         if user.get("profile_pic_stale"):
             refresh_profile_picture(athlete_id, access_token, context=context)
 
-        # Only stamp on a clean pass. A failure leaves the user due so the next
-        # run retries instead of waiting out a full sweep interval.
-        mark_metadata_refreshed(athlete_id)
+        # Only stamp on a clean pass. Any failed activity write (store_activity
+        # returns False rather than raising) leaves the user due, so the next
+        # hourly run retries instead of waiting out a full sweep interval.
+        if failed_count == 0:
+            mark_metadata_refreshed(athlete_id)
+        else:
+            log(
+                f"User {athlete_id}: {failed_count} activity writes failed; "
+                "not stamping last_metadata_refresh_at so the next run retries",
+                "WARNING",
+            )
 
         return {
             "athlete_id": athlete_id,
@@ -681,10 +691,10 @@ def handler(event, context):
     """
     Lambda handler for scheduled activity updates.
 
-    Runs every hour as a backstop for missed webhooks and as a metadata refresh
-    sweep. Two execution modes:
+    Runs every hour; each run polls the users whose 6-hour metadata refresh
+    sweep is due (which also backstops missed webhooks). Two execution modes:
       1. Scheduled invoke (no `continue_athlete_ids` in event): pulls connected
-         users that are due (webhook-stale or sweep-due), processes the first
+         users whose refresh sweep is due, processes the first
          USERS_PER_INVOCATION, and self-invokes for the rest.
       2. Continuation invoke (`continue_athlete_ids` in event): processes only
          the supplied athlete IDs and self-invokes again if needed.
@@ -714,7 +724,7 @@ def handler(event, context):
         else:
             log("Fetching connected users due for a poll or refresh sweep...", "INFO")
             users = get_users_needing_poll()
-            log(f"Found {len(users)} users to poll (webhook-stale or refresh-sweep due)", "INFO")
+            log(f"Found {len(users)} users due for a refresh sweep", "INFO")
 
         if not users:
             end_time = datetime.utcnow()
