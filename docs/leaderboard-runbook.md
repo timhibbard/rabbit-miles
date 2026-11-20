@@ -233,6 +233,19 @@ curl -X POST https://api.rabbitmiles.com/admin/leaderboard/recalculate \
 }
 ```
 
+**How the rebuild works (since #336):** it is set-based. One
+`INSERT ... SELECT ... GROUP BY ... ON CONFLICT DO UPDATE` upserts every bucket
+for windows starting on or after the week/month/year containing Jan 1, 2026.
+A second statement then deletes in-season rows that weren't touched, using
+`last_updated` older than the run start. Nothing is read back into the Lambda,
+so there's no Data API 1 MB limit. The table is never empty mid-run: if the
+upsert fails, nothing changes. Pre-season buckets, which the per-match recompute
+maintains, are left alone.
+
+The endpoint returns 202 and runs asynchronously. To run it directly (for
+example from the CLI with no admin session), invoke the Lambda with
+`{"async_invocation": true}`.
+
 This endpoint:
 - Clears the `leaderboard_agg` table
 - Recalculates all aggregates from the `activities` table

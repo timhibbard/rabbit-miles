@@ -10,12 +10,10 @@
 import os
 import json
 import time
-from datetime import datetime, timedelta
 from urllib.parse import urlparse
 import boto3
 
 import admin_utils
-import timezone_utils
 
 rds = boto3.client("rds-data")
 lambda_client = boto3.client("lambda")
@@ -56,302 +54,144 @@ def exec_sql(sql, parameters=None):
     return rds.execute_statement(**kwargs)
 
 
-def get_window_keys(activity_start_date_local, user_timezone=None, activity_timezone=None):
-    """
-    Calculate window keys (week, month, year) for an activity based on its start date.
-    
-    Uses the user's timezone preference with fallback to US Eastern.
-    This ensures that week/month/year boundaries are calculated correctly
-    for each user's local timezone.
-    
-    Args:
-        activity_start_date_local: ISO 8601 timestamp string (e.g., "2026-02-15T10:30:00Z")
-        user_timezone: User's stored timezone preference (from users.timezone)
-        activity_timezone: Activity's timezone (from activities.timezone)
-    
-    Returns:
-        Dict with 'week', 'month', 'year' keys containing window_key strings
-    """
-    try:
-        # Parse ISO 8601 timestamp
-        dt_str = activity_start_date_local.replace('Z', '+00:00')
-        if '+' not in dt_str and dt_str.count(':') == 2:
-            # No timezone info, assume UTC
-            dt = datetime.fromisoformat(dt_str)
-        else:
-            dt = datetime.fromisoformat(dt_str)
-        
-        # Get user timezone (with fallback to US Eastern)
-        tz = timezone_utils.get_user_timezone(user_timezone, activity_timezone)
-        
-        # If dt is timezone-aware, convert to user's timezone
-        # If dt is naive, assume it's already in local time
-        if dt.tzinfo is not None:
-            dt = dt.astimezone(tz).replace(tzinfo=None)
-        
-        # Week: ISO week format, Monday is start of week
-        # Window key format: week_YYYY-MM-DD (Monday of the week)
-        days_since_monday = dt.weekday()  # Monday is 0
-        monday = dt.replace(hour=0, minute=0, second=0, microsecond=0)
-        if days_since_monday > 0:
-            monday = monday - timedelta(days=days_since_monday)
-        week_key = f"week_{monday.strftime('%Y-%m-%d')}"
-        
-        # Month: YYYY-MM
-        month_key = f"month_{dt.strftime('%Y-%m')}"
-        
-        # Year: YYYY
-        year_key = f"year_{dt.strftime('%Y')}"
-        
-        return {
-            'week': week_key,
-            'month': month_key,
-            'year': year_key
-        }
-    except Exception as e:
-        print(f"ERROR: Failed to parse activity date {activity_start_date_local}: {e}")
-        return None
+# Rebuilds every leaderboard_agg bucket in one set-based statement. Window keys
+# must match leaderboard_agg.get_window_bounds: start_date_local
+# is a naive local timestamp, so week = Monday of that date, month = YYYY-MM,
+# year = YYYY. Buckets: 'all' for every activity, plus 'foot' (Run, Walk) or
+# 'bike' (Ride), mirroring leaderboard_agg.TYPE_FILTER_SQL.
+#
+# RECALC_START_DATE is applied per window, not per activity: a window is rebuilt
+# when it *starts* on or after the window containing RECALC_START_DATE. Without
+# that, the week of 2025-12-29 (which runs into 2026) lost its Dec 29-31
+# activities here while the per-activity recompute after each match counted
+# them, so the two paths disagreed on that week.
+REBUILD_SQL = """
+INSERT INTO leaderboard_agg ("window", window_key, metric, activity_type, athlete_id, value, last_updated)
+SELECT w.win, w.win_key, 'distance', t.agg_type, a.athlete_id,
+       SUM(a.distance_on_trail), now()
+  FROM activities a
+  JOIN users u ON u.athlete_id = a.athlete_id
+ CROSS JOIN LATERAL (VALUES
+        ('week',  'week_'  || to_char(date_trunc('week', a.start_date_local), 'YYYY-MM-DD'),
+                  date_trunc('week', a.start_date_local), date_trunc('week', CAST(:start_date AS TIMESTAMP))),
+        ('month', 'month_' || to_char(a.start_date_local, 'YYYY-MM'),
+                  date_trunc('month', a.start_date_local), date_trunc('month', CAST(:start_date AS TIMESTAMP))),
+        ('year',  'year_'  || to_char(a.start_date_local, 'YYYY'),
+                  date_trunc('year', a.start_date_local), date_trunc('year', CAST(:start_date AS TIMESTAMP)))
+       ) AS w(win, win_key, win_start, first_win_start)
+ CROSS JOIN LATERAL (VALUES
+        ('all'),
+        (CASE WHEN a.type IN ('Run', 'Walk') THEN 'foot'
+              WHEN a.type = 'Ride' THEN 'bike' END)
+       ) AS t(agg_type)
+ WHERE u.show_on_leaderboards = true
+   AND a.start_date_local >= date_trunc('week', CAST(:start_date AS TIMESTAMP))
+   AND w.win_start >= w.first_win_start
+   AND a.distance_on_trail IS NOT NULL
+   AND t.agg_type IS NOT NULL
+ GROUP BY w.win, w.win_key, t.agg_type, a.athlete_id
+ON CONFLICT (window_key, metric, activity_type, athlete_id)
+DO UPDATE SET "window" = EXCLUDED."window", value = EXCLUDED.value, last_updated = now()
+"""
+
+# In-scope rows the rebuild did not touch: buckets for users who opted out, or
+# whose activities were deleted or lost their trail distance. Scoped to the
+# windows the rebuild covers, so pre-season buckets (which the per-match
+# recompute maintains and the leaderboard can show as "previous year") are left
+# alone. Rows written by a concurrent match recompute carry a newer
+# last_updated and survive. Window keys are zero-padded ISO dates, so string
+# comparison orders them correctly.
+DELETE_STALE_SQL = """
+DELETE FROM leaderboard_agg
+ WHERE last_updated < CAST(:run_started AS TIMESTAMPTZ)
+   AND (
+        ("window" = 'week'  AND window_key >= 'week_'  || to_char(date_trunc('week',  CAST(:start_date AS TIMESTAMP)), 'YYYY-MM-DD'))
+     OR ("window" = 'month' AND window_key >= 'month_' || to_char(date_trunc('month', CAST(:start_date AS TIMESTAMP)), 'YYYY-MM'))
+     OR ("window" = 'year'  AND window_key >= 'year_'  || to_char(date_trunc('year',  CAST(:start_date AS TIMESTAMP)), 'YYYY'))
+   )
+"""
+
+COUNT_SQL = """
+SELECT COUNT(*), COUNT(DISTINCT a.athlete_id)
+  FROM activities a
+  JOIN users u ON u.athlete_id = a.athlete_id
+ WHERE u.show_on_leaderboards = true
+   AND a.start_date_local >= CAST(:start_date AS TIMESTAMP)
+   AND a.distance_on_trail IS NOT NULL
+"""
 
 
 def recalculate_leaderboard():
     """
-    Recalculate leaderboard_agg table from all activities since Jan 1, 2026.
-    
-    This function:
-    1. Verifies leaderboard_agg table exists
-    2. Clears existing leaderboard_agg data
-    3. Queries all activities from users who have opted in
-    4. Recalculates aggregates for week, month, and year windows
-    
+    Rebuild leaderboard_agg from activities since RECALC_START_DATE.
+
+    Set-based and never reads activities into the Lambda, so the Data API's
+    1 MB result limit no longer applies (the previous version SELECTed every
+    activity and failed once that passed 1 MB). Runs as two atomic statements
+    with no transaction (Lambda roles only grant rds-data:ExecuteStatement):
+
+      1. Upsert every rebuilt bucket (sets last_updated = now()).
+      2. Delete in-season rows last updated before this run started, i.e.
+         buckets the rebuild no longer produces. Pre-season buckets are kept.
+
+    The table is never empty in between. The previous version DELETEd
+    everything first and then failed on the 1 MB query, leaving the leaderboard
+    empty. If step 1 fails, nothing changes; if step 2 fails, the only effect
+    is that a few stale rows remain until the next run.
+
     Returns:
-        Tuple of (activities_processed, athletes_processed, error_message)
+        Tuple of (activities_processed, athletes_processed, error_message,
+        activities_skipped, insert_failed, athletes_with_errors). The last three
+        are always 0/0/[]: each statement applies completely or not at all.
     """
-    print(f"=== recalculate_leaderboard START ===")
+    print("=== recalculate_leaderboard START ===")
     print(f"LOG - Recalculating leaderboard aggregates from {RECALC_START_DATE}")
-    
+
+    params = [{"name": "start_date", "value": {"stringValue": RECALC_START_DATE}}]
+
     try:
         # Step 0: Verify that leaderboard_agg table exists
-        print("LOG - Checking if leaderboard_agg table exists")
         check_table_sql = """
         SELECT EXISTS (
-            SELECT FROM information_schema.tables 
-            WHERE table_schema = 'public' 
+            SELECT FROM information_schema.tables
+            WHERE table_schema = 'public'
             AND table_name = 'leaderboard_agg'
-        );
+        )
         """
-        result = exec_sql(check_table_sql)
-        records = result.get("records", [])
-        
-        # Safely extract the boolean value
-        table_exists = False
-        if records and len(records) > 0 and len(records[0]) > 0:
-            table_exists = records[0][0].get("booleanValue", False)
-        
+        records = exec_sql(check_table_sql).get("records", [])
+        table_exists = bool(records and records[0] and records[0][0].get("booleanValue", False))
         if not table_exists:
             error_msg = (
                 "The leaderboard_agg table does not exist. "
                 "Please run the database migration: backend/migrations/008_create_leaderboard_agg_table.sql"
             )
             print(f"ERROR: {error_msg}")
-            return 0, 0, error_msg
-        
-        print("LOG - leaderboard_agg table exists")
-        
-        # Step 1: Clear existing leaderboard_agg data
-        print("LOG - Clearing existing leaderboard_agg table")
-        clear_sql = "DELETE FROM leaderboard_agg"
-        exec_sql(clear_sql)
-        print("LOG - Cleared leaderboard_agg table")
-        
-        # Step 2: Query all activities since Jan 1, 2026 for opted-in users
-        print("LOG - Querying activities for opted-in users")
-        activities_sql = """
-        SELECT 
-            a.athlete_id,
-            a.strava_activity_id,
-            a.distance_on_trail as distance,
-            a.start_date_local,
-            a.type,
-            a.timezone as activity_timezone,
-            u.timezone as user_timezone
-        FROM activities a
-        JOIN users u ON a.athlete_id = u.athlete_id
-        WHERE u.show_on_leaderboards = true
-          AND a.start_date_local >= CAST(:start_date AS TIMESTAMP)
-          AND a.distance_on_trail IS NOT NULL
-        ORDER BY a.athlete_id, a.start_date_local
-        """
-        
-        # Define column indices for clarity and maintainability
-        COL_ATHLETE_ID = 0
-        COL_STRAVA_ACTIVITY_ID = 1
-        COL_DISTANCE = 2
-        COL_START_DATE_LOCAL = 3
-        COL_TYPE = 4
-        COL_ACTIVITY_TIMEZONE = 5
-        COL_USER_TIMEZONE = 6
-        
-        params = [
-            {"name": "start_date", "value": {"stringValue": RECALC_START_DATE}}
-        ]
-        
-        result = exec_sql(activities_sql, params)
-        records = result.get("records", [])
-        
-        print(f"LOG - Found {len(records)} activities to process")
-        
-        if len(records) == 0:
-            print("LOG - No activities found, nothing to recalculate")
-            return 0, 0, None
-        
-        # Step 3: Process activities and build aggregates
-        # Use a dict to accumulate values before inserting
-        # Key: (window_key, metric, activity_type, athlete_id) -> value
-        aggregates = {}
-        
-        activities_processed = 0
-        activities_skipped = 0
-        athletes_seen = set()
-        athletes_with_errors = set()
-        
-        for record in records:
-            try:
-                athlete_id = int(record[COL_ATHLETE_ID].get("longValue", 0))
-                strava_activity_id = int(record[COL_STRAVA_ACTIVITY_ID].get("longValue", 0))
-                
-                # Distance can be NUMERIC which comes back as stringValue
-                distance_field = record[COL_DISTANCE]
-                if "doubleValue" in distance_field:
-                    distance = float(distance_field["doubleValue"])
-                elif "stringValue" in distance_field:
-                    distance = float(distance_field["stringValue"])
-                else:
-                    distance = 0.0
-                
-                start_date_local = record[COL_START_DATE_LOCAL].get("stringValue", "")
-                activity_type = record[COL_TYPE].get("stringValue", "")
-                
-                # Extract timezones (may be NULL)
-                activity_timezone = None
-                if COL_ACTIVITY_TIMEZONE < len(record) and record[COL_ACTIVITY_TIMEZONE]:
-                    if "stringValue" in record[COL_ACTIVITY_TIMEZONE]:
-                        activity_timezone = record[COL_ACTIVITY_TIMEZONE]["stringValue"]
-                
-                user_timezone = None
-                if COL_USER_TIMEZONE < len(record) and record[COL_USER_TIMEZONE]:
-                    if "stringValue" in record[COL_USER_TIMEZONE]:
-                        user_timezone = record[COL_USER_TIMEZONE]["stringValue"]
-                
-                athletes_seen.add(athlete_id)
-                
-                # Calculate window keys using user's timezone
-                window_keys = get_window_keys(start_date_local, user_timezone, activity_timezone)
-                if not window_keys:
-                    print(f"WARNING: Could not calculate window keys for activity {strava_activity_id} (athlete {athlete_id}), skipping")
-                    activities_skipped += 1
-                    athletes_with_errors.add(athlete_id)
-                    continue
-                
-                # Determine aggregate activity types to update
-                agg_types = ["all"]  # Always update 'all'
-                if activity_type in ["Run", "Walk"]:
-                    agg_types.append("foot")
-                elif activity_type == "Ride":
-                    agg_types.append("bike")
-                
-                # Accumulate distance for each window and activity type
-                metric = "distance"
-                for window, window_key in window_keys.items():
-                    for agg_activity_type in agg_types:
-                        key = (window_key, metric, agg_activity_type, athlete_id)
-                        aggregates[key] = aggregates.get(key, 0.0) + distance
-                
-                activities_processed += 1
-                
-                # Log progress every 100 activities
-                if activities_processed % 100 == 0:
-                    print(f"LOG - Processed {activities_processed} activities...")
-            
-            except Exception as e:
-                # Don't let one bad activity break the entire recalculation
-                # Safely extract IDs for logging (may fail if record is malformed)
-                athlete_id = None
-                strava_activity_id = None
-                try:
-                    if COL_ATHLETE_ID < len(record):
-                        athlete_id = int(record[COL_ATHLETE_ID].get("longValue", 0))
-                    if COL_STRAVA_ACTIVITY_ID < len(record):
-                        strava_activity_id = int(record[COL_STRAVA_ACTIVITY_ID].get("longValue", 0))
-                except Exception:
-                    pass  # Use defaults
-                
-                print(f"WARNING: Failed to process activity {strava_activity_id or 'unknown'} (athlete {athlete_id or 'unknown'}): {e}")
-                activities_skipped += 1
-                if athlete_id is not None:
-                    athletes_with_errors.add(athlete_id)
-                continue
-        
-        print(f"LOG - Finished processing {activities_processed} activities")
-        if activities_skipped > 0:
-            print(f"LOG - Skipped {activities_skipped} activities due to errors")
-        print(f"LOG - Found {len(athletes_seen)} unique athletes")
-        if len(athletes_with_errors) > 0:
-            print(f"LOG - {len(athletes_with_errors)} athletes had errors: {sorted(athletes_with_errors)}")
-        print(f"LOG - Generated {len(aggregates)} aggregate entries")
-        
-        # Step 4: Insert aggregates into leaderboard_agg table
-        print("LOG - Inserting aggregates into leaderboard_agg table")
-        
-        insert_count = 0
-        insert_failed = 0
-        for (window_key, metric, activity_type, athlete_id), value in aggregates.items():
-            try:
-                # Extract window type from window_key (e.g., "week_2026-02-09" -> "week")
-                window = window_key.split('_')[0]
-                
-                insert_sql = """
-                INSERT INTO leaderboard_agg ("window", window_key, metric, activity_type, athlete_id, value, last_updated)
-                VALUES (:window, :window_key, :metric, :activity_type, :athlete_id, :value, now())
-                ON CONFLICT (window_key, metric, activity_type, athlete_id)
-                DO UPDATE SET
-                    "window" = EXCLUDED."window",
-                    value = EXCLUDED.value,
-                    last_updated = now()
-                """
-                
-                insert_params = [
-                    {"name": "window", "value": {"stringValue": window}},
-                    {"name": "window_key", "value": {"stringValue": window_key}},
-                    {"name": "metric", "value": {"stringValue": metric}},
-                    {"name": "activity_type", "value": {"stringValue": activity_type}},
-                    {"name": "athlete_id", "value": {"longValue": athlete_id}},
-                    {"name": "value", "value": {"doubleValue": value}},
-                ]
-                
-                exec_sql(insert_sql, insert_params)
-                insert_count += 1
-                
-                # Log progress every 100 inserts
-                if insert_count % 100 == 0:
-                    print(f"LOG - Inserted {insert_count} aggregates...")
-            
-            except Exception as e:
-                # Don't let one bad insert break the entire recalculation
-                print(f"WARNING: Failed to insert aggregate for athlete {athlete_id}, window {window_key}: {e}")
-                insert_failed += 1
-                athletes_with_errors.add(athlete_id)
-                continue
-        
-        print(f"LOG - Inserted {insert_count} aggregate entries")
-        if insert_failed > 0:
-            print(f"LOG - Failed to insert {insert_failed} aggregates")
-        if len(athletes_with_errors) > 0:
-            print(f"LOG - Athletes with errors (activities skipped or inserts failed): {sorted(athletes_with_errors)}")
-        print(f"=== recalculate_leaderboard END: SUCCESS ===")
-        
-        # Return tuple with additional metrics
-        return activities_processed, len(athletes_seen), None, activities_skipped, insert_failed, list(athletes_with_errors)
-        
+            return 0, 0, error_msg, 0, 0, []
+
+        # Step 1: Count what will be aggregated (two numbers, not every row)
+        count_record = exec_sql(COUNT_SQL, params).get("records", [[{}, {}]])[0]
+        activities_processed = int(count_record[0].get("longValue", 0))
+        athletes_processed = int(count_record[1].get("longValue", 0))
+        print(f"LOG - {activities_processed} activities from {athletes_processed} opted-in athletes")
+
+        # Step 2: Capture the DB clock before writing, so stale rows can be told
+        # apart from rows this run (or a concurrent match) just wrote.
+        run_started = exec_sql("SELECT clock_timestamp()::text").get("records")[0][0]["stringValue"]
+
+        # Step 3: Upsert every rebuilt bucket
+        upserted = exec_sql(REBUILD_SQL, params).get("numberOfRecordsUpdated", 0)
+        print(f"LOG - Upserted {upserted} leaderboard_agg rows")
+
+        # Step 4: Remove buckets the rebuild no longer produces
+        deleted = exec_sql(
+            DELETE_STALE_SQL,
+            params + [{"name": "run_started", "value": {"stringValue": run_started}}],
+        ).get("numberOfRecordsUpdated", 0)
+        print(f"LOG - Deleted {deleted} stale leaderboard_agg rows")
+
+        print("=== recalculate_leaderboard END: SUCCESS ===")
+        return activities_processed, athletes_processed, None, 0, 0, []
+
     except Exception as e:
         error = f"Recalculation failed: {e}"
         print(f"ERROR: {error}")
