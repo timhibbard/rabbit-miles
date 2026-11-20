@@ -46,6 +46,12 @@ ACTIVITIES_START_DATE = 1767225600
 # Token refresh buffer - refresh tokens 5 minutes before expiry
 TOKEN_REFRESH_BUFFER_SECONDS = 300
 
+# Pagination, matching user_update_activities: this is the admin's full-season
+# repair for one athlete, so it walks every page instead of stopping at the
+# first 200. MAX_PAGES bounds a single call at 2,000 activities.
+ACTIVITIES_PER_PAGE = 200
+MAX_PAGES = 10
+
 
 def get_cors_origin():
     """Extract origin (scheme + host) from FRONTEND_URL for CORS headers"""
@@ -275,6 +281,10 @@ def store_activity(athlete_id, activity):
     # Note: time_on_trail and distance_on_trail are computed separately by trail matching logic
     # We initialize them as NULL and preserve existing values on update using COALESCE
     # This ensures computed trail metrics aren't accidentally overwritten during activity updates
+    # polyline is COALESCEd, not overwritten: this reads Strava's list endpoint,
+    # whose SummaryActivity carries only map.summary_polyline. Assigning it
+    # directly would downgrade a full polyline stored by webhook_processor from
+    # the detail endpoint. COALESCE still fills the column when it is empty.
     sql = """
     INSERT INTO activities (
         athlete_id, strava_activity_id, name, distance, moving_time, elapsed_time,
@@ -293,7 +303,7 @@ def store_activity(athlete_id, activity):
         start_date = EXCLUDED.start_date,
         start_date_local = EXCLUDED.start_date_local,
         timezone = EXCLUDED.timezone,
-        polyline = EXCLUDED.polyline,
+        polyline = COALESCE(activities.polyline, EXCLUDED.polyline),
         athlete_count = EXCLUDED.athlete_count,
         time_on_trail = COALESCE(activities.time_on_trail, EXCLUDED.time_on_trail),
         distance_on_trail = COALESCE(activities.distance_on_trail, EXCLUDED.distance_on_trail),
@@ -325,42 +335,66 @@ def store_activity(athlete_id, activity):
         return False
 
 
-def update_user_activities(target_athlete_id, per_page=200):
-    """Update activities for a specific user"""
+def update_user_activities(target_athlete_id, per_page=ACTIVITIES_PER_PAGE):
+    """Update every activity in the season for a specific user (paginated)."""
     print(f"Updating activities for user {target_athlete_id}")
-    
+
     # Get user tokens - use TARGET user's tokens, not admin's
     access_token, refresh_token, expires_at = get_user_tokens(target_athlete_id)
-    
+
     if not access_token or not refresh_token:
         raise ValueError(f"User {target_athlete_id} not found or not connected to Strava")
-    
+
     # Ensure token is valid
     access_token = ensure_valid_token(target_athlete_id, access_token, refresh_token, expires_at)
-    
-    # Fetch activities from Strava - get first page only
-    activities = fetch_strava_activities(access_token, per_page=per_page, page=1)
-    
-    if not isinstance(activities, list):
-        raise RuntimeError(f"Unexpected response from Strava API: {type(activities)}")
-    
-    # Store activities in database
+
     stored_count = 0
     failed_count = 0
-    
-    for activity in activities:
-        if store_activity(target_athlete_id, activity):
-            stored_count += 1
-        else:
-            failed_count += 1
-    
-    return {
+    total_fetched = 0
+    truncated = False
+
+    for page in range(1, MAX_PAGES + 1):
+        activities = fetch_strava_activities(access_token, per_page=per_page, page=page)
+
+        if not isinstance(activities, list):
+            raise RuntimeError(f"Unexpected response from Strava API: {type(activities)}")
+
+        if not activities:
+            break
+
+        total_fetched += len(activities)
+
+        for activity in activities:
+            if store_activity(target_athlete_id, activity):
+                stored_count += 1
+            else:
+                failed_count += 1
+
+        # A short page is the last page.
+        if len(activities) < per_page:
+            break
+
+        if page == MAX_PAGES:
+            truncated = True
+            print(
+                f"WARNING: hit MAX_PAGES ({MAX_PAGES}) for athlete {target_athlete_id} after "
+                f"{total_fetched} activities; older activities were NOT updated"
+            )
+
+    result = {
         "message": "Activities updated successfully",
         "athlete_id": target_athlete_id,
-        "total_activities": len(activities),
+        "total_activities": total_fetched,
         "stored": stored_count,
-        "failed": failed_count
+        "failed": failed_count,
+        "truncated": truncated,
     }
+    if truncated:
+        result["message"] = (
+            f"Activities updated, but stopped at the {MAX_PAGES}-page limit "
+            f"({total_fetched} activities); older activities were not updated."
+        )
+    return result
 
 
 def handler(event, context):

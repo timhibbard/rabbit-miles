@@ -1,20 +1,41 @@
 # Scheduled Activity Update Lambda
 
-This Lambda function runs on a schedule (every hour) to automatically update activities from the last 24 hours for all connected users from the Strava API.
+This Lambda runs every hour and sweeps *every* connected user once every 6 hours, re-reading a 7-day window with a single Strava list request per user. That one sweep serves two purposes:
+
+1. **Webhook backstop** — anything a missed webhook dropped is picked up within one sweep interval (≤ 6 hours).
+2. **Metadata reconciliation** — refreshes fields Strava changes after upload.
+
+The hourly schedule only spreads users across runs and retries failures. No user is polled more than once per sweep interval.
 
 ## Purpose
 
-Ensures that activity data (including `athlete_count` for group activities) is kept up-to-date automatically without requiring manual user intervention.
+Strava keeps mutating activities after upload, and not all of it generates a webhook we can rely on:
+
+- `athlete_count` grows as the *other* participants upload their copy of a group activity — minutes to days after the fact. This is why a value written once at ingest is wrong so often.
+- Athletes rename activities and change their type long after uploading.
+
+Webhooks cover most of this, but a webhook that is missed (subscription lapse, DLQ, rate-limit deferral) previously left the row stale forever: the hourly poll only looked back 24 hours *and* skipped any user whose webhooks were flowing. That excluded the most active users from all reconciliation. The refresh sweep closes that gap.
 
 ## Functionality
 
-1. Queries database for all users with valid Strava tokens
+1. Selects connected users that are **due**: `last_metadata_refresh_at` older than 6h, or never set. Webhook freshness is ignored. (Previously, "webhook-stale" users, meaning anyone who hadn't uploaded in 6h, were polled every hour, which was most users 24x/day.) Ordered oldest-sweep-first so a backlog drains fairly instead of always serving the lowest athlete IDs.
 2. For each user:
-   - Refreshes Strava access token if needed
-   - Fetches activities from the last 24 hours from Strava API
-   - Updates or inserts activities in the database
-   - Preserves existing trail matching data (time_on_trail, distance_on_trail)
-3. Returns summary of updates performed
+   - Refreshes the Strava access token if needed
+   - Fetches activities from the last 7 days (one list request)
+   - Updates or inserts activities, refreshing `name`, `type`, `athlete_count`, distance and time fields
+   - Preserves trail matching data (`time_on_trail`, `distance_on_trail`) via COALESCE
+   - Preserves any full `polyline` already stored by `webhook_processor` — the list endpoint only returns `summary_polyline`, so assigning it directly would downgrade the stored route
+   - Refreshes the profile picture if it is older than 7 days
+   - Stamps `last_metadata_refresh_at` only when every activity write succeeded, so a failure (including a single failed row) is retried on the next hourly run instead of waiting out a full sweep interval
+3. Returns a summary of updates performed
+
+## Rate limit budget
+
+Strava allows 300 read requests per 15 minutes and 3,000 per day. The sweep costs **1 read request per user per 6 hours**, which is 4 per user per day. That's the whole scheduled cost, because no user is polled more often than that. It stays inside the daily read quota up to roughly 700 connected users, minus whatever webhook detail fetches use. Profile-picture refreshes add at most 1 read per user per 7 days, and a user whose writes are failing is retried hourly until a clean pass. Widening the lookback window from 24 hours to 7 days costs nothing extra: it is the same single list request either way.
+
+For comparison, the previous hourly backstop polled every webhook-stale user each hour. In Nov 2026 that was 57 of 84 users, about 1,370 reads/day.
+
+If you outgrow that, raise `METADATA_REFRESH_SECONDS` (sweep less often) rather than shrinking the window.
 
 ## Environment Variables Required
 
@@ -142,8 +163,11 @@ Monitor Lambda execution in:
 
 ## Notes
 
-- The Lambda fetches activities after timestamp: `max(ACTIVITIES_START_DATE, current_time - 24h)`
+- The Lambda fetches activities after timestamp: `max(ACTIVITIES_START_DATE, current_time - 7d)`
 - ACTIVITIES_START_DATE is Jan 1, 2026 (timestamp: 1767225600)
 - Updates preserve existing trail matching data using COALESCE
 - Access tokens are automatically refreshed if within 5 minutes of expiry
 - The Lambda processes users sequentially (not in parallel) to avoid rate limits
+- Requires migration `016_add_last_metadata_refresh.sql`. Before it runs, `get_users_needing_poll()` logs `has migration 016 run?` and falls back to the previous webhook-freshness selection (users with no webhook in 6h, polled hourly). It does *not* poll everyone, which would multiply Strava read usage. Only if that query also fails (pre-011/015) does it select all connected users. The sweep doesn't start, and `last_metadata_refresh_at` isn't stamped, until the column exists.
+- A single page (200 activities) is the cap per user per run. If a user somehow exceeds that inside the window, a `WARNING` is logged naming the unrefreshed tail rather than silently truncating
+- Only reconciles the **last 7 days**. Repairing older rows is a one-time job — see `DEPLOYMENT_ACTIVITY_METADATA_REFRESH.md`

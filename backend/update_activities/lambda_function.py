@@ -199,7 +199,7 @@ def fetch_strava_activities(access_token, per_page=30, page=1):
         raise
 
 
-def store_activity(athlete_id, activity):
+def store_activity(athlete_id, activity, from_detail=False):
     """Store or update activity in database"""
     strava_activity_id = activity.get("id")
     if not strava_activity_id:
@@ -228,6 +228,15 @@ def store_activity(athlete_id, activity):
     # Note: time_on_trail and distance_on_trail are computed separately by trail matching logic
     # We initialize them as NULL and preserve existing values on update using COALESCE
     # This ensures computed trail metrics aren't accidentally overwritten during activity updates
+    # polyline handling depends on where the payload came from:
+    #   - List endpoint (update_athlete_activities, from_detail=False): the
+    #     SummaryActivity only carries map.summary_polyline, so keep any stored
+    #     polyline and only fill an empty column. Assigning it directly would
+    #     downgrade a full polyline stored from the detail endpoint.
+    #   - Detail endpoint (update_single_activity, from_detail=True): the payload
+    #     carries the full route, so it replaces the stored polyline (upgrading a
+    #     summary one, or picking up a cropped route). A detail payload with no
+    #     polyline keeps the stored one rather than wiping it.
     sql = """
     INSERT INTO activities (
         athlete_id, strava_activity_id, name, distance, moving_time, elapsed_time,
@@ -246,7 +255,7 @@ def store_activity(athlete_id, activity):
         start_date = EXCLUDED.start_date,
         start_date_local = EXCLUDED.start_date_local,
         timezone = EXCLUDED.timezone,
-        polyline = EXCLUDED.polyline,
+        polyline = CASE WHEN :from_detail THEN COALESCE(EXCLUDED.polyline, activities.polyline) ELSE COALESCE(activities.polyline, EXCLUDED.polyline) END,
         athlete_count = EXCLUDED.athlete_count,
         time_on_trail = COALESCE(activities.time_on_trail, EXCLUDED.time_on_trail),
         distance_on_trail = COALESCE(activities.distance_on_trail, EXCLUDED.distance_on_trail),
@@ -266,6 +275,7 @@ def store_activity(athlete_id, activity):
         {"name": "sdl", "value": {"stringValue": start_date_local} if start_date_local else {"isNull": True}},
         {"name": "tz", "value": {"stringValue": timezone}},
         {"name": "poly", "value": {"stringValue": polyline} if polyline else {"isNull": True}},
+        {"name": "from_detail", "value": {"booleanValue": bool(from_detail)}},
         {"name": "ac", "value": {"longValue": athlete_count}},
     ]
     
@@ -295,7 +305,7 @@ def update_single_activity(athlete_id, activity_id):
     activity = fetch_activity_details(access_token, activity_id)
     
     # Store activity in database
-    success = store_activity(athlete_id, activity)
+    success = store_activity(athlete_id, activity, from_detail=True)
     
     if not success:
         raise RuntimeError(f"Failed to store activity {activity_id}")
