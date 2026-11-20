@@ -87,18 +87,22 @@ Both files should be GeoJSON format with LineString or MultiLineString geometrie
 ## Deployment
 
 ```bash
-# Create deployment package
+# Prefer the GitHub Actions deploy (deploy-lambdas.yml), which bundles the shared
+# modules automatically. If deploying by hand, this function imports
+# leaderboard_agg (which imports timezone_utils), so both must be in the zip
+# or every invocation fails with ModuleNotFoundError.
+# Create deployment package (-j stores the shared modules at the zip root)
 cd backend/match_activity_trail
-zip -r function.zip lambda_function.py
+zip -j function.zip lambda_function.py ../leaderboard_agg.py ../timezone_utils.py
 
 # Deploy to AWS Lambda
 aws lambda update-function-code \
-  --function-name match_activity_trail \
+  --function-name rabbitmiles-match-activity-trail \
   --zip-file fileb://function.zip
 
 # Set environment variables
 aws lambda update-function-configuration \
-  --function-name match_activity_trail \
+  --function-name rabbitmiles-match-activity-trail \
   --environment Variables={
     DB_CLUSTER_ARN=arn:aws:rds:us-east-1:...,
     DB_SECRET_ARN=arn:aws:secretsmanager:us-east-1:...,

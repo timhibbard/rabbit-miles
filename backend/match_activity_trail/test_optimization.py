@@ -1,7 +1,16 @@
 #!/usr/bin/env python3
 """
-Test for match_activity_trail optimization
-Tests that the optimizations prevent timeout for activities far from trail
+Performance tests for match_activity_trail.calculate_trail_intersection.
+
+These guard against the Lambda timing out on activities far from (or only
+partly on) the trail. calculate_trail_intersection takes trail_segments as a
+list of segments, each a list of (lat, lon) points, so the single synthetic
+trails below are passed as [trail_coords].
+
+The sampled "quick rejection" pass was removed in #335 (it falsely scored
+on-trail activities as 0). The "off-trail" tests below now exercise the
+whole-trail bounding box check and the per-piece bounding box prefilter in
+the main loop, which keep the same speed guarantees.
 """
 
 import sys
@@ -61,7 +70,7 @@ def test_quick_rejection_bounding_box():
         
         start_time = time.time()
         distance, time_ratio = lambda_function.calculate_trail_intersection(
-            activity_coords, trail_coords, 50
+            activity_coords, [trail_coords], lambda_function.TRAIL_TOLERANCE_METERS
         )
         elapsed = time.time() - start_time
         
@@ -72,9 +81,13 @@ def test_quick_rejection_bounding_box():
         print(f"✓ Bounding box rejection completed in {elapsed:.3f}s")
 
 
-def test_sampling_quick_rejection():
-    """Test that activities nowhere near trail are quickly rejected via sampling"""
-    print("\nTesting sampling-based quick rejection...")
+def test_nearby_off_trail_activity_is_fast():
+    """An activity parallel to the trail but ~1 km away scores 0, quickly.
+
+    It sits inside the trail's bounding box, so it can't be rejected up front;
+    the per-piece bounding box prefilter keeps the full scan cheap.
+    """
+    print("\nTesting nearby off-trail activity...")
     
     os.environ['DB_CLUSTER_ARN'] = 'test-cluster-arn'
     os.environ['DB_SECRET_ARN'] = 'test-secret-arn'
@@ -86,24 +99,47 @@ def test_sampling_quick_rejection():
             del sys.modules['lambda_function']
         import lambda_function
         
-        # Trail in Greenville, SC area
-        trail_coords = [(34.85 + i * 0.001, -82.39) for i in range(100)]
-        
-        # Activity nearby but not on trail (1km away)
-        # 1km ≈ 0.009 degrees at this latitude
+        # Two parallel trail segments ~1.8 km apart, with the activity running
+        # between them (~0.9 km from each). The overall trail bounding box
+        # contains the activity, so the whole-trail rejection can't fire and
+        # the per-piece prefilter in the main loop has to do the work.
+        west_segment = [(34.85 + i * 0.001, -82.39) for i in range(100)]
+        east_segment = [(34.85 + i * 0.001, -82.37) for i in range(100)]
+        trail_segments = [west_segment, east_segment]
+
         activity_coords = [(34.85 + i * 0.001, -82.38) for i in range(100)]
-        
+
+        all_lons = [lon for seg in trail_segments for _, lon in seg]
+        assert min(all_lons) < -82.38 < max(all_lons), "activity must sit inside the trail bbox"
+
+        # Count exact distance computations. Every trail piece is ~0.9 km from
+        # the activity, far outside its bounding box plus tolerance, so the
+        # per-piece prefilter should skip all of them. Without the prefilter
+        # this would be ~100 x 198 calls; timing alone can't tell the two apart
+        # at this size.
+        real_distance = lambda_function.point_to_segment_distance
+        calls = {"n": 0}
+
+        def counting_distance(*args):
+            calls["n"] += 1
+            return real_distance(*args)
+
         start_time = time.time()
-        distance, time_ratio = lambda_function.calculate_trail_intersection(
-            activity_coords, trail_coords, 50  # 50m tolerance
-        )
+        with patch.object(lambda_function, "point_to_segment_distance", side_effect=counting_distance):
+            distance, time_ratio = lambda_function.calculate_trail_intersection(
+                activity_coords, trail_segments, lambda_function.TRAIL_TOLERANCE_METERS
+            )
         elapsed = time.time() - start_time
-        
-        # Should be rejected quickly since 1km > 3x tolerance (150m)
+
+        assert calls["n"] == 0, (
+            f"Per-piece prefilter should skip every distant trail piece, but "
+            f"{calls['n']} exact distance computations ran"
+        )
+        # ~1 km is far outside the production tolerance
         assert distance == 0.0, f"Expected 0 distance, got {distance}"
-        assert elapsed < 0.5, f"Expected quick sampling rejection (<0.5s), took {elapsed:.3f}s"
-        
-        print(f"✓ Sampling rejection completed in {elapsed:.3f}s")
+        assert elapsed < 0.5, f"Expected fast off-trail scan (<0.5s), took {elapsed:.3f}s"
+
+        print(f"✓ Off-trail scan completed in {elapsed:.3f}s")
 
 
 def test_spatial_filtering_performance():
@@ -128,7 +164,7 @@ def test_spatial_filtering_performance():
         
         start_time = time.time()
         distance, time_ratio = lambda_function.calculate_trail_intersection(
-            activity_coords, trail_coords, 50
+            activity_coords, [trail_coords], lambda_function.TRAIL_TOLERANCE_METERS
         )
         elapsed = time.time() - start_time
         
@@ -139,9 +175,14 @@ def test_spatial_filtering_performance():
         print(f"  Distance on trail: {distance:.2f}m ({time_ratio * 100:.1f}%)")
 
 
-def test_early_termination():
-    """Test that early termination works when activity leaves trail area"""
-    print("\nTesting early termination...")
+def test_partly_on_trail_activity():
+    """An activity that starts on the trail and then goes far away.
+
+    Only the on-trail stretch counts, and the long off-trail tail stays cheap
+    (early termination was removed in f8bfd8a; the per-piece prefilter keeps
+    this fast instead).
+    """
+    print("\nTesting partly on-trail activity...")
     
     os.environ['DB_CLUSTER_ARN'] = 'test-cluster-arn'
     os.environ['DB_SECRET_ARN'] = 'test-secret-arn'
@@ -167,20 +208,26 @@ def test_early_termination():
         
         start_time = time.time()
         distance, time_ratio = lambda_function.calculate_trail_intersection(
-            activity_coords, trail_coords, 50
+            activity_coords, [trail_coords], lambda_function.TRAIL_TOLERANCE_METERS
         )
         elapsed = time.time() - start_time
         
-        # Should terminate early and complete quickly
-        assert elapsed < 2.0, f"Expected early termination <2s, took {elapsed:.3f}s"
+        assert elapsed < 2.0, f"Expected completion <2s, took {elapsed:.3f}s"
         assert distance > 0, f"Expected some distance on trail, got {distance}"
-        
-        print(f"✓ Early termination test completed in {elapsed:.3f}s")
-        print(f"  Found {distance:.2f}m on trail before terminating")
+        # The on-trail stretch is 9 x ~11 m; the jump to New York must not count.
+        assert distance < 200, f"Expected only the on-trail stretch to count, got {distance:.0f}m"
+
+        print(f"✓ Partly on-trail test completed in {elapsed:.3f}s")
+        print(f"  Found {distance:.2f}m on trail")
 
 
 def test_realistic_no_match_scenario():
-    """Test with realistic coordinates that don't match (similar to the issue)"""
+    """A real off-trail activity (issue #116) is rejected quickly.
+
+    This activity lies outside the synthetic trail's bounding box, so it covers
+    the whole-trail rejection, not the per-piece prefilter (see
+    test_nearby_off_trail_activity_is_fast for that).
+    """
     print("\nTesting realistic no-match scenario...")
     
     os.environ['DB_CLUSTER_ARN'] = 'test-cluster-arn'
@@ -206,7 +253,7 @@ def test_realistic_no_match_scenario():
         
         start_time = time.time()
         distance, time_ratio = lambda_function.calculate_trail_intersection(
-            activity_coords, trail_coords, 50
+            activity_coords, [trail_coords], lambda_function.TRAIL_TOLERANCE_METERS
         )
         elapsed = time.time() - start_time
         
@@ -222,9 +269,9 @@ if __name__ == '__main__':
     
     try:
         test_quick_rejection_bounding_box()
-        test_sampling_quick_rejection()
+        test_nearby_off_trail_activity_is_fast()
         test_spatial_filtering_performance()
-        test_early_termination()
+        test_partly_on_trail_activity()
         test_realistic_no_match_scenario()
         
         print("\n" + "=" * 60)
