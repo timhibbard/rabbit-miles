@@ -111,8 +111,15 @@ aws rds-data execute-statement \
          FROM users WHERE access_token IS NOT NULL"
 ```
 
-`swept` should climb toward `total` over the first few hours. Users are processed
-25 per invocation with self-continuation, so a large user base takes a few runs.
+`swept` should reach `total` within a few minutes of the first scheduled run.
+Each invocation processes users until it hits 25 users or its time budget
+(timeout minus a 90 s safety margin; about 18 users with the 123 s timeout),
+then self-invokes for the rest. The remainder is deferred to the next hourly
+run instead on a Strava rate limit, when the sweep has used half of the
+current 15-minute read window, on a time stop before any user was processed,
+or if self-invocation fails. That last case is logged at ERROR and is usually
+a missing `lambda:InvokeFunction` grant on the function's own ARN; see
+`backend/scheduled_activity_update/README.md`.
 
 ---
 
