@@ -216,7 +216,7 @@ SELECT COUNT(*) FROM leaderboard_agg;
 If the `leaderboard_agg` table is empty or has incorrect data, use the admin recalculation endpoint:
 
 ```bash
-# Recalculate all aggregates from activities since Jan 1, 2026
+# Rebuild in-season aggregates (windows from the week containing Jan 1, 2026)
 POST /admin/leaderboard/recalculate
 
 # Example using curl:
@@ -233,11 +233,31 @@ curl -X POST https://api.rabbitmiles.com/admin/leaderboard/recalculate \
 }
 ```
 
+**How the rebuild works (since #336):** it is set-based. One
+`INSERT ... SELECT ... GROUP BY ... ON CONFLICT DO UPDATE` upserts every bucket
+for windows starting on or after the week/month/year containing Jan 1, 2026.
+A second statement then deletes in-season rows that aren't in the rebuilt set,
+an anti-join evaluated in that statement's own snapshot, so a concurrent
+per-match write can't be removed. Nothing is read back into the Lambda,
+so there's no Data API 1 MB limit. The table is never empty mid-run: if the
+upsert fails, nothing changes. Pre-season buckets, which the per-match recompute
+maintains, are left alone.
+
+**Run it when matching is quiet.** The upsert computes every bucket from a
+single snapshot. If a match commits *during* the upsert, its fresher value for
+that bucket can be overwritten with the snapshot value. The bucket corrects
+itself on that athlete's next match in the same window, or on the next rebuild.
+The cleanup step is guarded against concurrent writes and never deletes a
+bucket a match touched.
+
+The endpoint returns 202 and runs asynchronously. To run it directly (for
+example from the CLI with no admin session), invoke the Lambda with
+`{"async_invocation": true}`.
+
 This endpoint:
-- Clears the `leaderboard_agg` table
-- Recalculates all aggregates from the `activities` table
+- Rebuilds in-season buckets from the `activities` table (upsert, then removes in-season rows the rebuild no longer produces). It does **not** clear the table, and pre-season buckets are kept.
 - Only includes activities from users with `show_on_leaderboards = true`
-- Processes activities from Jan 1, 2026 onwards
+- Covers windows starting on or after the week/month/year containing Jan 1, 2026. That includes Dec 29–31, 2025, which fall in the first week.
 - Admin-only access (requires session cookie and admin allowlist)
 
 ### Issue: Previous period top 3 not showing
