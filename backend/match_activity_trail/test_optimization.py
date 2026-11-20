@@ -70,7 +70,7 @@ def test_quick_rejection_bounding_box():
         
         start_time = time.time()
         distance, time_ratio = lambda_function.calculate_trail_intersection(
-            activity_coords, [trail_coords], 50
+            activity_coords, [trail_coords], lambda_function.TRAIL_TOLERANCE_METERS
         )
         elapsed = time.time() - start_time
         
@@ -127,7 +127,7 @@ def test_nearby_off_trail_activity_is_fast():
         start_time = time.time()
         with patch.object(lambda_function, "point_to_segment_distance", side_effect=counting_distance):
             distance, time_ratio = lambda_function.calculate_trail_intersection(
-                activity_coords, trail_segments, 50  # 50m tolerance
+                activity_coords, trail_segments, lambda_function.TRAIL_TOLERANCE_METERS
             )
         elapsed = time.time() - start_time
 
@@ -135,7 +135,7 @@ def test_nearby_off_trail_activity_is_fast():
             f"Per-piece prefilter should skip every distant trail piece, but "
             f"{calls['n']} exact distance computations ran"
         )
-        # ~1 km is far outside the 50 m tolerance
+        # ~1 km is far outside the production tolerance
         assert distance == 0.0, f"Expected 0 distance, got {distance}"
         assert elapsed < 0.5, f"Expected fast off-trail scan (<0.5s), took {elapsed:.3f}s"
 
@@ -164,7 +164,7 @@ def test_spatial_filtering_performance():
         
         start_time = time.time()
         distance, time_ratio = lambda_function.calculate_trail_intersection(
-            activity_coords, [trail_coords], 50
+            activity_coords, [trail_coords], lambda_function.TRAIL_TOLERANCE_METERS
         )
         elapsed = time.time() - start_time
         
@@ -208,7 +208,7 @@ def test_partly_on_trail_activity():
         
         start_time = time.time()
         distance, time_ratio = lambda_function.calculate_trail_intersection(
-            activity_coords, [trail_coords], 50
+            activity_coords, [trail_coords], lambda_function.TRAIL_TOLERANCE_METERS
         )
         elapsed = time.time() - start_time
         
@@ -253,7 +253,7 @@ def test_realistic_no_match_scenario():
         
         start_time = time.time()
         distance, time_ratio = lambda_function.calculate_trail_intersection(
-            activity_coords, [trail_coords], 50
+            activity_coords, [trail_coords], lambda_function.TRAIL_TOLERANCE_METERS
         )
         elapsed = time.time() - start_time
         

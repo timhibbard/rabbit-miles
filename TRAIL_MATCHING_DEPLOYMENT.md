@@ -60,8 +60,12 @@ Use this method for initial Lambda function creation. After creation, use automa
 ```bash
 cd backend/match_activity_trail
 
-# Create deployment package
-zip -r function.zip lambda_function.py
+# Prefer the GitHub Actions deploy (deploy-lambdas.yml), which bundles the shared
+# modules automatically. If deploying by hand, this function imports
+# leaderboard_agg (which imports timezone_utils), so both must be in the zip
+# or every invocation fails with ModuleNotFoundError.
+# Create deployment package (-j stores the shared modules at the zip root)
+zip -j function.zip lambda_function.py ../leaderboard_agg.py ../timezone_utils.py
 
 # Create Lambda function (first time only)
 aws lambda create-function \

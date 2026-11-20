@@ -100,14 +100,31 @@ restored. There are two producers:
   Remove that variable for the duration of the run. Note that
   `update-function-configuration --environment` **replaces the whole variable
   set**, so save the current one first:
+  The saved environment holds secrets (`APP_SECRET`, Strava client secret), so
+  write it **outside the repo**, never to the working directory of this
+  public repo:
   ```bash
+  FETCH_ENV=$(mktemp)   # outside the repo; delete in clean-up
   aws lambda get-function-configuration --function-name <fetch_activities name> \
-    --query Environment > fetch-env.json   # keep for clean-up
+    --query Environment > "$FETCH_ENV"
   # then re-apply it without MATCH_UNMATCHED_ACTIVITIES_LAMBDA_ARN
   ```
-  New activities still sync; they just stay unmatched until clean-up.
+  New activities still sync, but they arrive with `last_matched` NULL, so the
+  batch matcher picks them up with whichever chunk is queued next (see
+  step 5.2).
 
 Both are restored in clean-up.
+
+**Paths that match directly**, without going through the batch matcher, keep
+running. `webhook_processor` invokes the matcher on every activity
+create/update webhook, and the user-facing `reset_last_matched` endpoint can
+reset and re-match a user's activities. Either can re-match a restored
+activity between steps 6 and 8, for example when an athlete renames an old
+activity. They're rare enough that the plan is to **accept them and catch them**:
+the step 6 re-check and the step 9 per-athlete check both detect a value below
+baseline. To rule them out, also remove `MATCH_ACTIVITY_LAMBDA_ARN` from
+`webhook_processor` for the run, using the same save-outside-the-repo and
+re-apply approach.
 
 **Pre-flight:** before step 5, `SELECT COUNT(*) FROM activities WHERE
 last_matched IS NULL` should be 0. Any pre-existing NULL rows are stuck for
@@ -125,7 +142,13 @@ Loop over chunks of about 400 activity IDs that have a polyline:
    UPDATE activities SET last_matched = NULL
     WHERE id BETWEEN :lo AND :hi AND polyline IS NOT NULL AND polyline <> ''
    ```
-2. **Queue it** with an **async** invoke, sized to the number unmatched:
+2. **Queue it** with an **async** invoke. Set `limit` to the **table-wide**
+   unmatched count (`SELECT COUNT(*) FROM activities WHERE last_matched IS NULL`),
+   not the chunk size. The batch matcher picks rows across the whole table
+   (`WHERE last_matched IS NULL ORDER BY start_date DESC LIMIT :limit`), so
+   newer NULL rows outside the chunk (activities fetched mid-run, a user's
+   reset, stuck rows) take slots first and the chunk's oldest rows would never
+   be queued:
    ```bash
    aws lambda invoke --function-name rabbitmiles-match-unmatched-activities \
      --invocation-type Event --cli-binary-format raw-in-base64-out \
@@ -141,13 +164,15 @@ Loop over chunks of about 400 activity IDs that have a polyline:
    ```
    A table-wide count also picks up rows inserted mid-run, and rows the matcher
    never stamps. If matching fails before the DB write (activity missing, no
-   `athlete_id`), the handler returns an error without touching `last_matched`.
+   `athlete_id`), the handler returns a 404 or 500 without touching
+   `last_matched`.
 
    **Bound the wait.** The batch matcher catches per-activity queueing errors
    and still returns normally, reporting them as `failed_to_queue`. Those rows
    are **never retried automatically**, and with other producers suspended
    they'd stay unmatched. If the unmatched count hasn't dropped for about 5
-   minutes, queue again with `limit` set to the remaining count. For these
+   minutes, queue again with `limit` set to the **table-wide** unmatched count
+   (for the same reason as step 5.2). For these
    small retry batches you can drop `--invocation-type Event` so `out.json`
    shows `queued` and `failed_to_queue` (keep batches under about 150 so the
    synchronous call finishes within the CLI's 60 s read timeout). Repeat up to
@@ -157,6 +182,12 @@ Loop over chunks of about 400 activity IDs that have a polyline:
    aws lambda invoke --function-name rabbitmiles-match-activity-trail \
      --cli-binary-format raw-in-base64-out --payload '{"activity_id": <id>}' one.json && cat one.json
    ```
+   Read the body's `message`, **not** `statusCode`. A matching failure still
+   returns `statusCode: 200`, with `"Matching failed: …"` or
+   `"Processing failed: …"`, after writing 0 and stamping the row. Only
+   `"Successfully matched"` is a success. A 404 or 500 means it failed before
+   the DB write.
+
    Then fix the cause, or set `last_matched = NOW()` on those rows and note
    their IDs as **not re-scored**, so the run can continue. Their values are
    unchanged.
@@ -170,9 +201,11 @@ async queue:
 - **Throttled** events, when 400 async invokes exceed concurrency, are retried
   for up to the function's `MaximumEventAgeInSeconds`, which **defaults to 6
   hours**.
-- **Errors** are *not* retried. The handler catches every exception and
-  returns a 500, so only timeouts or out-of-memory crashes are retried, and
-  those at most twice.
+- **Errors** are *not* retried. `match_activity` catches matching errors
+  itself (it writes 0, stamps the row and returns 200 with a failure
+  `message`), and the handler turns anything else into a 404 or 500 response.
+  Since no exception escapes, Lambda only retries timeouts and out-of-memory
+  crashes, and those at most twice.
 
 A quiet period on its own isn't proof. Before step 6, after the last chunk
 *and* before a pause, check both of these:
@@ -183,11 +216,20 @@ A quiet period on its own isn't proof. Before step 6, after the last chunk
    ```
 2. The async queue is empty. In CloudWatch, `AWS/Lambda` `AsyncEventsReceived`
    vs. processed and `AsyncEventAge` for `rabbitmiles-match-activity-trail`
-   should be flat, with no recent `Throttles`. To bound the risk up front, set
-   a short event age for the run with
-   `aws lambda put-function-event-invoke-config --function-name rabbitmiles-match-activity-trail --maximum-event-age-in-seconds 900`,
-   and restore it in clean-up. Events older than that are dropped rather than
-   applied late, and any rows they leave unmatched show up in the drain check.
+   should be flat, with no recent `Throttles`. To bound the risk up front,
+   give the matcher a short event age for the run. Events older than that are
+   dropped rather than applied late, and any rows they leave unmatched show up
+   in the drain check. Save the existing async config first, because
+   `put-function-event-invoke-config` **replaces** it, resetting retry attempts
+   and dropping any on-failure or on-success destinations:
+   ```bash
+   EVENT_CFG=$(mktemp)
+   aws lambda get-function-event-invoke-config \
+     --function-name rabbitmiles-match-activity-trail > "$EVENT_CFG"   # errors if none exists yet
+   aws lambda update-function-event-invoke-config \
+     --function-name rabbitmiles-match-activity-trail --maximum-event-age-in-seconds 900
+   # if none existed, use put-function-event-invoke-config instead
+   ```
 
 **Pausing.** Stop between chunks, never mid-chunk. If the next chunk was
 already reset when you stopped, it depends on whether it was queued:
@@ -221,15 +263,33 @@ Why: many stored polylines are Strava **summary** polylines. Before
 poll overwrote detailed polylines with summary ones, and those weren't
 re-fetched. A summary polyline cuts corners, so re-matching it gives *fewer*
 trail miles than the athlete actually rode. In November 2026, 2,799 activities
-(249.8 mi) would have dropped. Restore the baseline wherever the new value is
-lower, and keep every increase.
+(249.8 mi) would have dropped.
+
+**Don't blanket-restore every drop.** Some drops are real: trail segments
+removed or rerouted, or a matcher fix that stops over-counting. Restoring those
+would keep miles for trail that no longer exists. Classify each drop using
+step 2's local results, which score the *same stored polyline* with the
+*current* code against both the current and the candidate trail data:
+
+| Local current-data result | Local candidate-data result | Cause | Action |
+|---|---|---|---|
+| below baseline | about the same as current | Polyline downgrade or an older baseline, not this change | **Restore** the baseline |
+| at or near baseline | below current | This trail change (segment removed or rerouted) | **Keep** the new value |
+
+If the run is for a **matcher change** that's *meant* to lower values (for
+example, a tighter tolerance), the first row is expected too. Decide
+explicitly whether to restore, and say so in the run notes.
+
+Keep every increase.
 
 Keep the list of restored IDs. Their leaderboard buckets were already rewritten
 with the lower values by the matcher, so step 7 needs to cover them.
 
 **Re-check right before step 7:** re-run the comparison and confirm that
-**0** activities are now below baseline. If any are, a late match overwrote
-them. Restore again, wait for another quiet period, and re-check.
+**0** activities are below the value step 6 left them at (the baseline for
+restored rows; the new value for drops you deliberately kept). If any are, a
+late match overwrote them. Fix them again, wait for another quiet period, and
+re-check.
 
 ## 7. Recompute leaderboard buckets for restored activities
 
@@ -243,8 +303,10 @@ For each restored activity, recompute its buckets with
 `leaderboard_agg.recompute_for_activity(exec_sql, athlete_id, start_date_local,
 user_timezone, activity_timezone)` from `backend/leaderboard_agg.py`. This only
 re-sums from `activities`; it doesn't re-match, so restored values are safe.
-Deduplicate first by (athlete, window), since many restored activities share
-buckets. In November 2026, about 3,200 buckets took a few minutes with 12
+`recompute_for_activity` always recomputes one activity's week, month and
+year together, so deduplicate by **(athlete_id, week key, month key, year
+key)**. Keep one representative activity per group, with its timezones, since
+many restored activities share all three. In November 2026, about 3,200 buckets took a few minutes with 12
 threads. Retry transient Data API errors.
 
 ## 8. Rebuild the leaderboard
@@ -274,29 +336,37 @@ Run it after step 7 and while matching is quiet.
 - Rows noted as **not re-scored** in step 5.3 are listed in the run notes,
   with their cause.
 - Pre-season buckets match activities too: for windows before the season,
-  compare `leaderboard_agg` against `SUM(distance_on_trail)` grouped by
-  athlete and window key. The rebuild doesn't touch these, so step 7 is what
-  fixes them.
+  compare `leaderboard_agg` per **(athlete, window key, activity_type)**
+  against `SUM(distance_on_trail)`, using the same opt-in join and type
+  mapping as `REBUILD_SELECT` (`all`; `foot` = Run/Walk; `bike` = Ride, with
+  `show_on_leaderboards = true`). A plain per-athlete sum will report false
+  mismatches. The rebuild doesn't touch these windows, so step 7 is what fixes
+  them.
 - Leaderboard matches activities: compare `leaderboard_agg` against the
   rebuild's `REBUILD_SELECT` (in
   `backend/admin_recalculate_leaderboard/lambda_function.py`) for missing and
   differing buckets. Both counts should be 0. Also check that week, month and
   year totals agree.
-- Per-athlete report: baseline vs. current trail miles. Nobody should be lower.
+- Per-athlete report: baseline vs. current trail miles. Anyone lower should be explained by drops step 6 deliberately kept (trail removals or reroutes, or an intended matcher change). Anything else is a late overwrite or a failed match.
   Share it privately, because the repo is public.
 
 ## Clean up
 
 - Re-enable any EventBridge rules you disabled in step 4.
-- Restore `fetch_activities`' environment from `fetch-env.json`, which puts
+- Restore `fetch_activities`' environment (and `webhook_processor`'s, if you
+  changed it) from the saved file, which puts
   `MATCH_UNMATCHED_ACTIVITIES_LAMBDA_ARN` back. Then queue one batch-matcher
   run so the activities fetched during the run get matched.
-- If you shortened `MaximumEventAgeInSeconds` on the matcher, restore it
-  (`delete-function-event-invoke-config` returns it to the default).
+- If you shortened `MaximumEventAgeInSeconds` on the matcher, restore the saved
+  config with `update-function-event-invoke-config` using the saved values.
+  Use `delete-function-event-invoke-config` only if no config existed before
+  the run.
 - Refresh the **frontend** copies `public/main.geojson` and
   `public/spurs.geojson` from the published files. The activity detail page
   (`src/utils/trailMatching.js`) loads them for on-trail highlighting, so
   stale copies make the map disagree with the backend's `distance_on_trail`.
 - Refresh the repo's reference copies in `trail/` from the published files.
   Nothing reads them, but they're the baseline for the next run's step 2.
+- Delete the saved Lambda environments (`$FETCH_ENV`, and `webhook_processor`'s
+  if saved) and `$EVENT_CFG`. The environments contain secrets.
 - Delete the local snapshot, polylines and any scripts that embed the DB ARNs.
