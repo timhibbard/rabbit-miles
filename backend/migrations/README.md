@@ -16,6 +16,13 @@ aws rds-data execute-statement \
   --sql "$(cat backend/migrations/001_create_oauth_states.sql)"
 ```
 
+> **One statement per call.** The Data API rejects multi-statement SQL
+> (`ValidationException: Multistatements aren't supported`). Passing a whole file
+> with `$(cat …)` only works for migrations that contain a single statement. For
+> files with several statements (for example 016), run each one separately. See
+> `DEPLOYMENT_ACTIVITY_METADATA_REFRESH.md` Step 1 for a splitting loop, or use
+> `psql -f` instead.
+
 ### Using psql
 
 If you have direct database access:

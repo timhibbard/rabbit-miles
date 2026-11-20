@@ -18,13 +18,27 @@ exists.
 Adds `users.last_metadata_refresh_at`. Idempotent (`ADD COLUMN IF NOT EXISTS`), so
 re-running is harmless.
 
+The RDS Data API runs **one statement per call** (`Multistatements aren't
+supported`), and this migration has three (`ALTER TABLE`, `CREATE INDEX`,
+`COMMENT`). Strip the comment lines and run each statement separately:
+
 ```bash
-aws rds-data execute-statement \
-  --resource-arn "$DB_CLUSTER_ARN" \
-  --secret-arn "$DB_SECRET_ARN" \
-  --database postgres \
-  --sql "$(cat backend/migrations/016_add_last_metadata_refresh.sql)"
+grep -v '^[[:space:]]*--' backend/migrations/016_add_last_metadata_refresh.sql \
+  | tr '\n' ' ' | tr ';' '\n' \
+  | while read -r stmt; do
+      [ -n "$stmt" ] || continue
+      echo "Running: ${stmt:0:60}..."
+      aws rds-data execute-statement \
+        --resource-arn "$DB_CLUSTER_ARN" \
+        --secret-arn "$DB_SECRET_ARN" \
+        --database postgres \
+        --sql "$stmt" < /dev/null || break
+    done
 ```
+
+(The `;` split is safe here because none of 016's string literals contain a
+semicolon. Alternatively, run the file with `psql -f`, which handles multiple
+statements natively.)
 
 Verify the column exists:
 
