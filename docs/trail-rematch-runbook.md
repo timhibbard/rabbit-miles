@@ -206,6 +206,16 @@ Run it after step 7 and while matching is quiet.
 ## 9. Verify
 
 - No activity left unmatched: `SELECT COUNT(*) FROM activities WHERE last_matched IS NULL` returns 0.
+- Failed matches weren't masked. When matching errors, the matcher still
+  stamps `last_matched` and writes **0**, so the unmatched count reaches 0, and
+  step 6 then restores the baseline as if the drop were a downgraded polyline.
+  The activity looks fine but was never re-scored. Among the restored
+  activities, list those whose re-match came out at exactly 0 while the
+  baseline was above 0. Compare them with step 2's local results: any the local
+  run scored above 0 is a matching failure, not a polyline downgrade. Re-match
+  those individually with a direct `rabbitmiles-match-activity-trail` invoke.
+  For the restore step to know about these, record the post-match value of
+  each restored activity before overwriting it.
 - Pre-season buckets match activities too: for windows before the season,
   compare `leaderboard_agg` against `SUM(distance_on_trail)` grouped by
   athlete and window key. The rebuild doesn't touch these, so step 7 is what
