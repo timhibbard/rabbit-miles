@@ -93,12 +93,12 @@ zip -r function.zip lambda_function.py
 
 # Deploy to AWS Lambda
 aws lambda update-function-code \
-  --function-name match_activity_trail \
+  --function-name rabbitmiles-match-activity-trail \
   --zip-file fileb://function.zip
 
 # Set environment variables
 aws lambda update-function-configuration \
-  --function-name match_activity_trail \
+  --function-name rabbitmiles-match-activity-trail \
   --environment Variables={
     DB_CLUSTER_ARN=arn:aws:rds:us-east-1:...,
     DB_SECRET_ARN=arn:aws:secretsmanager:us-east-1:...,

@@ -21,7 +21,7 @@ This Lambda function finds activities in the database where `last_matched IS NUL
 ### Manual Invocation (Default: 75 activities)
 ```bash
 aws lambda invoke \
-  --function-name match_unmatched_activities \
+  --function-name rabbitmiles-match-unmatched-activities \
   --invocation-type Event \
   output.json
 ```
@@ -30,14 +30,14 @@ aws lambda invoke \
 ```bash
 # Process 150 activities
 aws lambda invoke \
-  --function-name match_unmatched_activities \
+  --function-name rabbitmiles-match-unmatched-activities \
   --invocation-type Event \
   --payload '{"limit": 150}' \
   output.json
 
 # Process 25 activities
 aws lambda invoke \
-  --function-name match_unmatched_activities \
+  --function-name rabbitmiles-match-unmatched-activities \
   --invocation-type Event \
   --payload '{"limit": 25}' \
   output.json
@@ -99,17 +99,17 @@ zip -r function.zip lambda_function.py
 
 # Deploy to AWS Lambda
 aws lambda update-function-code \
-  --function-name match_unmatched_activities \
+  --function-name rabbitmiles-match-unmatched-activities \
   --zip-file fileb://function.zip
 
 # Set environment variables
 aws lambda update-function-configuration \
-  --function-name match_unmatched_activities \
+  --function-name rabbitmiles-match-unmatched-activities \
   --environment Variables={
     DB_CLUSTER_ARN=arn:aws:rds:us-east-1:...,
     DB_SECRET_ARN=arn:aws:secretsmanager:us-east-1:...,
     DB_NAME=postgres,
-    MATCH_ACTIVITY_LAMBDA_ARN=arn:aws:lambda:us-east-1:...:function:match_activity_trail
+    MATCH_ACTIVITY_LAMBDA_ARN=arn:aws:lambda:us-east-1:...:function:rabbitmiles-match-activity-trail
   }
 ```
 
@@ -138,7 +138,7 @@ aws lambda update-function-configuration \
       "Action": [
         "lambda:InvokeFunction"
       ],
-      "Resource": "arn:aws:lambda:us-east-1:ACCOUNT:function:match_activity_trail"
+      "Resource": "arn:aws:lambda:us-east-1:ACCOUNT:function:rabbitmiles-match-activity-trail"
     }
   ]
 }
@@ -166,7 +166,7 @@ Pass a `limit` parameter when invoking the Lambda:
 ```bash
 # Process 200 activities
 aws lambda invoke \
-  --function-name match_unmatched_activities \
+  --function-name rabbitmiles-match-unmatched-activities \
   --invocation-type Event \
   --payload '{"limit": 200}' \
   output.json
@@ -190,7 +190,7 @@ If you have thousands of unmatched activities:
 2. Pass a custom limit to process more activities per invocation:
    ```bash
    aws lambda invoke \
-     --function-name match_unmatched_activities \
+     --function-name rabbitmiles-match-unmatched-activities \
      --invocation-type Event \
      --payload '{"limit": 200}' \
      output.json

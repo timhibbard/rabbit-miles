@@ -261,6 +261,10 @@ aws lambda invoke \
   response.json && cat response.json
 ```
 
+**After updating:** new activities are matched against the new data right
+away, but existing activities keep their old trail miles until re-matched. To
+re-score them, follow [`docs/trail-rematch-runbook.md`](docs/trail-rematch-runbook.md).
+
 ### Monitoring
 
 - **CloudWatch Logs**: View logs at `/aws/lambda/rabbitmiles-update-trail-data`

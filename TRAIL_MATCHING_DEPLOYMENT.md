@@ -2,6 +2,14 @@
 
 This guide walks through deploying the new trail matching Lambda functions to AWS.
 
+> **Deployed names differ from folder names.** The code lives in
+> `backend/match_activity_trail/` and `backend/match_unmatched_activities/`, but
+> the deployed functions are `rabbitmiles-match-activity-trail` and
+> `rabbitmiles-match-unmatched-activities`. GitHub Actions resolves them from the
+> `LAMBDA_*` repository secrets. Use the deployed names in every `aws lambda`
+> command. To re-match existing activities after a trail or matcher change, see
+> [`docs/trail-rematch-runbook.md`](docs/trail-rematch-runbook.md).
+
 ## Prerequisites
 
 - AWS CLI configured with appropriate credentials
@@ -54,7 +62,7 @@ zip -r function.zip lambda_function.py
 
 # Create Lambda function (first time only)
 aws lambda create-function \
-  --function-name match_activity_trail \
+  --function-name rabbitmiles-match-activity-trail \
   --runtime python3.11 \
   --role arn:aws:iam::ACCOUNT_ID:role/lambda-execution-role \
   --handler lambda_function.handler \
@@ -70,7 +78,7 @@ aws lambda create-function \
 
 # OR update existing function
 aws lambda update-function-code \
-  --function-name match_activity_trail \
+  --function-name rabbitmiles-match-activity-trail \
   --zip-file fileb://function.zip
 ```
 
@@ -84,13 +92,13 @@ zip -r function.zip lambda_function.py
 
 # Get the ARN of match_activity_trail Lambda
 MATCH_LAMBDA_ARN=$(aws lambda get-function \
-  --function-name match_activity_trail \
+  --function-name rabbitmiles-match-activity-trail \
   --query 'Configuration.FunctionArn' \
   --output text)
 
 # Create Lambda function (first time only)
 aws lambda create-function \
-  --function-name match_unmatched_activities \
+  --function-name rabbitmiles-match-unmatched-activities \
   --runtime python3.11 \
   --role arn:aws:iam::ACCOUNT_ID:role/lambda-execution-role \
   --handler lambda_function.handler \
@@ -106,7 +114,7 @@ aws lambda create-function \
 
 # OR update existing function
 aws lambda update-function-code \
-  --function-name match_unmatched_activities \
+  --function-name rabbitmiles-match-unmatched-activities \
   --zip-file fileb://function.zip
 ```
 
@@ -122,7 +130,7 @@ zip -r function.zip lambda_function.py
 
 # Get the ARN of match_activity_trail Lambda
 MATCH_LAMBDA_ARN=$(aws lambda get-function \
-  --function-name match_activity_trail \
+  --function-name rabbitmiles-match-activity-trail \
   --query 'Configuration.FunctionArn' \
   --output text)
 
@@ -189,7 +197,7 @@ Add Lambda invoke permission:
   "Action": [
     "lambda:InvokeFunction"
   ],
-  "Resource": "arn:aws:lambda:us-east-1:ACCOUNT_ID:function:match_activity_trail"
+  "Resource": "arn:aws:lambda:us-east-1:ACCOUNT_ID:function:rabbitmiles-match-activity-trail"
 }
 ```
 
@@ -203,7 +211,7 @@ Add Lambda invoke permission:
   "Action": [
     "lambda:InvokeFunction"
   ],
-  "Resource": "arn:aws:lambda:us-east-1:ACCOUNT_ID:function:match_activity_trail"
+  "Resource": "arn:aws:lambda:us-east-1:ACCOUNT_ID:function:rabbitmiles-match-activity-trail"
 }
 ```
 
@@ -229,7 +237,7 @@ After deployment, backfill existing activities:
 ```bash
 # Test with a single activity first
 aws lambda invoke \
-  --function-name match_activity_trail \
+  --function-name rabbitmiles-match-activity-trail \
   --payload '{"activity_id": 123}' \
   output.json
 
@@ -238,7 +246,7 @@ cat output.json
 # If successful, backfill all unmatched activities
 # This may need to be run multiple times if you have > 10 unmatched activities
 aws lambda invoke \
-  --function-name match_unmatched_activities \
+  --function-name rabbitmiles-match-unmatched-activities \
   --invocation-type Event \
   output.json
 ```
@@ -301,7 +309,7 @@ aws events put-targets \
 
 # Grant EventBridge permission to invoke Lambda
 aws lambda add-permission \
-  --function-name match_unmatched_activities \
+  --function-name rabbitmiles-match-unmatched-activities \
   --statement-id daily-match-unmatched-activities \
   --action lambda:InvokeFunction \
   --principal events.amazonaws.com \
@@ -348,8 +356,8 @@ aws lambda update-function-configuration \
   --environment Variables={...without MATCH_ACTIVITY_LAMBDA_ARN...}
 
 # Delete new Lambda functions (if needed)
-aws lambda delete-function --function-name match_activity_trail
-aws lambda delete-function --function-name match_unmatched_activities
+aws lambda delete-function --function-name rabbitmiles-match-activity-trail
+aws lambda delete-function --function-name rabbitmiles-match-unmatched-activities
 ```
 
 ## Monitoring
