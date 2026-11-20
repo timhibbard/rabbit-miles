@@ -236,8 +236,9 @@ curl -X POST https://api.rabbitmiles.com/admin/leaderboard/recalculate \
 **How the rebuild works (since #336):** it is set-based. One
 `INSERT ... SELECT ... GROUP BY ... ON CONFLICT DO UPDATE` upserts every bucket
 for windows starting on or after the week/month/year containing Jan 1, 2026.
-A second statement then deletes in-season rows that weren't touched, using
-`last_updated` older than the run start. Nothing is read back into the Lambda,
+A second statement then deletes in-season rows that aren't in the rebuilt set,
+an anti-join evaluated in that statement's own snapshot, so a concurrent
+per-match write can't be removed. Nothing is read back into the Lambda,
 so there's no Data API 1 MB limit. The table is never empty mid-run: if the
 upsert fails, nothing changes. Pre-season buckets, which the per-match recompute
 maintains, are left alone.

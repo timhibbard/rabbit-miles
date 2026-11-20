@@ -54,21 +54,20 @@ def exec_sql(sql, parameters=None):
     return rds.execute_statement(**kwargs)
 
 
-# Rebuilds every leaderboard_agg bucket in one set-based statement. Window keys
-# must match leaderboard_agg.get_window_bounds: start_date_local
-# is a naive local timestamp, so week = Monday of that date, month = YYYY-MM,
-# year = YYYY. Buckets: 'all' for every activity, plus 'foot' (Run, Walk) or
-# 'bike' (Ride), mirroring leaderboard_agg.TYPE_FILTER_SQL.
+# The rebuilt bucket set, shared by the upsert and the stale-row cleanup so the
+# two can never disagree. Window keys must match leaderboard_agg.get_window_bounds:
+# start_date_local is a naive local timestamp, so week = Monday of that date,
+# month = YYYY-MM, year = YYYY. Buckets: 'all' for every activity, plus 'foot'
+# (Run, Walk) or 'bike' (Ride), mirroring leaderboard_agg.TYPE_FILTER_SQL.
 #
 # RECALC_START_DATE is applied per window, not per activity: a window is rebuilt
 # when it *starts* on or after the window containing RECALC_START_DATE. Without
 # that, the week of 2025-12-29 (which runs into 2026) lost its Dec 29-31
 # activities here while the per-activity recompute after each match counted
 # them, so the two paths disagreed on that week.
-REBUILD_SQL = """
-INSERT INTO leaderboard_agg ("window", window_key, metric, activity_type, athlete_id, value, last_updated)
-SELECT w.win, w.win_key, 'distance', t.agg_type, a.athlete_id,
-       SUM(a.distance_on_trail), now()
+REBUILD_SELECT = """
+SELECT w.win AS win, w.win_key AS win_key, t.agg_type AS agg_type,
+       a.athlete_id AS athlete_id, SUM(a.distance_on_trail) AS value
   FROM activities a
   JOIN users u ON u.athlete_id = a.athlete_id
  CROSS JOIN LATERAL (VALUES
@@ -90,33 +89,55 @@ SELECT w.win, w.win_key, 'distance', t.agg_type, a.athlete_id,
    AND a.distance_on_trail IS NOT NULL
    AND t.agg_type IS NOT NULL
  GROUP BY w.win, w.win_key, t.agg_type, a.athlete_id
+"""
+
+REBUILD_SQL = f"""
+INSERT INTO leaderboard_agg ("window", window_key, metric, activity_type, athlete_id, value, last_updated)
+SELECT r.win, r.win_key, 'distance', r.agg_type, r.athlete_id, r.value, now()
+  FROM ({REBUILD_SELECT}) AS r
 ON CONFLICT (window_key, metric, activity_type, athlete_id)
 DO UPDATE SET "window" = EXCLUDED."window", value = EXCLUDED.value, last_updated = now()
 """
 
-# In-scope rows the rebuild did not touch: buckets for users who opted out, or
-# whose activities were deleted or lost their trail distance. Scoped to the
-# windows the rebuild covers, so pre-season buckets (which the per-match
-# recompute maintains and the leaderboard can show as "previous year") are left
-# alone. Rows written by a concurrent match recompute carry a newer
-# last_updated and survive. Window keys are zero-padded ISO dates, so string
+# Delete in-season rows that are not in the rebuilt set: buckets for users who
+# opted out, or whose activities were deleted or lost their trail distance.
+#
+# Membership is evaluated against the rebuilt set in this statement's own
+# snapshot rather than with a last_updated watermark. A concurrent per-match
+# recompute only writes a bucket after committing its activity change, so any
+# bucket row this statement can see has its activity visible too, and is
+# therefore in the rebuilt set and kept. A timestamp watermark could not
+# guarantee that (now() is transaction *start* time, so a slow concurrent
+# write could carry an older timestamp than the run start).
+#
+# Scoped to the windows the rebuild covers, so pre-season buckets (which the
+# per-match recompute maintains and the leaderboard can show as "previous
+# year") are left alone. Window keys are zero-padded ISO dates, so string
 # comparison orders them correctly.
-DELETE_STALE_SQL = """
-DELETE FROM leaderboard_agg
- WHERE last_updated < CAST(:run_started AS TIMESTAMPTZ)
+DELETE_STALE_SQL = f"""
+DELETE FROM leaderboard_agg l
+ WHERE l.metric = 'distance'
    AND (
-        ("window" = 'week'  AND window_key >= 'week_'  || to_char(date_trunc('week',  CAST(:start_date AS TIMESTAMP)), 'YYYY-MM-DD'))
-     OR ("window" = 'month' AND window_key >= 'month_' || to_char(date_trunc('month', CAST(:start_date AS TIMESTAMP)), 'YYYY-MM'))
-     OR ("window" = 'year'  AND window_key >= 'year_'  || to_char(date_trunc('year',  CAST(:start_date AS TIMESTAMP)), 'YYYY'))
+        (l."window" = 'week'  AND l.window_key >= 'week_'  || to_char(date_trunc('week',  CAST(:start_date AS TIMESTAMP)), 'YYYY-MM-DD'))
+     OR (l."window" = 'month' AND l.window_key >= 'month_' || to_char(date_trunc('month', CAST(:start_date AS TIMESTAMP)), 'YYYY-MM'))
+     OR (l."window" = 'year'  AND l.window_key >= 'year_'  || to_char(date_trunc('year',  CAST(:start_date AS TIMESTAMP)), 'YYYY'))
+   )
+   AND NOT EXISTS (
+        SELECT 1 FROM ({REBUILD_SELECT}) AS r
+         WHERE r.win_key = l.window_key
+           AND r.agg_type = l.activity_type
+           AND r.athlete_id = l.athlete_id
    )
 """
 
+# Same activity boundary as REBUILD_SELECT (the Monday of the week containing
+# RECALC_START_DATE), so the reported counts match what was aggregated.
 COUNT_SQL = """
 SELECT COUNT(*), COUNT(DISTINCT a.athlete_id)
   FROM activities a
   JOIN users u ON u.athlete_id = a.athlete_id
  WHERE u.show_on_leaderboards = true
-   AND a.start_date_local >= CAST(:start_date AS TIMESTAMP)
+   AND a.start_date_local >= date_trunc('week', CAST(:start_date AS TIMESTAMP))
    AND a.distance_on_trail IS NOT NULL
 """
 
@@ -130,9 +151,9 @@ def recalculate_leaderboard():
     activity and failed once that passed 1 MB). Runs as two atomic statements
     with no transaction (Lambda roles only grant rds-data:ExecuteStatement):
 
-      1. Upsert every rebuilt bucket (sets last_updated = now()).
-      2. Delete in-season rows last updated before this run started, i.e.
-         buckets the rebuild no longer produces. Pre-season buckets are kept.
+      1. Upsert every rebuilt bucket.
+      2. Delete in-season rows that are not in the rebuilt set (see
+         DELETE_STALE_SQL). Pre-season buckets are kept.
 
     The table is never empty in between. The previous version DELETEd
     everything first and then failed on the 1 MB query, leaving the leaderboard
@@ -174,19 +195,12 @@ def recalculate_leaderboard():
         athletes_processed = int(count_record[1].get("longValue", 0))
         print(f"LOG - {activities_processed} activities from {athletes_processed} opted-in athletes")
 
-        # Step 2: Capture the DB clock before writing, so stale rows can be told
-        # apart from rows this run (or a concurrent match) just wrote.
-        run_started = exec_sql("SELECT clock_timestamp()::text").get("records")[0][0]["stringValue"]
-
-        # Step 3: Upsert every rebuilt bucket
+        # Step 2: Upsert every rebuilt bucket
         upserted = exec_sql(REBUILD_SQL, params).get("numberOfRecordsUpdated", 0)
         print(f"LOG - Upserted {upserted} leaderboard_agg rows")
 
-        # Step 4: Remove buckets the rebuild no longer produces
-        deleted = exec_sql(
-            DELETE_STALE_SQL,
-            params + [{"name": "run_started", "value": {"stringValue": run_started}}],
-        ).get("numberOfRecordsUpdated", 0)
+        # Step 3: Remove in-season buckets the rebuild no longer produces
+        deleted = exec_sql(DELETE_STALE_SQL, params).get("numberOfRecordsUpdated", 0)
         print(f"LOG - Deleted {deleted} stale leaderboard_agg rows")
 
         print("=== recalculate_leaderboard END: SUCCESS ===")

@@ -34,8 +34,6 @@ def _fake_db(fail_on=None):
             return "check"
         if s.startswith("SELECT COUNT(*)"):
             return "count"
-        if "clock_timestamp()" in s:
-            return "clock"
         if s.startswith("INSERT INTO leaderboard_agg"):
             return "upsert"
         if s.startswith("DELETE FROM leaderboard_agg"):
@@ -51,8 +49,6 @@ def _fake_db(fail_on=None):
             return {"records": [[{"booleanValue": True}]]}
         if k == "count":
             return {"records": [[{"longValue": 120}, {"longValue": 7}]]}
-        if k == "clock":
-            return {"records": [[{"stringValue": "2026-11-20 15:00:00.000001"}]]}
         if k == "upsert":
             return {"numberOfRecordsUpdated": 300}
         if k == "delete":
@@ -73,7 +69,7 @@ def test_never_reads_activities_into_lambda():
     kinds = [k for k, _, _ in calls]
     assert "other" not in kinds, f"unexpected statement executed: {kinds}"
     assert "GROUP BY" in lf.REBUILD_SQL and "ON CONFLICT" in lf.REBUILD_SQL
-    print("  ✓ only check/count/clock/upsert/delete statements run")
+    print("  ✓ only check/count/upsert/delete statements run")
 
 
 def test_upsert_runs_before_delete():
@@ -84,12 +80,30 @@ def test_upsert_runs_before_delete():
     with patch.object(lf, "exec_sql", side_effect=exec_sql):
         lf.recalculate_leaderboard()
     kinds = [k for k, _, _ in calls]
-    assert kinds.index("clock") < kinds.index("upsert") < kinds.index("delete"), kinds
-    delete_sql = [sql for k, sql, _ in calls if k == "delete"][0]
-    assert "last_updated <" in delete_sql, "delete must only remove rows older than this run"
-    delete_params = {p["name"] for p in [c for c in calls if c[0] == "delete"][0][2]}
-    assert delete_params == {"run_started", "start_date"}, delete_params
-    print("  ✓ clock -> upsert -> scoped delete of older rows")
+    assert kinds.index("upsert") < kinds.index("delete"), kinds
+    print("  ✓ upsert runs before the stale-row delete")
+
+
+def test_delete_keeps_every_rebuilt_bucket():
+    """Cleanup must be an anti-join against the rebuilt set, not a timestamp
+    watermark: now() is transaction start time, so a slow concurrent per-match
+    write could carry an older last_updated and be deleted wrongly."""
+    print("\nTesting stale delete is an anti-join against the rebuilt set...")
+    lf = _import_lambda()
+    sql = " ".join(lf.DELETE_STALE_SQL.split())
+    rebuild_select = " ".join(lf.REBUILD_SELECT.split())
+    assert "NOT EXISTS" in sql and rebuild_select in sql, "delete must exclude the rebuilt set"
+    assert "last_updated" not in sql, "delete must not rely on a last_updated watermark"
+    assert rebuild_select in " ".join(lf.REBUILD_SQL.split()), "upsert and delete must share REBUILD_SELECT"
+    print("  ✓ delete excludes REBUILD_SELECT; no timestamp watermark")
+
+
+def test_count_uses_rebuild_boundary():
+    print("\nTesting reported counts use the rebuild's activity boundary...")
+    lf = _import_lambda()
+    boundary = "a.start_date_local >= date_trunc('week', CAST(:start_date AS TIMESTAMP))"
+    assert boundary in lf.REBUILD_SELECT and boundary in lf.COUNT_SQL
+    print("  ✓ COUNT_SQL and REBUILD_SELECT share the week-start boundary")
 
 
 def test_upsert_failure_leaves_table_untouched():
@@ -109,7 +123,7 @@ def test_delete_is_scoped_to_rebuilt_windows():
     lf = _import_lambda()
     sql = " ".join(lf.DELETE_STALE_SQL.split())
     for win in ("week", "month", "year"):
-        assert f"\"window\" = '{win}' AND window_key >=" in sql, f"missing {win} scope"
+        assert f"l.\"window\" = '{win}' AND l.window_key >=" in sql, f"missing {win} scope"
     print("  ✓ delete limited to windows on/after the season start")
 
 
@@ -121,6 +135,8 @@ if __name__ == "__main__":
         test_upsert_runs_before_delete()
         test_upsert_failure_leaves_table_untouched()
         test_delete_is_scoped_to_rebuilt_windows()
+        test_delete_keeps_every_rebuilt_bucket()
+        test_count_uses_rebuild_boundary()
         print("\n" + "=" * 60)
         print("✅ All tests passed!")
         sys.exit(0)
