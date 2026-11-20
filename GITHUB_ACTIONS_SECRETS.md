@@ -15,12 +15,12 @@ After deploying the trail matching Lambda functions to AWS, you need to add the 
 
 #### LAMBDA_MATCH_ACTIVITY_TRAIL
 - **Description**: The AWS Lambda function name for the match_activity_trail function
-- **Example value**: `match_activity_trail` or `prod-match-activity-trail`
+- **Value**: `rabbitmiles-match-activity-trail` (the deployed function name, not the folder name; the workflow passes it straight to `aws lambda update-function-code`)
 - **Used by**: GitHub Actions workflow to deploy code updates to this Lambda
 
 #### LAMBDA_MATCH_UNMATCHED_ACTIVITIES
 - **Description**: The AWS Lambda function name for the match_unmatched_activities function
-- **Example value**: `match_unmatched_activities` or `prod-match-unmatched-activities`
+- **Value**: `rabbitmiles-match-unmatched-activities` (the deployed function name, not the folder name)
 - **Used by**: GitHub Actions workflow to deploy code updates to this Lambda
 
 #### LAMBDA_ADMIN_LIST_USERS

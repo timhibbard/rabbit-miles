@@ -104,6 +104,23 @@ Loop over chunks of about 400 activity IDs that have a polyline:
 3. **Wait for the chunk to drain** (`SELECT COUNT(*) FROM activities WHERE last_matched IS NULL`
    reaches 0) before resetting the next chunk.
 
+   **Bound the wait.** The batch matcher catches per-activity queueing errors
+   and still returns normally, reporting them as `failed_to_queue`. Those rows
+   are **never retried automatically**, and with other producers suspended
+   they'd stay unmatched. If the unmatched count hasn't dropped for about 5
+   minutes, queue again with `limit` set to the remaining count. For these
+   small retry batches you can drop `--invocation-type Event` so `out.json`
+   shows `queued` and `failed_to_queue` (keep batches under about 150 so the
+   synchronous call finishes within the CLI's 60 s read timeout). Repeat up to
+   about 5 times. If rows are still stuck after that, match one
+   directly to see the error:
+   ```bash
+   aws lambda invoke --function-name rabbitmiles-match-activity-trail \
+     --cli-binary-format raw-in-base64-out --payload '{"activity_id": <id>}' one.json && cat one.json
+   ```
+   Then fix the cause, or set `last_matched = NOW()` on those rows and note
+   their IDs, so the run can continue. Their values are unchanged.
+
 Expect about 90–250 s per 400-activity chunk, or 1.5–4 hours for the full set.
 
 **A count of 0 doesn't mean all matching has finished.** It only means every row

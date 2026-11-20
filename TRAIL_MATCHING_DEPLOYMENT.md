@@ -27,8 +27,11 @@ Before automated deployment can work, add these secrets to your GitHub repositor
 
 1. Go to https://github.com/timhibbard/rabbit-miles/settings/secrets/actions
 2. Add the following secrets:
-   - `LAMBDA_MATCH_ACTIVITY_TRAIL` = `match_activity_trail` (or your function name)
-   - `LAMBDA_MATCH_UNMATCHED_ACTIVITIES` = `match_unmatched_activities` (or your function name)
+   - `LAMBDA_MATCH_ACTIVITY_TRAIL` = `rabbitmiles-match-activity-trail`
+   - `LAMBDA_MATCH_UNMATCHED_ACTIVITIES` = `rabbitmiles-match-unmatched-activities`
+
+   The workflow passes these values straight to `aws lambda update-function-code`,
+   so they must be the deployed function names, not the folder names.
 
 See `GITHUB_ACTIONS_SECRETS.md` for detailed instructions.
 
