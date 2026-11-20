@@ -740,7 +740,9 @@ def handler(event, context):
         remaining_ids = [u["athlete_id"] for u in users[USERS_PER_INVOCATION:]]
 
         results = []
-        aborted_early = False
+        # Why the chunk stopped early, if it did: "time" (Lambda budget) or
+        # "rate_limit" (Strava). They need different follow-ups below.
+        abort_reason = None
         for user in chunk:
             # Time-budget guard: leave headroom for the self-continue invocation.
             remaining_ms = _seconds_until_lambda_deadline(context)
@@ -749,7 +751,7 @@ def handler(event, context):
                 # Push unprocessed chunk users back onto the continuation list.
                 idx = chunk.index(user)
                 remaining_ids = [u["athlete_id"] for u in chunk[idx:]] + remaining_ids
-                aborted_early = True
+                abort_reason = "time"
                 break
 
             try:
@@ -758,17 +760,29 @@ def handler(event, context):
                 log("Rate limit exhausted; aborting chunk and deferring rest to next scheduled run", "WARNING")
                 idx = chunk.index(user)
                 remaining_ids = [u["athlete_id"] for u in chunk[idx:]] + remaining_ids
-                aborted_early = True
+                abort_reason = "rate_limit"
                 break
 
             time.sleep(1)  # pace requests to avoid rate limit burst
 
-        if remaining_ids and not aborted_early:
+        if remaining_ids and abort_reason is None:
             _self_continue(context, remaining_ids)
-        elif remaining_ids and aborted_early:
-            # Don't immediately self-invoke after a rate-limit/time abort —
-            # let the next scheduled run pick it up after the window resets.
-            log(f"{len(remaining_ids)} users deferred to next scheduled run", "INFO")
+        elif remaining_ids and abort_reason == "time" and results:
+            # Out of Lambda time, not Strava quota: a fresh invocation has its
+            # full budget, so continue now. Deferring to the next hourly run
+            # here capped each run at what fits in (timeout - safety margin),
+            # about 18 users with the 123 s timeout, which is barely enough to
+            # sweep 84 users every 6 hours. Requiring at least one processed
+            # user guarantees progress, so this can't self-invoke in a loop.
+            log(f"Time budget exhausted after {len(results)} users; continuing with "
+                f"{len(remaining_ids)} remaining in a fresh invocation", "INFO")
+            _self_continue(context, remaining_ids)
+        elif remaining_ids:
+            # Rate limit (or a time abort before any user was processed): an
+            # immediate retry would hit the same wall, so let the next
+            # scheduled run pick it up after the window resets.
+            log(f"{len(remaining_ids)} users deferred to next scheduled run "
+                f"(reason: {abort_reason})", "INFO")
 
         successful = sum(1 for r in results if r.get("success"))
         failed = len(results) - successful

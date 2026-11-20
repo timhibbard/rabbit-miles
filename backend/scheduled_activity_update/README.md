@@ -37,6 +37,24 @@ For comparison, the previous hourly backstop polled every webhook-stale user eac
 
 If you outgrow that, raise `METADATA_REFRESH_SECONDS` (sweep less often) rather than shrinking the window.
 
+## Batching and continuation
+
+Each invocation processes at most `USERS_PER_INVOCATION` (25) users and stops
+early when less than `LAMBDA_TIME_REMAINING_SAFETY_MS` (90 s) of Lambda time
+remains. What happens to the rest depends on why it stopped:
+
+- **Batch full, or out of Lambda time:** self-invoke immediately with the
+  remaining athlete IDs. A fresh invocation has its full time budget. A
+  time-budget stop only continues if at least one user was processed, so it
+  can't loop.
+- **Strava rate limit:** defer to the next scheduled run, after the quota
+  window resets.
+
+With the 123 s timeout, about 33 s per invocation are usable, which is about
+18 users. Before continuation applied to time-budget stops, that capped each
+*hourly run* at about 18 users. That was barely enough to sweep 84 users every
+6 hours, and the first sweep after deploying took several hours.
+
 ## Environment Variables Required
 
 - `DB_CLUSTER_ARN`: ARN of the Aurora Serverless cluster
