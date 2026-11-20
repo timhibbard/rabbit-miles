@@ -243,6 +243,13 @@ so there's no Data API 1 MB limit. The table is never empty mid-run: if the
 upsert fails, nothing changes. Pre-season buckets, which the per-match recompute
 maintains, are left alone.
 
+**Run it when matching is quiet.** The upsert computes every bucket from a
+single snapshot. If a match commits *during* the upsert, its fresher value for
+that bucket can be overwritten with the snapshot value. The bucket corrects
+itself on that athlete's next match in the same window, or on the next rebuild.
+The cleanup step is guarded against concurrent writes and never deletes a
+bucket a match touched.
+
 The endpoint returns 202 and runs asynchronously. To run it directly (for
 example from the CLI with no admin session), invoke the Lambda with
 `{"async_invocation": true}`.

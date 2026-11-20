@@ -119,6 +119,11 @@ DO UPDATE SET "window" = EXCLUDED."window", value = EXCLUDED.value, last_updated
 #     would still pass NOT EXISTS and be deleted. With it, the changed
 #     last_updated fails the recheck and the row is kept.
 #   - Rows inserted concurrently are not in the stale snapshot, so they are kept.
+#   - Known limit (not engineered around): the upsert computes from its own
+#     snapshot, so a match committing *during* the upsert can have its fresher
+#     bucket value overwritten. It heals on that athlete's next match in the
+#     window or the next rebuild. Fully closing it would mean serializing the
+#     rebuild against the matcher (e.g. an advisory lock in both writers).
 #
 # Scoped to the windows the rebuild covers, so pre-season buckets (which the
 # per-match recompute maintains and the leaderboard can show as "previous
