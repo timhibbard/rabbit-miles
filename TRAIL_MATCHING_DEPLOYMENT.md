@@ -305,7 +305,7 @@ aws events put-rule \
 # Add Lambda as target
 aws events put-targets \
   --rule daily-match-unmatched-activities \
-  --targets "Id"="1","Arn"="arn:aws:lambda:us-east-1:ACCOUNT_ID:function:match_unmatched_activities"
+  --targets "Id"="1","Arn"="arn:aws:lambda:us-east-1:ACCOUNT_ID:function:rabbitmiles-match-unmatched-activities"
 
 # Grant EventBridge permission to invoke Lambda
 aws lambda add-permission \

@@ -99,16 +99,22 @@ def test_nearby_off_trail_activity_is_fast():
             del sys.modules['lambda_function']
         import lambda_function
         
-        # Trail in Greenville, SC area
-        trail_coords = [(34.85 + i * 0.001, -82.39) for i in range(100)]
-        
-        # Activity nearby but not on trail (1km away)
-        # 1km ≈ 0.009 degrees at this latitude
+        # Two parallel trail segments ~1.8 km apart, with the activity running
+        # between them (~0.9 km from each). The overall trail bounding box
+        # contains the activity, so the whole-trail rejection can't fire and
+        # the per-piece prefilter in the main loop has to do the work.
+        west_segment = [(34.85 + i * 0.001, -82.39) for i in range(100)]
+        east_segment = [(34.85 + i * 0.001, -82.37) for i in range(100)]
+        trail_segments = [west_segment, east_segment]
+
         activity_coords = [(34.85 + i * 0.001, -82.38) for i in range(100)]
-        
+
+        all_lons = [lon for seg in trail_segments for _, lon in seg]
+        assert min(all_lons) < -82.38 < max(all_lons), "activity must sit inside the trail bbox"
+
         start_time = time.time()
         distance, time_ratio = lambda_function.calculate_trail_intersection(
-            activity_coords, [trail_coords], 50  # 50m tolerance
+            activity_coords, trail_segments, 50  # 50m tolerance
         )
         elapsed = time.time() - start_time
         
