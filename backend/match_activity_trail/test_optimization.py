@@ -112,12 +112,29 @@ def test_nearby_off_trail_activity_is_fast():
         all_lons = [lon for seg in trail_segments for _, lon in seg]
         assert min(all_lons) < -82.38 < max(all_lons), "activity must sit inside the trail bbox"
 
+        # Count exact distance computations. Every trail piece is ~0.9 km from
+        # the activity, far outside its bounding box plus tolerance, so the
+        # per-piece prefilter should skip all of them. Without the prefilter
+        # this would be ~100 x 198 calls; timing alone can't tell the two apart
+        # at this size.
+        real_distance = lambda_function.point_to_segment_distance
+        calls = {"n": 0}
+
+        def counting_distance(*args):
+            calls["n"] += 1
+            return real_distance(*args)
+
         start_time = time.time()
-        distance, time_ratio = lambda_function.calculate_trail_intersection(
-            activity_coords, trail_segments, 50  # 50m tolerance
-        )
+        with patch.object(lambda_function, "point_to_segment_distance", side_effect=counting_distance):
+            distance, time_ratio = lambda_function.calculate_trail_intersection(
+                activity_coords, trail_segments, 50  # 50m tolerance
+            )
         elapsed = time.time() - start_time
-        
+
+        assert calls["n"] == 0, (
+            f"Per-piece prefilter should skip every distant trail piece, but "
+            f"{calls['n']} exact distance computations ran"
+        )
         # ~1 km is far outside the 50 m tolerance
         assert distance == 0.0, f"Expected 0 distance, got {distance}"
         assert elapsed < 0.5, f"Expected fast off-trail scan (<0.5s), took {elapsed:.3f}s"
@@ -205,7 +222,12 @@ def test_partly_on_trail_activity():
 
 
 def test_realistic_no_match_scenario():
-    """Test with realistic coordinates that don't match (similar to the issue)"""
+    """A real off-trail activity (issue #116) is rejected quickly.
+
+    This activity lies outside the synthetic trail's bounding box, so it covers
+    the whole-trail rejection, not the per-piece prefilter (see
+    test_nearby_off_trail_activity_is_fast for that).
+    """
     print("\nTesting realistic no-match scenario...")
     
     os.environ['DB_CLUSTER_ARN'] = 'test-cluster-arn'

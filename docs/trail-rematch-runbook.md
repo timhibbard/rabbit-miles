@@ -29,6 +29,9 @@ with production half-changed.
 | `lambda:GetFunctionConfiguration` | Reading `DB_CLUSTER_ARN`, `DB_SECRET_ARN`, `DB_NAME` from any of them |
 | `rds-data:ExecuteStatement`, `secretsmanager:GetSecretValue` | All SQL |
 | `events:ListRuleNamesByTarget`, `events:DisableRule`, `events:EnableRule` | Suspending and restoring scheduled batch matching (step 4, clean-up) |
+| `lambda:GetFunctionConfiguration`, `lambda:UpdateFunctionConfiguration` on `fetch_activities` | Removing and restoring its batch-matching trigger (step 4, clean-up) |
+| `lambda:PutFunctionEventInvokeConfig`, `lambda:DeleteFunctionEventInvokeConfig` on the matcher | Optional: bounding async event age for the run (step 5) |
+| `cloudwatch:GetMetricStatistics` | Checking the matcher's async queue and throttles before step 6 |
 
 A quick check is a read-only call to each: `get-function-configuration`,
 `list-rule-names-by-target`, a `SELECT 1` through `rds-data`, and
@@ -87,10 +90,29 @@ immediately. Confirm the reported sizes match the candidate files from step 1.
 **Suspend other producers of batch matching for the duration of the run.**
 Anything else that invokes `rabbitmiles-match-unmatched-activities` can queue the
 same rows you just reset. A late duplicate then overwrites a value step 6
-restored. Producers include any EventBridge schedule targeting it (find them
-with `aws events list-rule-names-by-target --target-arn <function ARN>`, then
-`aws events disable-rule`) and `fetch_activities`, which triggers it after a
-user's activity fetch. Re-enable the rules when the run is done.
+restored. There are two producers:
+
+- **EventBridge schedules** targeting it. Find them with
+  `aws events list-rule-names-by-target --target-arn <function ARN>`, then
+  `aws events disable-rule --name <rule>`.
+- **`fetch_activities`**, which invokes it (limit 75) after any user's activity
+  fetch whenever its `MATCH_UNMATCHED_ACTIVITIES_LAMBDA_ARN` env var is set.
+  Remove that variable for the duration of the run. Note that
+  `update-function-configuration --environment` **replaces the whole variable
+  set**, so save the current one first:
+  ```bash
+  aws lambda get-function-configuration --function-name <fetch_activities name> \
+    --query Environment > fetch-env.json   # keep for clean-up
+  # then re-apply it without MATCH_UNMATCHED_ACTIVITIES_LAMBDA_ARN
+  ```
+  New activities still sync; they just stay unmatched until clean-up.
+
+Both are restored in clean-up.
+
+**Pre-flight:** before step 5, `SELECT COUNT(*) FROM activities WHERE
+last_matched IS NULL` should be 0. Any pre-existing NULL rows are stuck for
+some other reason (see step 5.3). Deal with them first, or they'll stall every
+chunk's drain check.
 
 ## 5. Re-match in chunks
 
@@ -111,8 +133,15 @@ Loop over chunks of about 400 activity IDs that have a polyline:
    ```
    Don't use a synchronous invoke. The CLI's 60 s read timeout fails silently
    on large batches.
-3. **Wait for the chunk to drain** (`SELECT COUNT(*) FROM activities WHERE last_matched IS NULL`
-   reaches 0) before resetting the next chunk.
+3. **Wait for the chunk to drain** before resetting the next one, counting
+   **only this chunk**:
+   ```sql
+   SELECT COUNT(*) FROM activities
+    WHERE last_matched IS NULL AND id BETWEEN :lo AND :hi
+   ```
+   A table-wide count also picks up rows inserted mid-run, and rows the matcher
+   never stamps. If matching fails before the DB write (activity missing, no
+   `athlete_id`), the handler returns an error without touching `last_matched`.
 
    **Bound the wait.** The batch matcher catches per-activity queueing errors
    and still returns normally, reporting them as `failed_to_queue`. Those rows
@@ -129,29 +158,56 @@ Loop over chunks of about 400 activity IDs that have a polyline:
      --cli-binary-format raw-in-base64-out --payload '{"activity_id": <id>}' one.json && cat one.json
    ```
    Then fix the cause, or set `last_matched = NOW()` on those rows and note
-   their IDs, so the run can continue. Their values are unchanged.
+   their IDs as **not re-scored**, so the run can continue. Their values are
+   unchanged.
 
 Expect about 90–250 s per 400-activity chunk, or 1.5–4 hours for the full set.
 
 **A count of 0 doesn't mean all matching has finished.** It only means every row
-has been matched at least once. Async invocations can still be queued or retrying
-(Lambda retries failed async events twice, with delays of a few minutes). So
-before step 6, after the last chunk *and* before a pause, wait until matching
-has been **quiet for at least 10 minutes**, with no activity's `last_matched`
-changing:
+has been matched at least once. Duplicate invocations can still be in Lambda's
+async queue:
 
-```sql
-SELECT MAX(last_matched) FROM activities  -- unchanged for 10+ minutes
-```
+- **Throttled** events, when 400 async invokes exceed concurrency, are retried
+  for up to the function's `MaximumEventAgeInSeconds`, which **defaults to 6
+  hours**.
+- **Errors** are *not* retried. The handler catches every exception and
+  returns a 500, so only timeouts or out-of-memory crashes are retried, and
+  those at most twice.
 
-**Pausing.** Stop between chunks, never mid-chunk. If a chunk was already reset
-when you stopped, set `last_matched = NOW()` on its rows. Their values haven't
-changed yet, and this keeps the scheduled matcher from picking them up while
-you're away. It does *not* cancel async work already queued, so wait for the
-quiet period above, then run steps 6–8 for what's done so far, and resume
-after the last finished ID.
+A quiet period on its own isn't proof. Before step 6, after the last chunk
+*and* before a pause, check both of these:
+
+1. Matching has been **quiet for at least 10 minutes**:
+   ```sql
+   SELECT MAX(last_matched) FROM activities  -- unchanged for 10+ minutes
+   ```
+2. The async queue is empty. In CloudWatch, `AWS/Lambda` `AsyncEventsReceived`
+   vs. processed and `AsyncEventAge` for `rabbitmiles-match-activity-trail`
+   should be flat, with no recent `Throttles`. To bound the risk up front, set
+   a short event age for the run with
+   `aws lambda put-function-event-invoke-config --function-name rabbitmiles-match-activity-trail --maximum-event-age-in-seconds 900`,
+   and restore it in clean-up. Events older than that are dropped rather than
+   applied late, and any rows they leave unmatched show up in the drain check.
+
+**Pausing.** Stop between chunks, never mid-chunk. If the next chunk was
+already reset when you stopped, it depends on whether it was queued:
+
+- **Reset but not queued:** its rows still have their old values. Set
+  `last_matched = NOW()` **only on rows `WHERE last_matched IS NULL AND id
+  BETWEEN :lo AND :hi`**, so nothing picks them up while you're away.
+- **Already queued:** some rows are re-matched or in flight. Don't stamp them.
+  Wait for the quiet checks above, then stamp any rows still NULL in that
+  range, as in the first case.
+
+Either way, treat that chunk as **unfinished**: record its range, run steps 6–8
+for the chunks that did finish, and resume by **re-running that chunk from the
+reset** rather than starting after it.
 
 ## 6. Keep only higher values
+
+**First, record the post-match value** (`id`, new `distance_on_trail`,
+`time_on_trail`) of every activity you're about to restore. The restore
+overwrites it, and step 9's check for masked match failures needs it.
 
 ```sql
 -- for each activity whose new distance_on_trail is lower than the baseline:
@@ -214,8 +270,9 @@ Run it after step 7 and while matching is quiet.
   baseline was above 0. Compare them with step 2's local results: any the local
   run scored above 0 is a matching failure, not a polyline downgrade. Re-match
   those individually with a direct `rabbitmiles-match-activity-trail` invoke.
-  For the restore step to know about these, record the post-match value of
-  each restored activity before overwriting it.
+  This uses the post-match values you recorded at the start of step 6.
+- Rows noted as **not re-scored** in step 5.3 are listed in the run notes,
+  with their cause.
 - Pre-season buckets match activities too: for windows before the season,
   compare `leaderboard_agg` against `SUM(distance_on_trail)` grouped by
   athlete and window key. The rebuild doesn't touch these, so step 7 is what
@@ -231,6 +288,15 @@ Run it after step 7 and while matching is quiet.
 ## Clean up
 
 - Re-enable any EventBridge rules you disabled in step 4.
+- Restore `fetch_activities`' environment from `fetch-env.json`, which puts
+  `MATCH_UNMATCHED_ACTIVITIES_LAMBDA_ARN` back. Then queue one batch-matcher
+  run so the activities fetched during the run get matched.
+- If you shortened `MaximumEventAgeInSeconds` on the matcher, restore it
+  (`delete-function-event-invoke-config` returns it to the default).
+- Refresh the **frontend** copies `public/main.geojson` and
+  `public/spurs.geojson` from the published files. The activity detail page
+  (`src/utils/trailMatching.js`) loads them for on-trail highlighting, so
+  stale copies make the map disagree with the backend's `distance_on_trail`.
 - Refresh the repo's reference copies in `trail/` from the published files.
   Nothing reads them, but they're the baseline for the next run's step 2.
 - Delete the local snapshot, polylines and any scripts that embed the DB ARNs.
