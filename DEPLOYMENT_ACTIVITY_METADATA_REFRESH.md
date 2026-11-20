@@ -71,8 +71,8 @@ Functions changed by this PR:
 | `scheduled_activity_update` | 7-day window; sweeps all users; stamps `last_metadata_refresh_at` |
 | `user_update_activities` | Paginates all pages instead of page 1 only |
 | `fetch_activities` | Polyline downgrade fix |
-| `update_activities` | Polyline downgrade fix |
-| `admin_update_activities` | Polyline downgrade fix |
+| `update_activities` | Polyline downgrade fix for list refreshes; single-activity (detail) refreshes now replace the stored polyline |
+| `admin_update_activities` | Polyline downgrade fix; paginates all pages instead of page 1 only |
 | `admin_backfill_activities` | Polyline downgrade fix |
 
 Confirm all seven matrix jobs went green in the Actions run before moving on.

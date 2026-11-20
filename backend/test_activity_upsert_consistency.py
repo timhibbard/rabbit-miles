@@ -26,7 +26,6 @@ BACKEND_DIR = os.path.dirname(os.path.abspath(__file__))
 SUMMARY_SOURCE_LAMBDAS = [
     "fetch_activities",
     "scheduled_activity_update",
-    "update_activities",
     "user_update_activities",
     "admin_update_activities",
     "admin_backfill_activities",
@@ -38,7 +37,20 @@ DETAIL_SOURCE_LAMBDAS = [
     "webhook_processor",
 ]
 
-ALL_UPSERT_LAMBDAS = SUMMARY_SOURCE_LAMBDAS + DETAIL_SOURCE_LAMBDAS
+# Lambdas whose single store_activity serves BOTH endpoints and switches on a
+# :from_detail bind parameter: list refreshes must preserve the stored polyline,
+# detail refreshes must replace it.
+MIXED_SOURCE_LAMBDAS = [
+    "update_activities",
+]
+
+# Expected polyline assignment for MIXED_SOURCE_LAMBDAS (whitespace-normalized).
+MIXED_POLYLINE_ASSIGNMENT = (
+    "CASE WHEN :from_detail THEN COALESCE(EXCLUDED.polyline, activities.polyline) "
+    "ELSE COALESCE(activities.polyline, EXCLUDED.polyline) END"
+)
+
+ALL_UPSERT_LAMBDAS = SUMMARY_SOURCE_LAMBDAS + DETAIL_SOURCE_LAMBDAS + MIXED_SOURCE_LAMBDAS
 
 # Fields Strava can change after upload, so every path must write them on
 # conflict or stale values survive forever.
@@ -144,6 +156,24 @@ def test_summary_polyline_never_overwrites_full_polyline():
             f"but assigns '{assigned}'."
         )
         print(f"  ✓ {name}: detail polyline upgrades the stored value")
+
+    for name in MIXED_SOURCE_LAMBDAS:
+        source = _read_lambda(name)
+        block = _extract_do_update_block(source, name)
+        match = re.search(r"(?<![\w.])polyline\s*=\s*(CASE\b.*?\bEND)", block, re.DOTALL)
+        assert match, f"{name}: expected a CASE WHEN :from_detail polyline assignment"
+        assigned = " ".join(match.group(1).split())
+        assert assigned == MIXED_POLYLINE_ASSIGNMENT, (
+            f"{name}: polyline assignment must be '{MIXED_POLYLINE_ASSIGNMENT}' so list "
+            f"refreshes preserve the stored polyline and detail refreshes replace it, "
+            f"but found '{assigned}'."
+        )
+        assert '"from_detail"' in source, f"{name}: :from_detail bind parameter is never supplied"
+        assert "from_detail=True" in source, (
+            f"{name}: no caller passes from_detail=True, so detail refreshes can "
+            f"never replace a stored polyline"
+        )
+        print(f"  ✓ {name}: list refresh preserves, detail refresh replaces the polyline")
 
 
 def test_athlete_count_bind_parameter_is_supplied():
